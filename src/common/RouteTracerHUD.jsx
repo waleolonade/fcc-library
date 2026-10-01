@@ -139,7 +139,7 @@ export default function RouteTracerHUD({
     return matchesCategory && matchesSearch;
   });
 
-  const categories = ['All', 'Public', 'Scholar', 'Admin', 'Catalog Books', 'E-Books', 'Theses Files', 'Official Documents', 'Bibliographic Files'];
+  const categories = ['All', 'Public', 'Auth', 'Scholar', 'HOD', 'Admin', 'Catalog Books', 'E-Books', 'Theses Files', 'Official Documents', 'Bibliographic Files'];
 
   return (
     <>

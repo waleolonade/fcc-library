@@ -17,6 +17,7 @@ import SmartCatalogSearch from './SmartCatalogSearch';
 import StudentCourseResources from './StudentCourseResources';
 import StudentReadingLists from './StudentReadingLists';
 import StudentResearchCenter from './StudentResearchCenter';
+import StudentResearchHub from './StudentResearchHub';
 import StudentDigitalLibrary from './StudentDigitalLibrary';
 import DigitalLibraryCardModal from './DigitalLibraryCardModal';
 import StudentStudyRooms from './StudentStudyRooms';
@@ -170,10 +171,19 @@ export default function StudentStandaloneApp() {
 
     // 4. View Tabs
     const tabAliases = {
+      'home': 'dashboard',
       'rooms': 'study_rooms',
       'study-rooms': 'study_rooms',
       'theses': 'research',
       'theses_archive': 'research',
+      'hnd_projects': 'research',
+      'research_hnd_projects': 'research',
+      'research_topics': 'research',
+      'research_papers': 'research',
+      'research_journals': 'research',
+      'research_references': 'research',
+      'topics': 'research',
+      'references': 'research',
       'help': 'helpdesk',
       'my-loans': 'loans',
       'loans_card': 'loans',
@@ -476,8 +486,8 @@ export default function StudentStandaloneApp() {
         {/* Sidebar Top: Branding */}
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center font-bold text-lg text-white shadow-lg shadow-emerald-950 font-serif shrink-0">
-              FCC
+            <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-emerald-500/40 p-0.5 flex items-center justify-center shadow-lg shadow-emerald-950 shrink-0 overflow-hidden">
+              <img src="/assets/fcc-logo.png" alt="FCC Logo" className="w-full h-full object-cover rounded-xl" />
             </div>
             {!sidebarCollapsed && (
               <div className="truncate">
@@ -562,6 +572,7 @@ export default function StudentStandaloneApp() {
             >
               {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
             </button>
+            <img src="/assets/fcc-logo.png" alt="FCC Logo" className="w-7 h-7 object-cover rounded-lg border border-emerald-500/40 shrink-0" />
             <span className="font-bold text-white text-sm">{INSTITUTION.shortName}</span>
           </div>
 
@@ -826,11 +837,12 @@ export default function StudentStandaloneApp() {
               user={studentUser}
             />
           ) : activeTab === 'research' ? (
-            <StudentResearchCenter
+            <StudentResearchHub
               theses={theses}
-              onSubmitThesis={handleSubmitThesis}
+              books={books}
               user={studentUser}
               onOpenReader={openBookReader}
+              onOpenAi={() => setIsAiOpen(true)}
             />
           ) : activeTab === 'card' ? (
             <div className="space-y-6">

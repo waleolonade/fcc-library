@@ -1,27 +1,24 @@
 {
   "name": "fcc-smart-library",
   "private": true,
-  "version": "4.8.0",
+  "version": "5.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "init-db": "node scripts/setup-mysql.js && node scripts/init-db.js && node scripts/export-sql.js",
-    "init-mysql": "node scripts/setup-mysql.js",
-    "server": "node server/server.js",
-    "start": "node server/server.js"
+    "backend": "php backend/artisan serve --port=5000",
+    "backend:migrate": "php backend/artisan migrate --seed",
+    "start": "php backend/artisan serve --port=5000",
+    "mobile": "cd mobile && npm start",
+    "mobile:android": "cd mobile && npm run android",
+    "mobile:ios": "cd mobile && npm run ios"
   },
   "dependencies": {
     "clsx": "^2.1.1",
-    "cors": "^2.8.6",
-    "dotenv": "^18.0.0",
-    "express": "^5.2.1",
     "lucide-react": "^1.16.0",
-    "mysql2": "^3.24.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "sqlite3": "^6.0.1",
     "tailwind-merge": "^3.0.2"
   },
   "devDependencies": {

@@ -45,8 +45,8 @@ export default function DigitalLibraryCardModal({ user, onClose }) {
           {/* Card Top Brand */}
           <div className="flex justify-between items-start">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center font-bold text-xl text-slate-950 font-serif">
-                FCC
+              <div className="w-10 h-10 rounded-xl bg-slate-900 border border-emerald-400/50 p-0.5 flex items-center justify-center overflow-hidden shrink-0 shadow">
+                <img src="/assets/fcc-logo.png" alt="FCC Crest" className="w-full h-full object-cover rounded-lg" />
               </div>
               <div>
                 <div className="text-xs font-black uppercase tracking-wider">{INSTITUTION.shortName}</div>

@@ -1195,12 +1195,46 @@ export const SYSTEM_HEALTH_METRICS = {
   broadcastChannelSync: "Active (Localhost Node Connected)",
   lastBackupTime: "Today at 04:00 AM (Automated Snapshot)",
   totalCatalogueRecords: 125430,
+  totalCatalogRecords: 125430,
+  totalPhysicalCopies: 87650,
+  availableCopies: 72300,
+  borrowedCopies: 14200,
+  overdueLoans: 1847,
+  digitalResources: 38120,
+  registeredPatrons: 28540,
   activePatrons: 28540,
   booksOnLoan: 8421,
+  activeLoansCount: 14200,
   overdueItems: 341,
-  activeReservations: 327,
+  activeReservations: 892,
   digitalResourcesCount: 54920,
-  repositoryItemsCount: 14205
+  repositoryItemsCount: 14205,
+  totalAuthors: 4215,
+  totalPublishers: 628,
+  totalSubjects: 147,
+  borrowingTrends: [
+    { month: "Apr", loans: 1820 },
+    { month: "May", loans: 2140 },
+    { month: "Jun", loans: 1650 },
+    { month: "Jul", loans: 980 },
+    { month: "Aug", loans: 1290 },
+    { month: "Sep", loans: 2380 }
+  ],
+  resourcesByCategory: [
+    { category: "Co-operative Economics", count: 18420 },
+    { category: "Computer Science", count: 14780 },
+    { category: "Banking & Finance", count: 12340 },
+    { category: "Agricultural Extension", count: 22180 },
+    { category: "Computer Engineering", count: 9870 },
+    { category: "General & Reference", count: 47840 }
+  ],
+  mostBorrowed: [
+    { title: "Principles and Practice of Co-operative Economics", borrows: 284, bookId: "FCC-B001" },
+    { title: "Distributed Database Systems & High-Throughput SQL", borrows: 241, bookId: "FCC-B002" },
+    { title: "Cocoa Agronomy & Smallholder Value-Chain Mechanics", borrows: 198, bookId: "FCC-B004" },
+    { title: "AI in Academic Information Retrieval", borrows: 176, bookId: "FCC-B005" },
+    { title: "Advanced Computer Networks & Cloud Infrastructure", borrows: 162, bookId: "FCC-B007" }
+  ]
 };
 
 export const INITIAL_ACQUISITIONS = [
@@ -1221,12 +1255,549 @@ export const INITIAL_AUDIT_LOGS = [
   { id: "LOG-5503", timestamp: "2026-09-18 09:04:00", user: "System Scheduler", role: "DAEMON", action: "HEALTH_CHECK", detail: "Automated daily integrity audit verified 100% of PDF asset hashes." }
 ];
 
+
+
+// =========================================================================
+// 16. AUTHORS REGISTRY
+// =========================================================================
+export const INITIAL_AUTHORS = [
+  {
+    id: "AUTH-001",
+    firstName: "Adeyemi",
+    middleName: "Olawale",
+    lastName: "Adebayo",
+    fullName: "Prof. A. O. Adebayo",
+    biography: "Professor of Cooperative Econometrics with over 25 years of academic research in agrarian credit unions and apex cooperative management in West Africa. Fellow of the Statistical and National Accountants of Nigeria.",
+    dateOfBirth: "1965-03-14",
+    nationality: "Nigerian",
+    profileImage: "https://images.unsplash.com/photo-1537511446984-935f663eb1f4?w=200&auto=format&fit=crop",
+    email: "a.adebayo@fccibadan.edu.ng",
+    orcid: "0000-0001-9021-1234",
+    affiliation: "Federal Co-operative College, Ibadan",
+    researchAreas: ["Cooperative Economics", "Agricultural Finance", "Apex Syndicate Accounting"],
+    publicationIds: ["FCC-B001", "FCC-B006"]
+  },
+  {
+    id: "AUTH-002",
+    firstName: "Kehinde",
+    middleName: "Emmanuel",
+    lastName: "Okonjo",
+    fullName: "Dr. K. E. Okonjo",
+    biography: "Lead Systems Architect and ACM Fellow specializing in distributed database systems and AI-driven academic information retrieval. Co-author of three international IEEE conference papers on vector search.",
+    dateOfBirth: "1978-07-22",
+    nationality: "Nigerian",
+    profileImage: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&auto=format&fit=crop",
+    email: "k.okonjo@fccibadan.edu.ng",
+    orcid: "0000-0002-3416-5598",
+    affiliation: "Federal Co-operative College, Ibadan & MIT Distributed Lab",
+    researchAreas: ["Distributed Systems", "Database Architecture", "AI Information Retrieval"],
+    publicationIds: ["FCC-B002", "FCC-B005"]
+  },
+  {
+    id: "AUTH-003",
+    firstName: "Folake",
+    middleName: "",
+    lastName: "Sanusi",
+    fullName: "Chief (Mrs.) Folake Sanusi",
+    biography: "Fellow of the Chartered Institute of Bankers of Nigeria with extensive experience in macro-prudential banking reforms and Basel III compliance frameworks for Sub-Saharan African financial institutions.",
+    dateOfBirth: "1970-11-05",
+    nationality: "Nigerian",
+    profileImage: "https://images.unsplash.com/photo-1494790108755-2616b3e4c929?w=200&auto=format&fit=crop",
+    email: "f.sanusi@fccibadan.edu.ng",
+    orcid: "0000-0003-8120-4411",
+    affiliation: "Federal Co-operative College, Ibadan",
+    researchAreas: ["Banking Regulation", "Microfinance", "Capital Adequacy"],
+    publicationIds: ["FCC-B003"]
+  },
+  {
+    id: "AUTH-004",
+    firstName: "Taiwo",
+    middleName: "Johnson",
+    lastName: "Adeleke",
+    fullName: "Engr. T. J. Adeleke",
+    biography: "Agricultural Extension Specialist and COREN Registered Engineer with expertise in smallholder cocoa value chains, post-harvest technology and cooperative mobilization across Southwestern Nigeria.",
+    dateOfBirth: "1972-05-30",
+    nationality: "Nigerian",
+    profileImage: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop",
+    email: "t.adeleke@fccibadan.edu.ng",
+    orcid: "0000-0004-5501-9988",
+    affiliation: "Faculty of Engineering, FCC Ibadan",
+    researchAreas: ["Agronomy", "Embedded Systems", "Rural Development"],
+    publicationIds: ["FCC-B004", "FCC-B008"]
+  },
+  {
+    id: "AUTH-005",
+    firstName: "Sundar",
+    middleName: "Narasimhan",
+    lastName: "Varma",
+    fullName: "Prof. S. N. Varma",
+    biography: "Senior Network Architect and IEEE Senior Member. Co-developer of several SDN frameworks adopted by Cisco Networking Academy. Author of multiple graduate-level textbooks on cloud infrastructure.",
+    dateOfBirth: "1960-09-18",
+    nationality: "Indian",
+    profileImage: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop",
+    email: "s.varma@fccibadan.edu.ng",
+    orcid: "0000-0005-8922-0012",
+    affiliation: "Federal Co-operative College & Cisco Networking Academy",
+    researchAreas: ["Computer Networks", "Cloud Computing", "SDN"],
+    publicationIds: ["FCC-B007", "FCC-B005"]
+  }
+];
+
+// =========================================================================
+// 17. SUBJECTS, CATEGORIES & KEYWORDS
+// =========================================================================
+export const INITIAL_SUBJECTS = [
+  {
+    id: "SUB-001",
+    name: "Co-operative Economics",
+    category: "Management Sciences",
+    subcategory: "Cooperative Finance",
+    keywords: ["apex unions", "credit cooperatives", "rural finance", "cooperative law", "statutory reserves"],
+    resourceCount: 2,
+    description: "Study of cooperative economic principles, governance structures, and financial management in Nigeria and West Africa."
+  },
+  {
+    id: "SUB-002",
+    name: "Computer Science",
+    category: "Science & Technology",
+    subcategory: "Information Systems",
+    keywords: ["databases", "algorithms", "AI", "distributed systems", "software engineering"],
+    resourceCount: 3,
+    description: "Theory and practice of computation, data structures, algorithms, and applied software systems."
+  },
+  {
+    id: "SUB-003",
+    name: "Banking & Finance",
+    category: "Management Sciences",
+    subcategory: "Financial Regulation",
+    keywords: ["Basel III", "microfinance", "capital adequacy", "NPL", "monetary policy"],
+    resourceCount: 1,
+    description: "Financial institutions, banking regulations, investment analysis, and macroeconomic policy."
+  },
+  {
+    id: "SUB-004",
+    name: "Agricultural Extension",
+    category: "Agricultural Sciences",
+    subcategory: "Crop Science",
+    keywords: ["smallholder farming", "cocoa", "agronomy", "pest management", "value chain"],
+    resourceCount: 1,
+    description: "Application of agricultural knowledge to improve farm productivity and rural livelihoods."
+  },
+  {
+    id: "SUB-005",
+    name: "Computer Engineering",
+    category: "Engineering",
+    subcategory: "Embedded Systems",
+    keywords: ["ARM", "microcontroller", "FPGA", "embedded C", "real-time systems"],
+    resourceCount: 2,
+    description: "Design and development of computer hardware and embedded systems for real-world applications."
+  }
+];
+
+// =========================================================================
+// 18. CLASSIFICATION SYSTEMS (DDC, LCC, LOCAL)
+// =========================================================================
+export const CLASSIFICATION_SYSTEMS = [
+  {
+    id: "CLASS-DDC",
+    name: "Dewey Decimal Classification (DDC)",
+    shortCode: "DDC",
+    description: "Universal classification using numerical codes from 000 to 999. Widely used in public and school libraries.",
+    active: true,
+    topClasses: [
+      { code: "000", label: "Computer Science, Information & General Works" },
+      { code: "100", label: "Philosophy & Psychology" },
+      { code: "200", label: "Religion" },
+      { code: "300", label: "Social Sciences" },
+      { code: "400", label: "Language" },
+      { code: "500", label: "Natural Sciences & Mathematics" },
+      { code: "600", label: "Technology & Applied Sciences" },
+      { code: "700", label: "Arts & Recreation" },
+      { code: "800", label: "Literature" },
+      { code: "900", label: "History & Geography" }
+    ]
+  },
+  {
+    id: "CLASS-LCC",
+    name: "Library of Congress Classification (LCC)",
+    shortCode: "LCC",
+    description: "Alphanumeric system developed by the Library of Congress. Standard for academic and research libraries.",
+    active: true,
+    topClasses: [
+      { code: "A", label: "General Works" },
+      { code: "B", label: "Philosophy, Psychology, Religion" },
+      { code: "C", label: "Auxiliary Sciences of History" },
+      { code: "D", label: "World History" },
+      { code: "E-F", label: "American History" },
+      { code: "G", label: "Geography, Anthropology, Recreation" },
+      { code: "H", label: "Social Sciences" },
+      { code: "J", label: "Political Science" },
+      { code: "K", label: "Law" },
+      { code: "L", label: "Education" },
+      { code: "M", label: "Music" },
+      { code: "N", label: "Fine Arts" },
+      { code: "P", label: "Language and Literature" },
+      { code: "Q", label: "Science" },
+      { code: "R", label: "Medicine" },
+      { code: "S", label: "Agriculture" },
+      { code: "T", label: "Technology" },
+      { code: "U", label: "Military Science" },
+      { code: "V", label: "Naval Science" },
+      { code: "Z", label: "Library Science, Information Resources" }
+    ]
+  },
+  {
+    id: "CLASS-LOCAL",
+    name: "FCC Ibadan Local Classification",
+    shortCode: "FCC-LC",
+    description: "Custom in-house classification designed for the specific departmental structure of Federal Co-operative College, Ibadan.",
+    active: true,
+    topClasses: [
+      { code: "FCC-CEM", label: "Co-operative Economics & Management" },
+      { code: "FCC-CSC", label: "Computer Science & IT" },
+      { code: "FCC-BNF", label: "Banking & Finance" },
+      { code: "FCC-AGE", label: "Agricultural Extension & Management" },
+      { code: "FCC-EEE", label: "Electrical & Computer Engineering" },
+      { code: "FCC-GEN", label: "General & Reference Works" },
+      { code: "FCC-THS", label: "Theses & Dissertations" },
+      { code: "FCC-SRL", label: "Serials & Periodicals" }
+    ]
+  }
+];
+
+// =========================================================================
+// 19. LIBRARY LOCATIONS HIERARCHY
+// =========================================================================
+export const INITIAL_LOCATIONS = [
+  {
+    id: "LOC-INST",
+    type: "institution",
+    name: "Federal Co-operative College, Ibadan",
+    code: "FCC-IBD",
+    parentId: null,
+    children: ["LOC-MAIN", "LOC-ENG", "LOC-SCI", "LOC-MED", "LOC-LAW", "LOC-DIGI", "LOC-RES"]
+  },
+  {
+    id: "LOC-MAIN",
+    type: "library",
+    name: "Main Campus Library (Prof. Hezekiah Complex)",
+    code: "MAIN",
+    parentId: "LOC-INST",
+    capacity: 650,
+    hours: "08:00 AM - 08:00 PM",
+    floors: ["LOC-MAIN-F1", "LOC-MAIN-F2", "LOC-MAIN-F3"]
+  },
+  {
+    id: "LOC-MAIN-F1",
+    type: "floor",
+    name: "Floor 1 — Circulation & Reference",
+    code: "MAIN-F1",
+    parentId: "LOC-MAIN",
+    sections: ["LOC-MAIN-F1-CIR", "LOC-MAIN-F1-REF"]
+  },
+  {
+    id: "LOC-MAIN-F1-CIR",
+    type: "section",
+    name: "Circulation Section",
+    code: "MAIN-F1-CIR",
+    parentId: "LOC-MAIN-F1",
+    shelves: [
+      { id: "SH-001", code: "A1", label: "Shelf A1 — General Works", racks: ["R1", "R2", "R3"] },
+      { id: "SH-002", code: "A2", label: "Shelf A2 — Co-operative Economics", racks: ["R1", "R2"] }
+    ]
+  },
+  {
+    id: "LOC-MAIN-F2",
+    type: "floor",
+    name: "Floor 2 — Academic Holdings",
+    code: "MAIN-F2",
+    parentId: "LOC-MAIN",
+    sections: ["LOC-MAIN-F2-ACA"]
+  },
+  {
+    id: "LOC-MAIN-F2-ACA",
+    type: "section",
+    name: "Academic Holdings Section",
+    code: "MAIN-F2-ACA",
+    parentId: "LOC-MAIN-F2",
+    shelves: [
+      { id: "SH-003", code: "B1", label: "Shelf B1 — Management Sciences", racks: ["R1", "R2", "R3", "R4"] },
+      { id: "SH-004", code: "B2", label: "Shelf B2 — Computer Science", racks: ["R1", "R2"] }
+    ]
+  },
+  {
+    id: "LOC-ENG",
+    type: "library",
+    name: "Faculty of Engineering Library",
+    code: "ENG",
+    parentId: "LOC-INST",
+    capacity: 250,
+    hours: "08:30 AM - 06:00 PM",
+    floors: []
+  },
+  {
+    id: "LOC-DIGI",
+    type: "library",
+    name: "E-Library & Virtual Innovation Commons",
+    code: "ELIB",
+    parentId: "LOC-INST",
+    capacity: 400,
+    hours: "24 Hours (Biometric Gate)",
+    floors: []
+  }
+];
+
+// =========================================================================
+// 20. FINES REGISTRY
+// =========================================================================
+export const INITIAL_FINES = [
+  {
+    id: "FINE-001",
+    matric: "FCC/CEM/2024/011",
+    patronName: "Ibrahim Adekunle",
+    loanId: "LN-9820",
+    bookId: "FCC-B004",
+    bookTitle: "Cocoa Agronomy & Smallholder Value-Chain Mechanics",
+    dueDate: "2026-09-03",
+    returnDate: null,
+    daysOverdue: 27,
+    finePerDay: 100,
+    fineAmount: 2700,
+    amountPaid: 0,
+    status: "Unpaid",
+    notes: "Patron notified via email on 2026-09-05",
+    createdAt: "2026-09-04T08:00:00Z",
+    updatedAt: "2026-09-30T08:00:00Z"
+  },
+  {
+    id: "FINE-002",
+    matric: "FCC/CEM/2024/042",
+    patronName: "Wale Olonade",
+    loanId: "LN-9822",
+    bookId: "FCC-B006",
+    bookTitle: "Cooperative Law, Governance & Statutory Auditing in Nigeria",
+    dueDate: "2026-09-22",
+    returnDate: null,
+    daysOverdue: 8,
+    finePerDay: 100,
+    fineAmount: 800,
+    amountPaid: 300,
+    status: "Partially Paid",
+    notes: "Partial payment received at circulation desk",
+    createdAt: "2026-09-23T08:00:00Z",
+    updatedAt: "2026-09-28T10:00:00Z"
+  }
+];
+
+// =========================================================================
+// 21. ITEM COPIES (PHYSICAL COPIES PER TITLE)
+// =========================================================================
 export const INITIAL_ITEM_COPIES = [
-  { barcode: "FCC-CP-00101", bookId: "FCC-B001", rfid: "E28011606000021A", copyNo: 1, shelf: "Floor 2 • Aisle 4 • 12B", status: "available" },
-  { barcode: "FCC-CP-00102", bookId: "FCC-B001", rfid: "E28011606000021B", copyNo: 2, shelf: "Floor 2 • Aisle 4 • 12B", status: "on_loan" },
-  { barcode: "FCC-CP-00201", bookId: "FCC-B002", rfid: "E28011606000022A", copyNo: 1, shelf: "Floor 1 • Aisle 2 • 05A", status: "on_loan" },
-  { barcode: "FCC-CP-00202", bookId: "FCC-B002", rfid: "E28011606000022B", copyNo: 2, shelf: "Floor 1 • Aisle 2 • 05A", status: "available" },
-  { barcode: "FCC-CP-00301", bookId: "FCC-B003", rfid: "E28011606000023A", copyNo: 1, shelf: "Floor 2 • Aisle 1 • 08C", status: "available" },
-  { barcode: "FCC-CP-00401", bookId: "FCC-B004", rfid: "E28011606000024A", copyNo: 1, shelf: "Floor 3 • Aisle 6 • 19A", status: "on_loan" }
+  {
+    id: "CPY-B001-001",
+    bookId: "FCC-B001",
+    copyNumber: 1,
+    accessionNumber: "ACC-2024-0101",
+    barcode: "FCC-CP-00101",
+    rfidTag: "RFID-A01-001",
+    callNumber: "HD2963 .A34 2024",
+    branch: "Main Campus Library (Prof. Hezekiah Complex)",
+    section: "Academic Holdings",
+    shelf: "Shelf 12B",
+    rack: "Rack 3",
+    acquisitionDate: "2024-01-15",
+    acquisitionSource: "FCC Ibadan Academic Press",
+    price: 4500,
+    condition: "Good",
+    status: "Available"
+  },
+  {
+    id: "CPY-B001-002",
+    bookId: "FCC-B001",
+    copyNumber: 2,
+    accessionNumber: "ACC-2024-0102",
+    barcode: "FCC-CP-00102",
+    rfidTag: "RFID-A01-002",
+    callNumber: "HD2963 .A34 2024",
+    branch: "Main Campus Library (Prof. Hezekiah Complex)",
+    section: "Academic Holdings",
+    shelf: "Shelf 12B",
+    rack: "Rack 3",
+    acquisitionDate: "2024-01-15",
+    acquisitionSource: "FCC Ibadan Academic Press",
+    price: 4500,
+    condition: "Good",
+    status: "Borrowed"
+  },
+  {
+    id: "CPY-B002-001",
+    bookId: "FCC-B002",
+    copyNumber: 1,
+    accessionNumber: "ACC-2024-0201",
+    barcode: "FCC-CP-00201",
+    rfidTag: "RFID-A02-001",
+    callNumber: "QA76.9.D3 O38 2025",
+    branch: "Faculty of Science & Computing Library",
+    section: "Computer Science",
+    shelf: "Shelf 05A",
+    rack: "Rack 1",
+    acquisitionDate: "2025-02-10",
+    acquisitionSource: "Prentice Hall International",
+    price: 8500,
+    condition: "Very Good",
+    status: "Borrowed"
+  },
+  {
+    id: "CPY-B004-001",
+    bookId: "FCC-B004",
+    copyNumber: 1,
+    accessionNumber: "ACC-2024-0401",
+    barcode: "FCC-CP-00401",
+    rfidTag: "RFID-A04-001",
+    callNumber: "SB267 .A43 2024",
+    branch: "Main Campus Library (Prof. Hezekiah Complex)",
+    section: "Agricultural Sciences",
+    shelf: "Shelf 19A",
+    rack: "Rack 2",
+    acquisitionDate: "2024-03-20",
+    acquisitionSource: "Agronomic Research Publications",
+    price: 6200,
+    condition: "Good",
+    status: "Borrowed"
+  }
+];
+
+// =========================================================================
+// 22. FAVORITES
+// =========================================================================
+export const INITIAL_FAVORITES = [
+  {
+    id: "FAV-001",
+    matric: "FCC/CEM/2024/042",
+    bookId: "FCC-B001",
+    addedAt: "2026-09-10T09:00:00Z"
+  },
+  {
+    id: "FAV-002",
+    matric: "FCC/CEM/2024/042",
+    bookId: "FCC-B005",
+    addedAt: "2026-09-14T14:30:00Z"
+  }
+];
+
+// =========================================================================
+// 23. LIBRARY INFO (ABOUT THE LIBRARY)
+// =========================================================================
+export const LIBRARY_INFO = {
+  description: "The Federal Co-operative College Library, Ibadan, is the primary academic and research depository of FCC Ibadan — Nigeria's apex institution for cooperative education, established in 1943. The library holds over 125,000 volumes spanning cooperative economics, agricultural sciences, banking and finance, computer science, and engineering. As a Grade-A NBTE-accredited institution, the library operates a multi-branch, hybrid physical-digital system with 24/7 virtual access.",
+  mission: "To support the academic mission of Federal Co-operative College, Ibadan by providing timely, equitable, and comprehensive access to information resources that inspire research, scholarship, lifelong learning, and cooperative values.",
+  vision: "To be the foremost cooperative and agricultural knowledge hub in West Africa, recognised for excellence in information services, innovative digital delivery, and transformative support of scholarly inquiry.",
+  rules: [
+    "Silence must be maintained in all reading rooms and research sections.",
+    "Library cards must be presented at the circulation desk for all borrowing transactions.",
+    "Food and drinks are strictly prohibited inside the library building.",
+    "Mobile phones must be switched to silent mode. No voice calls inside the reading halls.",
+    "A maximum of 5 books may be borrowed at any one time by undergraduate students.",
+    "Borrowed materials must be returned on or before the due date to avoid accumulation of fines.",
+    "No library materials may be removed from the building without proper circulation desk processing.",
+    "Damage or loss of library materials attracts replacement cost plus an administrative surcharge.",
+    "Users must present a valid FCC ID card or library card for entry after 6:00 PM.",
+    "The library reserves the right to search bags upon entry and exit."
+  ],
+  openingHours: [
+    { day: "Monday – Friday", hours: "08:00 AM – 08:00 PM" },
+    { day: "Saturday", hours: "09:00 AM – 05:00 PM" },
+    { day: "Sunday", hours: "12:00 PM – 06:00 PM" },
+    { day: "Public Holidays", hours: "Closed (Virtual Hub: 24/7)" },
+    { day: "Exam Period (Extended)", hours: "24 Hours with Biometric Access" }
+  ],
+  contactInfo: {
+    address: "Federal Co-operative College, Eleyele Road, Ibadan, Oyo State, Nigeria",
+    phone: "+234 (0) 2 241 0183",
+    email: "library@fccibadan.edu.ng",
+    website: "https://library.fccibadan.edu.ng",
+    librarian: "Dr. Mrs. A. Balogun (Chief College Librarian)",
+    librarianEmail: "a.balogun@fccibadan.edu.ng"
+  },
+  departments: [
+    { name: "Circulation & Lending Services", head: "Mr. T. Alabi", location: "Ground Floor, Main Library" },
+    { name: "Cataloguing & Classification", head: "Mrs. F. Oyelaran", location: "Floor 1, Main Library" },
+    { name: "Reference & Research Services", head: "Dr. O. Adeola", location: "Floor 2, Main Library" },
+    { name: "E-Library & Digital Services", head: "Mr. K. Fashola", location: "E-Library Hub, ICT Block" },
+    { name: "Serials & Periodicals", head: "Miss A. Adekoya", location: "Floor 3, Main Library" },
+    { name: "Institutional Repository", head: "Mr. B. Okafor", location: "Postgraduate Depository" }
+  ],
+  services: [
+    "Physical & Digital Lending (Circulation)",
+    "Online Public Access Catalogue (OPAC)",
+    "Inter-Library Loan (ILL) Services",
+    "Institutional Repository & Theses Archive",
+    "Study Room & Seminar Suite Booking",
+    "AI Smart Reference Librarian (24/7)",
+    "Plagiarism Detection & Turnitin Integration",
+    "DOI / ISBN Resolution & Metadata Lookup",
+    "Course Reserve Management",
+    "Graduation Clearance Verification",
+    "Bibliographic Instruction & Information Literacy",
+    "Barcode & QR Code Generation Services"
+  ]
+};
+
+// =========================================================================
+// 24. ENHANCED ANNOUNCEMENTS (for PublicDiscovery homepage)
+// =========================================================================
+export const INITIAL_FULL_ANNOUNCEMENTS = [
+  {
+    id: "ANN-F01",
+    title: "Second Semester Examination Period — 24/7 Virtual Library Access",
+    content: "In support of the upcoming ND/HND examinations, the Main Campus Library and E-Learning Hub will operate extended 24-hour reading hours starting Monday. Biometric cards required for entry after 09:00 PM. All digital resources remain accessible via the Virtual Hub at all times.",
+    image: null,
+    startDate: "2026-09-16",
+    endDate: "2026-10-31",
+    status: "Published",
+    priority: "High",
+    author: "Dr. Mrs. A. Balogun",
+    targetAudience: "All Students & Staff",
+    badgeColor: "rose"
+  },
+  {
+    id: "ANN-F02",
+    title: "New E-Book Subscriptions: ScienceDirect & IEEE Computer Society",
+    content: "The Library Directorate is pleased to announce the acquisition of institutional multi-user licenses for 14,000+ new peer-reviewed volumes across computer engineering and agricultural economics. Access is available immediately via the E-Library portal using your student credentials.",
+    image: null,
+    startDate: "2026-09-12",
+    endDate: "2027-09-12",
+    status: "Published",
+    priority: "Medium",
+    author: "Mr. K. Fashola",
+    targetAudience: "All Students",
+    badgeColor: "emerald"
+  },
+  {
+    id: "ANN-F03",
+    title: "Student PIN Verification & PVC ID Card Revalidation Notice",
+    content: "Students experiencing login issues should visit their faculty librarian for immediate PIN reset. Please note: library services require NO direct monetary payments. All fine payments are processed through the Bursar's office only. Beware of fraudsters.",
+    image: null,
+    startDate: "2026-09-08",
+    endDate: "2026-10-08",
+    status: "Published",
+    priority: "Medium",
+    author: "Circulation Desk",
+    targetAudience: "All Students",
+    badgeColor: "indigo"
+  },
+  {
+    id: "ANN-F04",
+    title: "New Arrivals: October 2026 Batch — 47 New Titles Added",
+    content: "The cataloguing unit has processed and shelved 47 new titles across all departments as part of the October 2026 acquisition batch. Notable additions include 12 Computer Engineering titles, 8 Agricultural Extension volumes, and the complete IEEE Computer Society 2026 standards series.",
+    image: null,
+    startDate: "2026-10-01",
+    endDate: "2026-11-30",
+    status: "Published",
+    priority: "Low",
+    author: "Mrs. F. Oyelaran",
+    targetAudience: "All",
+    badgeColor: "teal"
+  }
 ];
 

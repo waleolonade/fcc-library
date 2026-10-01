@@ -3,7 +3,7 @@ import {
   Search, Mic, MicOff, Bot, Sparkles, Filter, BookOpen,
   Layers, FileText, CheckCircle, MapPin, Download, Share2,
   Bookmark, ChevronRight, AlertCircle, RefreshCw, X, PlusCircle,
-  Building2, GraduationCap, ArrowUpDown, Clock, Tag
+  Building2, GraduationCap, ArrowUpDown, Clock, Tag, Globe, ExternalLink, BookCheck
 } from 'lucide-react';
 import { parseNaturalLanguageQuery, filterCatalogByNlp } from '../utils/nlpSearch';
 import TraceBadge from '../common/TraceBadge';
@@ -44,10 +44,36 @@ export default function SmartCatalogSearch({
   });
 
   const recognitionRef = useRef(null);
+  const [globalResults, setGlobalResults] = useState([]);
+  const [isSearchingGlobal, setIsSearchingGlobal] = useState(false);
+  const [globalProviders, setGlobalProviders] = useState([]);
 
   const categories = [
-    'Everything', 'Books', 'eBooks & PDFs', 'Journals', 'Theses & Projects', 'Course Materials'
+    'Everything', 'Books', 'eBooks & PDFs', 'Journals', 'Theses & Projects', 'Course Materials', 'Global Library APIs'
   ];
+
+  const handleSearchGlobalApis = async (term = searchQuery) => {
+    const q = (term || '').trim() || 'economics agriculture technology';
+    setIsSearchingGlobal(true);
+    try {
+      const res = await fetch(`/api/library-apis/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (data && data.results) {
+        setGlobalResults(data.results);
+        setGlobalProviders(data.providers_queried || []);
+      }
+    } catch (err) {
+      console.error('Error querying global library APIs:', err);
+    } finally {
+      setIsSearchingGlobal(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeCategory === 'Global Library APIs') {
+      handleSearchGlobalApis(searchQuery);
+    }
+  }, [activeCategory]);
 
   const branches = [
     'All Branches',
@@ -299,6 +325,9 @@ export default function SmartCatalogSearch({
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 handleSaveRecentSearch(searchQuery);
+                if (activeCategory === 'Global Library APIs') {
+                  handleSearchGlobalApis(searchQuery);
+                }
               }
             }}
             className="w-full bg-slate-950 border border-slate-700 rounded-2xl pl-12 pr-28 py-3.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition shadow-inner font-sans"
@@ -333,22 +362,33 @@ export default function SmartCatalogSearch({
         {/* Category Pills & Facet Toggles */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto text-xs pb-1">
-            {categories.map(cat => (
-              <button
-                key={cat}
-                onClick={() => {
-                  setActiveCategory(cat);
-                  sounds.playClick();
-                }}
-                className={`px-3 py-1.5 rounded-full font-semibold transition whitespace-nowrap ${
-                  activeCategory === cat
-                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950 scale-105'
-                    : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
+            {categories.map(cat => {
+              const isGlobal = cat === 'Global Library APIs';
+              return (
+                <button
+                  key={cat}
+                  onClick={() => {
+                    setActiveCategory(cat);
+                    sounds.playClick();
+                    if (isGlobal) {
+                      handleSearchGlobalApis(searchQuery);
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-full font-semibold transition whitespace-nowrap flex items-center gap-1.5 ${
+                    activeCategory === cat
+                      ? isGlobal
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950 scale-105'
+                        : 'bg-emerald-600 text-white shadow-md shadow-emerald-950 scale-105'
+                      : isGlobal
+                        ? 'bg-indigo-950/40 border border-indigo-800/60 text-indigo-300 hover:bg-indigo-900/50'
+                        : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {isGlobal && <Globe size={13} className="text-cyan-400 animate-pulse" />}
+                  <span>{cat}</span>
+                </button>
+              );
+            })}
           </div>
 
           <button
@@ -454,17 +494,143 @@ export default function SmartCatalogSearch({
       {/* 2. RESULTS COUNT & ACTIVE SEARCH CRITERIA */}
       <div className="flex items-center justify-between text-xs text-slate-400">
         <div>
-          Showing <strong className="text-white">{filteredResults.length}</strong> {activeCategory.toLowerCase()} found
-          {searchQuery && <span> for "<strong className="text-emerald-400">{searchQuery}</strong>"</span>}
-          {selectedBranch !== 'All Branches' && <span> in <span className="text-slate-300">{selectedBranch.split('(')[0]}</span></span>}
+          {activeCategory === 'Global Library APIs' ? (
+            <span>
+              Discovered <strong className="text-white">{globalResults.length}</strong> monographs across World Open Access Repositories
+              {searchQuery && <span> for "<strong className="text-cyan-400">{searchQuery}</strong>"</span>}
+            </span>
+          ) : (
+            <span>
+              Showing <strong className="text-white">{filteredResults.length}</strong> {activeCategory.toLowerCase()} found
+              {searchQuery && <span> for "<strong className="text-emerald-400">{searchQuery}</strong>"</span>}
+              {selectedBranch !== 'All Branches' && <span> in <span className="text-slate-300">{selectedBranch.split('(')[0]}</span></span>}
+            </span>
+          )}
         </div>
         <span className="font-mono text-[11px] text-slate-500 hidden sm:inline">
-          MySQL Dual-Driver & MARC21 Synchronized
+          {activeCategory === 'Global Library APIs'
+            ? 'Open Library • Google Books • Gutenberg • Crossref • OpenAlex'
+            : 'MySQL Dual-Driver & MARC21 Synchronized'}
         </span>
       </div>
 
-      {/* 3. SEARCH RESULTS LIST OR NOT-FOUND ASSISTANT */}
-      {filteredResults.length === 0 ? (
+      {/* 3. CONDITIONAL: GLOBAL APIS RESULTS */}
+      {activeCategory === 'Global Library APIs' ? (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-indigo-950/20 border border-indigo-900/40 text-xs">
+            <div className="flex items-center gap-2">
+              <Globe size={18} className="text-cyan-400" />
+              <div>
+                <span className="font-bold text-white">World Free Library Federation:</span>
+                <span className="text-slate-300 ml-1.5">
+                  {globalProviders.length > 0 ? globalProviders.join(', ') : 'Open Library, Google Books, Project Gutenberg, Crossref, OpenAlex'}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => handleSearchGlobalApis(searchQuery)}
+              disabled={isSearchingGlobal}
+              className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition flex items-center gap-1.5"
+            >
+              <RefreshCw size={13} className={isSearchingGlobal ? 'animate-spin' : ''} />
+              <span>{isSearchingGlobal ? 'Federating...' : 'Refresh Live Search'}</span>
+            </button>
+          </div>
+
+          {isSearchingGlobal ? (
+            <div className="p-12 text-center rounded-3xl bg-slate-900/80 border border-slate-800 space-y-3">
+              <RefreshCw size={28} className="text-cyan-400 animate-spin mx-auto" />
+              <p className="text-sm font-semibold text-white">Federating query across worldwide library endpoints...</p>
+              <p className="text-xs text-slate-400">Pinging Open Library, Google Books, Project Gutenberg, Crossref, and OpenAlex</p>
+            </div>
+          ) : globalResults.length === 0 ? (
+            <div className="p-10 rounded-3xl bg-slate-900 border border-slate-800 text-center space-y-3">
+              <AlertCircle size={28} className="text-amber-400 mx-auto" />
+              <h4 className="text-base font-bold text-white">No external results found for this search</h4>
+              <p className="text-xs text-slate-400">Try broader terms like "agriculture", "economics", "management", or "computer science".</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {globalResults.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-cyan-500/50 transition-all flex flex-col justify-between group shadow-xl"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-950/80 text-cyan-300 border border-indigo-800">
+                            {item.provider || 'External API'}
+                          </span>
+                          {item.year && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono text-slate-400 bg-slate-950 border border-slate-800">
+                              {item.year}
+                            </span>
+                          )}
+                          {item.isbn && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono text-slate-400 bg-slate-950 border border-slate-800">
+                              ISBN: {item.isbn}
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="text-base font-bold text-white group-hover:text-cyan-300 transition line-clamp-2">
+                          {item.title}
+                        </h4>
+                        <p className="text-xs text-slate-300">{item.author || 'Unknown Author'}</p>
+                      </div>
+                      <div className="w-12 h-16 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center shrink-0 overflow-hidden text-slate-600">
+                        {item.cover_url ? (
+                          <img src={item.cover_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <BookOpen size={20} className="text-slate-500" />
+                        )}
+                      </div>
+                    </div>
+
+                    {item.snippet && (
+                      <p className="text-xs text-slate-400 line-clamp-2 italic">
+                        "{item.snippet}"
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between gap-2 text-xs mt-3">
+                    {item.preview_url ? (
+                      <a
+                        href={item.preview_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/30 font-semibold flex items-center gap-1.5 transition"
+                      >
+                        <ExternalLink size={13} />
+                        <span>Read / Preview</span>
+                      </a>
+                    ) : (
+                      <span className="text-[11px] text-slate-500">Public Domain Access</span>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        onRequestAcquisition({
+                          title: item.title,
+                          author: item.author,
+                          isbn: item.isbn
+                        });
+                        sounds.playSuccessChime();
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold flex items-center gap-1.5 transition"
+                    >
+                      <PlusCircle size={13} className="text-emerald-400" />
+                      <span>Request Physical Copy</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : filteredResults.length === 0 ? (
         <div className="p-8 sm:p-12 rounded-3xl bg-slate-900 border border-slate-800 text-center space-y-5 shadow-2xl">
           <div className="w-16 h-16 rounded-2xl bg-amber-950/60 border border-amber-800 text-amber-400 flex items-center justify-center mx-auto">
             <AlertCircle size={32} />
@@ -477,7 +643,20 @@ export default function SmartCatalogSearch({
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl mx-auto pt-2 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 max-w-3xl mx-auto pt-2 text-xs">
+            <button
+              onClick={() => {
+                setActiveCategory('Global Library APIs');
+                handleSearchGlobalApis(searchQuery);
+                sounds.playClick();
+              }}
+              className="p-4 rounded-2xl bg-slate-950 border border-indigo-800 hover:border-indigo-500 text-left transition group"
+            >
+              <Globe size={20} className="text-cyan-400 mb-2" />
+              <div className="font-bold text-white group-hover:text-indigo-300">Search World Free APIs</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Explore Open Library, Google Books, Gutenberg</div>
+            </button>
+
             <button
               onClick={() => onOpenAi(searchQuery || 'Find available books')}
               className="p-4 rounded-2xl bg-slate-950 border border-indigo-800 hover:border-indigo-500 text-left transition group"

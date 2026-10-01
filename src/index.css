@@ -4,45 +4,61 @@
 
 @layer base {
   body {
-    @apply bg-slate-950 text-slate-100 font-sans;
+    @apply bg-[#021810] text-emerald-50 font-sans;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 }
 
-/* Custom scrollbars */
+/* Custom Forest & Emerald Green Scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
 }
 ::-webkit-scrollbar-track {
-  background: #090d16;
+  background: #021a12;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: #064e3b;
   border-radius: 9999px;
+  border: 1px solid #065f46;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #10b981;
 }
 
-/* Glassmorphism utilities */
+/* Institutional Academic Green Glassmorphism & Panel Utilities */
 .glass-panel {
-  background: rgba(15, 23, 42, 0.75);
+  background: rgba(4, 38, 26, 0.75);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(51, 65, 85, 0.5);
+  border: 1px solid rgba(16, 185, 129, 0.25);
 }
 
 .glass-panel-emerald {
-  background: rgba(6, 78, 59, 0.25);
+  background: rgba(6, 78, 59, 0.35);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  border: 1px solid rgba(16, 185, 129, 0.4);
 }
 
-.glass-panel-indigo {
-  background: rgba(49, 46, 129, 0.25);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(99, 102, 241, 0.3);
+.glass-panel-forest {
+  background: rgba(2, 28, 19, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(5, 150, 105, 0.3);
+}
+
+.green-glow {
+  box-shadow: 0 0 35px -5px rgba(16, 185, 129, 0.25);
+}
+
+.green-border-glow {
+  border-color: rgba(16, 185, 129, 0.5);
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
+}
+
+/* Text selections in luminous emerald */
+::selection {
+  background-color: #059669;
+  color: #ffffff;
 }

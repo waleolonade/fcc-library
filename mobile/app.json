@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "FCC Smart Library",
+    "slug": "fcc-smart-library",
+    "version": "5.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#020617",
+      "resizeMode": "contain"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ng.edu.fccibadan.library"
+    },
+    "android": {
+      "package": "ng.edu.fccibadan.library",
+      "adaptiveIcon": {
+        "backgroundColor": "#020617"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "apiBaseUrl": "http://10.0.2.2:5000/api"
+    }
+  }
+}

@@ -10,9 +10,13 @@ build/
 .env
 .env.local
 .env.*.local
+backend/vendor/
+backend/.env
+backend/storage/logs/*.log
 
 # Editor & OS files
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+scratch/

@@ -35,11 +35,14 @@ export default function StudentCardAndLoans({ user, loans, books, onRenewLoan, o
             <div className="absolute -right-10 -bottom-10 w-44 h-44 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none group-hover:scale-110 transition duration-500"></div>
 
             <div className="flex justify-between items-start">
-              <div>
-                <span className="text-[10px] tracking-widest uppercase font-mono text-emerald-400 font-bold block">
-                  Official Patron Membership
-                </span>
-                <div className="text-lg font-black text-white">{INSTITUTION.shortName}</div>
+              <div className="flex items-center gap-2.5">
+                <img src="/assets/fcc-logo.png" alt="FCC Logo" className="w-10 h-10 object-cover rounded-xl border border-emerald-500/40 shadow shrink-0" />
+                <div>
+                  <span className="text-[10px] tracking-widest uppercase font-mono text-emerald-400 font-bold block">
+                    Official Patron Membership
+                  </span>
+                  <div className="text-lg font-black text-white">{INSTITUTION.shortName}</div>
+                </div>
               </div>
               <div className="p-2 rounded-xl bg-slate-950/80 border border-emerald-600/50 shadow">
                 <QrCode size={38} className="text-emerald-400" />

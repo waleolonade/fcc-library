@@ -121,8 +121,11 @@ export default function GraduationClearance({ user, loans }) {
               FCC IBADAN
             </div>
 
-            {/* Header */}
-            <div className="text-center space-y-1 pb-4 border-b-2 border-emerald-900">
+            {/* Header with Official College Crest */}
+            <div className="text-center space-y-1 pb-4 border-b-2 border-emerald-900 flex flex-col items-center">
+              <div className="w-16 h-16 rounded-full bg-black border-2 border-emerald-900 p-1 flex items-center justify-center shadow-md mb-1 overflow-hidden">
+                <img src="/assets/fcc-logo.png" alt="Federal Co-operative College Crest" className="w-full h-full object-contain" />
+              </div>
               <div className="text-xs font-sans font-bold tracking-widest text-emerald-800 uppercase">
                 FEDERAL REPUBLIC OF NIGERIA
               </div>

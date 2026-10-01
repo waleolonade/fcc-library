@@ -1,0 +1,148 @@
+<?php
+
+namespace Database\Seeders;
+
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
+
+class CommunicationSeeder extends Seeder
+{
+    public function run(): void
+    {
+        $messages = [
+            [
+                'msg_id' => 'MSG-2026-001',
+                'thread_id' => 'TH-CEM-411',
+                'sender_id' => 'FCC/CEM/2024/042',
+                'sender_name' => 'Wale Olonade',
+                'sender_role' => 'student',
+                'sender_dept' => 'Co-operative Economics & Management',
+                'recipient_id' => 'HOD/CEM/001',
+                'recipient_name' => 'Dr. Mrs. F. A. Babalola',
+                'recipient_role' => 'hod',
+                'recipient_dept' => 'Co-operative Economics & Management',
+                'category' => 'course_reserve',
+                'subject' => 'Request for CEM 411 Lecture Compendium in Digital Repository',
+                'message' => 'Dear HOD Ma, Good afternoon. The HND II class would appreciate having the updated 2026 Apex Cooperative Syndication past questions and lecture compendium uploaded to the Library Digital Repository so we can access it on our student tablets.',
+                'priority' => 'high',
+                'status' => 'resolved',
+                'action_type' => 'course_material_request',
+                'action_data' => json_encode(['course_code' => 'CEM 411', 'target_level' => 'HND II']),
+                'created_at' => '2026-09-28 09:15:00',
+                'updated_at' => '2026-09-28 10:30:00',
+            ],
+            [
+                'msg_id' => 'MSG-2026-002',
+                'thread_id' => 'TH-CEM-411',
+                'sender_id' => 'HOD/CEM/001',
+                'sender_name' => 'Dr. Mrs. F. A. Babalola (HOD CEM)',
+                'sender_role' => 'hod',
+                'sender_dept' => 'Co-operative Economics & Management',
+                'recipient_id' => 'FCC/CEM/2024/042',
+                'recipient_name' => 'Wale Olonade',
+                'recipient_role' => 'student',
+                'recipient_dept' => 'Co-operative Economics & Management',
+                'category' => 'course_reserve',
+                'subject' => 'RE: CEM 411 Lecture Compendium Uploaded',
+                'message' => 'Dear Wale, The Departmental Academic Board has compiled and submitted the CEM 411 Compendium to the Central Library Cataloging unit today. You will receive an automated notification once the Chief Librarian approves the staging ingestion.',
+                'priority' => 'normal',
+                'status' => 'resolved',
+                'action_type' => 'reply',
+                'action_data' => json_encode(['course_code' => 'CEM 411']),
+                'created_at' => '2026-09-28 11:20:00',
+                'updated_at' => '2026-09-28 11:20:00',
+            ],
+            [
+                'msg_id' => 'MSG-2026-003',
+                'thread_id' => 'TH-ACQ-902',
+                'sender_id' => 'HOD/CEM/001',
+                'sender_name' => 'Dr. Mrs. F. A. Babalola (HOD CEM)',
+                'sender_role' => 'hod',
+                'sender_dept' => 'Co-operative Economics & Management',
+                'recipient_id' => 'ADMIN-CHIEF',
+                'recipient_name' => 'Dr. Mrs. A. Balogun (Chief College Librarian)',
+                'recipient_role' => 'admin',
+                'recipient_dept' => 'Central Library Services',
+                'category' => 'acquisition_request',
+                'subject' => 'Book Acquisition Requisition: 15 Copies of Nigerian Cooperative Law (2026 Edition)',
+                'message' => 'The CEM Department requires 15 new physical reference copies of "Nigerian Cooperative Law, Governance & Statutory Auditing" (ISBN: 978-978-8120-00-5) by Spectrum Books to support our upcoming NBTE accreditation audit in November.',
+                'priority' => 'urgent',
+                'status' => 'in_progress',
+                'action_type' => 'acquisition_requisition',
+                'action_data' => json_encode(['copies' => 15, 'estimated_cost' => 240000, 'vendor' => 'Spectrum Books Ibadan']),
+                'created_at' => '2026-09-29 08:45:00',
+                'updated_at' => '2026-09-29 14:10:00',
+            ],
+            [
+                'msg_id' => 'MSG-2026-004',
+                'thread_id' => 'TH-ACQ-902',
+                'sender_id' => 'ADMIN-CHIEF',
+                'sender_name' => 'Dr. Mrs. A. Balogun (Chief College Librarian)',
+                'sender_role' => 'admin',
+                'sender_dept' => 'Central Library Services',
+                'recipient_id' => 'HOD/CEM/001',
+                'recipient_name' => 'Dr. Mrs. F. A. Babalola (HOD CEM)',
+                'recipient_role' => 'hod',
+                'recipient_dept' => 'Co-operative Economics & Management',
+                'category' => 'acquisition_request',
+                'subject' => 'RE: Acquisition Approved — Purchase Order PO-2026-083 Dispatched',
+                'message' => 'Requisition approved. Purchase Order PO-2026-083 has been dispatched to Spectrum Books, Ring Road. 5 copies will be reserved for Departmental Library Stacks and 10 copies for Central Library Reserve Shelf.',
+                'priority' => 'high',
+                'status' => 'resolved',
+                'action_type' => 'approve_requisition',
+                'action_data' => json_encode(['po_number' => 'PO-2026-083', 'budget_code' => 'TETFUND-2026-LIB']),
+                'created_at' => '2026-09-29 15:30:00',
+                'updated_at' => '2026-09-29 15:30:00',
+            ],
+            [
+                'msg_id' => 'MSG-2026-005',
+                'thread_id' => 'TH-CLR-2026-08',
+                'sender_id' => 'FCC/CEM/2024/042',
+                'sender_name' => 'Wale Olonade',
+                'sender_role' => 'student',
+                'sender_dept' => 'Co-operative Economics & Management',
+                'recipient_id' => 'ADMIN-CIRC',
+                'recipient_name' => 'Circulation Desk & Clearance Officer',
+                'recipient_role' => 'admin',
+                'recipient_dept' => 'Circulation Unit',
+                'category' => 'clearance_request',
+                'subject' => 'Library Graduation Clearance & Fine Audit Request',
+                'message' => 'Please audit my library card record for final graduation clearance. I have submitted my hardcover project thesis "Cocoa Cooperative Agronomy" and cleared all circulation charges.',
+                'priority' => 'normal',
+                'status' => 'unread',
+                'action_type' => 'audit_clearance',
+                'action_data' => json_encode(['matric' => 'FCC/CEM/2024/042', 'level' => 'HND II']),
+                'created_at' => '2026-09-30 08:20:00',
+                'updated_at' => '2026-09-30 08:20:00',
+            ],
+            [
+                'msg_id' => 'MSG-2026-006',
+                'thread_id' => 'TH-BROADCAST-LIB',
+                'sender_id' => 'ADMIN-CHIEF',
+                'sender_name' => 'College Library Administration',
+                'sender_role' => 'admin',
+                'sender_dept' => 'Central Library Services',
+                'recipient_id' => 'all',
+                'recipient_name' => 'All Faculty, HODs and Students',
+                'recipient_role' => 'all',
+                'recipient_dept' => 'All Departments',
+                'category' => 'official_bulletin',
+                'subject' => 'Extended Stack Hours During NBTE Examination Period',
+                'message' => 'The Central Library and ICT Commons will operate from 7:30 AM to 10:00 PM daily throughout the examination period. Group study rooms and self-checkout kiosks are fully operational.',
+                'priority' => 'high',
+                'status' => 'unread',
+                'action_type' => 'announcement',
+                'action_data' => json_encode(['hours' => '7:30 AM - 10:00 PM', 'target' => 'Campus Wide']),
+                'created_at' => '2026-09-30 10:00:00',
+                'updated_at' => '2026-09-30 10:00:00',
+            ]
+        ];
+
+        foreach ($messages as $msg) {
+            DB::table('institutional_communications')->updateOrInsert(
+                ['msg_id' => $msg['msg_id']],
+                $msg
+            );
+        }
+    }
+}

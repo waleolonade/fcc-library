@@ -3,7 +3,7 @@ import {
   BookOpen, Clock, AlertTriangle, CheckCircle, Bookmark,
   Layers, QrCode, Bot, DoorOpen, ShieldCheck, Sparkles,
   ArrowRight, Search, FileText, Download, UserCheck, RefreshCw,
-  Compass, ChevronRight, Globe, Award, Wifi, Calendar, Check, Link2
+  Compass, ChevronRight, Globe, Award, Wifi, Calendar, Check, Link2, Quote
 } from 'lucide-react';
 import { INSTITUTION } from '../data/institutionalSeedData';
 import TraceBadge from '../common/TraceBadge';
@@ -43,6 +43,15 @@ export default function StudentOverviewDashboard({
   const userContinueReading = continueReading.filter(c => (c.matric || '').toLowerCase() === userMatric);
   const userRoomBookings = roomBookings.filter(b => (b.matric || '').toLowerCase() === userMatric);
   const totalSavedItems = readingLists.reduce((acc, r) => acc + (r.itemCount || (r.items ? r.items.length : 0)), 0);
+
+  const isHnd2 = Boolean(
+    user?.level?.includes('HND2') ||
+    user?.level?.includes('HND 2') ||
+    user?.level?.includes('HND II') ||
+    user?.level?.includes('Final') ||
+    (user?.matric && user.matric.toUpperCase().includes('HND')) ||
+    user?.level === 'HND II'
+  );
 
   // Recommendations dynamically chosen from real database books
   const recommendations = books.slice(0, 3).map((book, i) => {
@@ -115,6 +124,55 @@ export default function StudentOverviewDashboard({
           </div>
         </div>
       </div>
+
+      {/* HND2 SCHOLAR DISSERTATION ACCELERATOR (High Priority for HND2 Final Year) */}
+      {isHnd2 && (
+        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-emerald-950/90 via-slate-900 to-indigo-950/80 border-2 border-emerald-500/40 shadow-2xl relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-80 h-full bg-emerald-500/5 -skew-x-12 pointer-events-none"></div>
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 relative z-10">
+            <div className="flex items-start sm:items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 p-0.5 flex items-center justify-center shadow-lg shadow-emerald-500/25 shrink-0">
+                <Award size={24} className="text-slate-950" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow">
+                    <Sparkles size={11} /> HND II Dissertation Priority Hub
+                  </span>
+                  <span className="text-emerald-300 text-xs font-semibold">Specialized Research & Thesis Suite</span>
+                </div>
+                <h3 className="text-lg font-black text-white">
+                  Final Year HND Research & Project Portal
+                </h3>
+                <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                  Fast-track your dissertation with approved department projects, verified research papers, vetted topic proposals with problem statements, and one-click citation generators.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              <button
+                onClick={() => onNavigateTab('research_topics')}
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950 transition flex items-center gap-1.5"
+              >
+                <Compass size={14} /> Project Topics
+              </button>
+              <button
+                onClick={() => onNavigateTab('research_hnd_projects')}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white text-xs font-bold border border-emerald-800/60 transition flex items-center gap-1.5"
+              >
+                <FileText size={14} /> Past HND Dissertations
+              </button>
+              <button
+                onClick={() => onNavigateTab('research_references')}
+                className="px-3.5 py-2.5 rounded-xl bg-indigo-950/70 hover:bg-indigo-900 text-indigo-300 hover:text-white text-xs font-bold border border-indigo-700/50 transition flex items-center gap-1.5"
+              >
+                <Quote size={14} /> Citations
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 2. REAL-TIME ACTIONABLE NOTIFICATIONS SUMMARY */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">

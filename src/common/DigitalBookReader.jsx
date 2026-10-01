@@ -15,8 +15,9 @@ export default function DigitalBookReader({ book, onClose, user }) {
   const [bookmarked, setBookmarked] = useState(false);
   const [activeTab, setActiveTab] = useState('content'); // 'content' | 'author' | 'notes'
   const [notes, setNotes] = useState([]);
-  const [newNote, setNewNote] = useState('');
-  const [pdfEmbedMode, setPdfEmbedMode] = useState(Boolean(book.fileDataUrl));
+  const hasPdf = Boolean(book.fileDataUrl || book.pdfUrl || book.file_data_url);
+  const pdfSrc = book.fileDataUrl || book.pdfUrl || book.file_data_url || '';
+  const [pdfEmbedMode, setPdfEmbedMode] = useState(hasPdf);
 
   // Sync reading progress to SQL database & localStorage
   useEffect(() => {
@@ -79,7 +80,16 @@ export default function DigitalBookReader({ book, onClose, user }) {
           <button
             onClick={() => {
               sounds.playSuccessChime();
-              alert(`Downloading authenticated PDF copy: "${book.fileName || book.title + '.pdf'}" (${book.fileSize || '4.8 MB'})`);
+              if (pdfSrc) {
+                const a = document.createElement('a');
+                a.href = pdfSrc;
+                a.download = book.fileName || `${book.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+              } else {
+                alert(`Downloading authenticated PDF copy: "${book.fileName || book.title + '.pdf'}" (${book.fileSize || '4.8 MB'})`);
+              }
             }}
             className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-bold flex items-center gap-1 border border-slate-700 transition"
             title="Download PDF File"
@@ -294,7 +304,7 @@ export default function DigitalBookReader({ book, onClose, user }) {
             ? 'bg-[#fcf7ee] border-[#dfd2be] text-[#332a1e]'
             : 'bg-white border-slate-200 text-slate-900'
         }`}>
-          {book.fileDataUrl && pdfEmbedMode ? (
+          {hasPdf && pdfEmbedMode ? (
             <div className="w-full h-[650px] rounded-xl overflow-hidden bg-slate-950 border border-slate-800 flex flex-col justify-between">
               <div className="p-2 bg-slate-900 border-b border-slate-800 flex justify-between items-center text-xs font-mono">
                 <span className="text-emerald-400 font-bold">📄 Authenticated PDF Document Stream</span>
@@ -306,7 +316,7 @@ export default function DigitalBookReader({ book, onClose, user }) {
                 </button>
               </div>
               <iframe
-                src={`${book.fileDataUrl}#page=${currentPage}`}
+                src={`${pdfSrc}#page=${currentPage}`}
                 className="w-full flex-1 border-none"
                 title={book.title}
               />
@@ -318,7 +328,7 @@ export default function DigitalBookReader({ book, onClose, user }) {
                 <span>Doc Ref: {book.doi || '10.5281/fcc.2026'}</span>
               </div>
 
-              {book.fileDataUrl && (
+              {hasPdf && (
                 <div className="flex justify-end font-sans">
                   <button
                     onClick={() => setPdfEmbedMode(true)}
