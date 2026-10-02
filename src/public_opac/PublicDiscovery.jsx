@@ -6,7 +6,7 @@ import {
   Check, Copy, Star, Bookmark, BookCheck, Sliders, ChevronDown,
   ChevronUp, Database, FileText, Newspaper, Radio, Video, Award,
   Volume2, Shield, AlertCircle, RefreshCw, Send, X, Share2, Tag, Scan,
-  BookMarked, Library, Eye, Loader2
+  BookMarked, Library, Eye, Loader2, AlertTriangle
 } from 'lucide-react';
 import { INSTITUTION, INITIAL_PARTNER_LIBRARIES } from '../data/institutionalSeedData';
 import PartnerLibrariesGateway from '../common/PartnerLibrariesGateway';
@@ -1065,7 +1065,7 @@ export default function PublicDiscovery({
                                     </p>
                                   </div>
 
-                                  <div className="flex items-center gap-1.5 pt-2">
+                                  <div className="flex items-center gap-1.5 pt-2 flex-wrap">
                                     <button
                                       onClick={() => setActiveLiveReader({
                                         url: readUrl,
@@ -1075,8 +1075,17 @@ export default function PublicDiscovery({
                                       })}
                                       className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-bold shadow flex items-center gap-1 transition"
                                     >
-                                      <Eye size={11} /> Read / Borrow
+                                      <Eye size={11} /> Read Preview
                                     </button>
+                                    {iaId && (
+                                      <button
+                                        onClick={() => window.open(`https://archive.org/details/${iaId}`, '_blank', 'noopener,noreferrer')}
+                                        className="px-2.5 py-1 bg-amber-600/90 hover:bg-amber-500 text-white rounded-lg text-[10px] font-bold shadow flex items-center gap-1 transition"
+                                        title="Borrow all pages on Archive.org (unlimited loan, all pages)"
+                                      >
+                                        <ExternalLink size={10} /> Full Borrow
+                                      </button>
+                                    )}
                                     <button
                                       onClick={() => window.open(`https://openlibrary.org${item.key}`, '_blank')}
                                       className="p-1 rounded-lg text-emerald-400 hover:text-white hover:bg-emerald-900/60"
@@ -1839,6 +1848,16 @@ export default function PublicDiscovery({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
+              {(activeLiveReader.url?.includes('archive.org') || activeLiveReader.directUrl?.includes('archive.org')) && (
+                <button
+                  onClick={() => window.open(activeLiveReader.directUrl || activeLiveReader.url, '_blank', 'noopener,noreferrer')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-lg text-xs font-bold shadow-md transition whitespace-nowrap animate-pulse hover:animate-none"
+                  title="Borrow on Archive.org to unlock all pages beyond page 7"
+                >
+                  <ExternalLink size={13} />
+                  <span>Borrow Full Book (All Pages)</span>
+                </button>
+              )}
               <button
                 onClick={() => window.open(activeLiveReader.directUrl || activeLiveReader.url, '_blank', 'noopener,noreferrer')}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md transition"
@@ -1855,6 +1874,25 @@ export default function PublicDiscovery({
               </button>
             </div>
           </div>
+
+          {/* ── Archive.org Page 7 CDL Limit Notice ── */}
+          {(activeLiveReader.url?.includes('archive.org') || activeLiveReader.directUrl?.includes('archive.org')) && (
+            <div className="bg-gradient-to-r from-amber-950 via-[#032316] to-[#021810] border-b border-amber-600/40 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-200 z-10 shadow">
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertTriangle size={15} className="text-amber-400 shrink-0" />
+                <span className="truncate sm:overflow-visible sm:whitespace-normal">
+                  <strong>Need to read past Page 7?</strong> Internet Archive enforces a 7-page guest preview inside embedded frames. To unlock all pages without jumping, click to activate your free 1-hour loan:
+                </span>
+              </div>
+              <button
+                onClick={() => window.open(activeLiveReader.directUrl || activeLiveReader.url, '_blank', 'noopener,noreferrer')}
+                className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-lg text-xs flex items-center gap-1.5 transition shadow shrink-0 whitespace-nowrap"
+              >
+                <ExternalLink size={12} /> Unlock All Pages on Archive.org
+              </button>
+            </div>
+          )}
+
           <iframe
             src={activeLiveReader.url}
             className="flex-1 w-full h-full border-none bg-[#fdfaf4]"

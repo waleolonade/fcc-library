@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, BookOpen, User, Calendar, Image as ImageIcon, ChevronLeft, ChevronRight, Loader2, AlertTriangle, ExternalLink, X, FileSearch, List, FileText, RotateCw, Copy, Check } from 'lucide-react';
+import { Search, BookOpen, User, Calendar, Image as ImageIcon, ChevronLeft, ChevronRight, Loader2, AlertTriangle, ExternalLink, X, FileSearch, List, FileText, RotateCw, Copy, Check, Eye } from 'lucide-react';
 
 // ─── Safe string extractor ─────────────────────────────────────────────────────
 // Open Library API returns inconsistent shapes: sometimes plain strings,
@@ -18,10 +18,10 @@ const safeStr = (val) => {
 // ─── NativeDetailModal ─────────────────────────────────────────────────────────
 // Extracted as a standalone component so that any render error is isolated
 // and never silently kills the parent component.
-function NativeDetailModal({ nativeDetail, onClose, onRead, onOpenUrl, onFetchAuthor }) {
+function NativeDetailModal({ nativeDetail, onClose, onRead, onOpenUrl, onFetchAuthor, onSearchInside, onReadEdition }) {
   if (!nativeDetail) return null;
 
-  const { data, type, originalKey, originalBook } = nativeDetail;
+  const { data, type, originalKey, originalBook, editions = [], iaId, iaMetadata } = nativeDetail;
 
   // --- Extract all fields safely ---
   const title       = safeStr(data.title) || safeStr(data.name) || safeStr(data.personal_name) || 'Unknown Item';
@@ -33,7 +33,11 @@ function NativeDetailModal({ nativeDetail, onClose, onRead, onOpenUrl, onFetchAu
   const subjects  = Array.isArray(data.subjects)  ? data.subjects  : [];
   const links     = Array.isArray(data.links)     ? data.links     : [];
   const authors   = Array.isArray(data.authors)   ? data.authors   : [];
-  const covers    = Array.isArray(data.covers)    ? data.covers    : (originalBook?.cover_i ? [originalBook.cover_i] : []);
+
+  // Fallback to edition covers if work has none
+  const allCovers = Array.isArray(data.covers) && data.covers.length > 0
+    ? data.covers
+    : (originalBook?.cover_i ? [originalBook.cover_i] : (editions.find(e => e.covers?.length > 0)?.covers || []));
 
   // Dates from API
   const createdRaw  = data.created?.value  || data.created  || '';
@@ -48,18 +52,24 @@ function NativeDetailModal({ nativeDetail, onClose, onRead, onOpenUrl, onFetchAu
   const revision     = data.latest_revision || data.revision;
 
   // Cover image
-  const coverId = covers[0];
+  const coverId = allCovers[0];
   const coverUrl = coverId ? `https://covers.openlibrary.org/b/id/${coverId}-L.jpg` : null;
+
+  // Resolve Archive.org identifier & full access details
+  const activeIaId = iaId || originalBook?.ia?.[0] || data.ocaid || (Array.isArray(data.ia) ? data.ia[0] : data.ia) || (editions.find(e => e.ocaid || (e.ia && e.ia.length > 0))?.ocaid || editions.find(e => e.ia && e.ia.length > 0)?.ia?.[0]);
+  const isCdlRestricted = iaMetadata?.metadata?.['access-restricted-item'] === 'true' || originalBook?.ebook_access === 'borrowable' || editions.some(e => e.ebook_access === 'borrowable');
+  const totalPages = iaMetadata?.metadata?.imagecount || iaMetadata?.metadata?.pages || editions.find(e => e.number_of_pages)?.number_of_pages || null;
+  const directArchiveUrl = activeIaId ? `https://archive.org/details/${activeIaId}` : null;
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="bg-[#032316] border border-emerald-800/60 rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <div className="bg-[#032316] border border-emerald-800/60 rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
 
         {/* ── Header ────────────────────────────────────── */}
         <div className="flex justify-between items-center p-5 border-b border-emerald-800/50 bg-[#021810]">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             {type === 'author' ? <User className="text-emerald-400" size={20} /> : <BookOpen className="text-emerald-400" size={20} />}
-            {type === 'author' ? 'Author Profile' : 'Book Details'}
+            {type === 'author' ? 'Author Profile' : 'Book Details & Full Reading Access'}
           </h2>
           <button onClick={onClose} className="text-emerald-400 hover:text-white transition p-1 bg-emerald-900/50 hover:bg-emerald-800 rounded-full">
             <X size={20} />
@@ -67,7 +77,7 @@ function NativeDetailModal({ nativeDetail, onClose, onRead, onOpenUrl, onFetchAu
         </div>
 
         {/* ── Body ──────────────────────────────────────── */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-5">
+        <div className="p-6 overflow-y-auto flex-1 space-y-5 custom-scrollbar">
 
           {/* Cover + Title block */}
           <div className="flex gap-4">
@@ -90,6 +100,20 @@ function NativeDetailModal({ nativeDetail, onClose, onRead, onOpenUrl, onFetchAu
 
               {/* Metadata pills */}
               <div className="flex flex-wrap gap-2 mt-3">
+                {totalPages && (
+                  <span className="px-2.5 py-0.5 bg-emerald-950 border border-emerald-700/60 rounded-full text-[11px] font-mono font-bold text-emerald-300 flex items-center gap-1">
+                    <FileText size={11} /> {totalPages} Pages Total
+                  </span>
+                )}
+                {isCdlRestricted ? (
+                  <span className="px-2.5 py-0.5 bg-amber-950 border border-amber-600/60 rounded-full text-[11px] font-mono font-bold text-amber-300">
+                    Controlled Digital Lending (Free 1-Hr Loan)
+                  </span>
+                ) : activeIaId ? (
+                  <span className="px-2.5 py-0.5 bg-emerald-950 border border-emerald-600/60 rounded-full text-[11px] font-mono font-bold text-emerald-300">
+                    Full Open Access
+                  </span>
+                ) : null}
                 {revision && (
                   <span className="px-2 py-0.5 bg-emerald-900/60 border border-emerald-700/50 rounded-full text-[10px] font-mono font-bold text-emerald-400">
                     Rev. {revision}
@@ -100,14 +124,67 @@ function NativeDetailModal({ nativeDetail, onClose, onRead, onOpenUrl, onFetchAu
                     Added: {createdDate}
                   </span>
                 )}
-                {modifiedDate && (
-                  <span className="px-2 py-0.5 bg-[#021810] border border-emerald-800/40 rounded-full text-[10px] font-mono text-emerald-500">
-                    Updated: {modifiedDate}
-                  </span>
-                )}
               </div>
             </div>
           </div>
+
+          {/* ── FULL ACCESS & READING OPTIONS PANEL ── */}
+          {type !== 'author' && activeIaId && (
+            <div className={`p-4 rounded-2xl border ${isCdlRestricted ? 'bg-gradient-to-br from-amber-950/40 via-[#021810] to-[#032316] border-amber-600/50 shadow-lg' : 'bg-gradient-to-br from-emerald-950/40 via-[#021810] to-[#032316] border-emerald-600/50 shadow-lg'} space-y-3.5`}>
+              <div className="flex items-start gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isCdlRestricted ? 'bg-amber-900/60 text-amber-300 border border-amber-700/50' : 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50'}`}>
+                  <BookOpen size={18} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    {isCdlRestricted ? 'Digital Lending Access Options' : 'Complete Full-Access Volume'}
+                    <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-black/40 text-emerald-300 border border-emerald-800">
+                      ID: {activeIaId}
+                    </span>
+                  </h4>
+                  <p className="text-xs text-emerald-300/90 mt-1 leading-relaxed">
+                    {isCdlRestricted ? (
+                      <>
+                        <strong>Why previews stop at page 7 in embedded viewers:</strong> Internet Archive applies a 7-page limit to embedded iframes for in-copyright books. Click <strong className="text-amber-300">"Borrow Full Book on Archive.org"</strong> below to activate your free 1-hour unlimited loan and read every page without jumping!
+                      </>
+                    ) : (
+                      'This edition is in the public domain and fully open access. You can read, flip, or search every page without limits.'
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                {directArchiveUrl && (
+                  <button
+                    onClick={() => window.open(directArchiveUrl, '_blank', 'noopener,noreferrer')}
+                    className="flex-1 min-w-[240px] px-4 py-2.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs font-bold shadow-lg flex items-center justify-center gap-2 transition transform hover:scale-[1.01] active:scale-[0.98]"
+                  >
+                    <ExternalLink size={14} />
+                    <span>Borrow Full Book on Archive.org (All {totalPages || ''} Pages)</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={onRead}
+                  className="px-4 py-2.5 bg-emerald-800/70 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold border border-emerald-600/60 shadow flex items-center justify-center gap-2 transition"
+                >
+                  <Eye size={14} />
+                  <span>Read Embedded Preview</span>
+                </button>
+
+                {onSearchInside && (
+                  <button
+                    onClick={() => onSearchInside({ ...originalBook, title, ia: [activeIaId] })}
+                    className="px-3.5 py-2.5 bg-[#021810] hover:bg-emerald-900/60 border border-emerald-700/60 text-emerald-300 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
+                  >
+                    <Search size={13} />
+                    <span>Search Inside Book</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Authors */}
           {authors.length > 0 && (
@@ -147,6 +224,58 @@ function NativeDetailModal({ nativeDetail, onClose, onRead, onOpenUrl, onFetchAu
           ) : (
             <div className="text-emerald-600/80 text-sm italic bg-emerald-950/20 p-4 rounded-xl border border-emerald-900/30">
               No description available from the Open Library API for this item.
+            </div>
+          )}
+
+          {/* ── EDITIONS EXPLORER ── */}
+          {editions.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-emerald-400 font-bold text-xs uppercase tracking-widest flex items-center justify-between">
+                <span>Editions of this Work ({editions.length})</span>
+                <span className="text-[10px] font-normal text-emerald-500">Live Open Library API</span>
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto pr-1 custom-scrollbar">
+                {editions.map((ed, idx) => {
+                  const edIaId = ed.ocaid || (Array.isArray(ed.ia) && ed.ia[0]);
+                  const edPages = ed.number_of_pages || null;
+                  const edYear = ed.publish_date || null;
+                  const edPublisher = Array.isArray(ed.publishers) ? ed.publishers.join(', ') : (ed.publishers || null);
+
+                  return (
+                    <div key={idx} className="p-3 bg-[#021810] rounded-xl border border-emerald-900/60 hover:border-emerald-600/50 transition flex flex-col justify-between gap-2">
+                      <div>
+                        <h4 className="text-xs font-bold text-white line-clamp-1">{ed.title || title}</h4>
+                        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-emerald-400/80 font-mono mt-0.5">
+                          {edYear && <span>{edYear}</span>}
+                          {edPages && <span>• {edPages} pages</span>}
+                          {edPublisher && <span className="truncate max-w-[120px]">• {edPublisher}</span>}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1 border-t border-emerald-900/40">
+                        {edIaId ? (
+                          <button
+                            onClick={() => window.open(`https://archive.org/details/${edIaId}`, '_blank', 'noopener,noreferrer')}
+                            className="flex-1 py-1 px-2 bg-amber-600/80 hover:bg-amber-500 text-white rounded text-[10px] font-bold flex items-center justify-center gap-1 transition"
+                            title="Open full book loan on Archive.org"
+                          >
+                            <ExternalLink size={10} /> Full Borrow
+                          </button>
+                        ) : null}
+
+                        {onReadEdition && (
+                          <button
+                            onClick={() => onReadEdition(ed)}
+                            className="py-1 px-2.5 bg-emerald-900/60 hover:bg-emerald-800 text-emerald-300 hover:text-white rounded text-[10px] font-bold transition flex items-center gap-1"
+                          >
+                            <Eye size={10} /> Preview
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -204,18 +333,32 @@ function NativeDetailModal({ nativeDetail, onClose, onRead, onOpenUrl, onFetchAu
         </div>
 
         {/* ── Footer ────────────────────────────────────── */}
-        <div className="p-4 bg-[#021810] border-t border-emerald-800/50 flex justify-end gap-3">
-          <button onClick={onClose} className="px-5 py-2 rounded-xl font-bold text-emerald-400 hover:text-white transition">
-            Close
-          </button>
-          {type !== 'author' && (
-            <button
-              onClick={onRead}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-xl font-bold shadow-lg transition flex items-center gap-2"
-            >
-              <BookOpen size={16} /> Read / Borrow Item
+        <div className="p-4 bg-[#021810] border-t border-emerald-800/50 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-xs text-emerald-400/80 font-mono">
+            {activeIaId ? `Archive.org ID: ${activeIaId}` : 'Digital Repository API'}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button onClick={onClose} className="px-4 py-2 rounded-xl font-bold text-emerald-400 hover:text-white transition text-xs">
+              Close
             </button>
-          )}
+            {type !== 'author' && directArchiveUrl && (
+              <button
+                onClick={() => window.open(directArchiveUrl, '_blank', 'noopener,noreferrer')}
+                className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-xl font-bold shadow-lg transition flex items-center gap-2 text-xs"
+              >
+                <ExternalLink size={14} /> Borrow Full Book (All Pages)
+              </button>
+            )}
+            {type !== 'author' && (
+              <button
+                onClick={onRead}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-bold shadow-lg transition flex items-center gap-2 text-xs"
+              >
+                <BookOpen size={14} /> Read Embedded Preview
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -316,13 +459,24 @@ function IntegratedViewerModal({ viewerData, onClose }) {
 
         {/* ── Action Controls ── */}
         <div className="flex items-center gap-2 shrink-0">
+          {(url.includes('archive.org') || isBorrowable || directUrl?.includes('archive.org')) && (
+            <button
+              onClick={openDirect}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-lg text-xs font-bold shadow-md transition-all whitespace-nowrap animate-pulse hover:animate-none"
+              title="Borrow on Archive.org to unlock all pages beyond page 7"
+            >
+              <ExternalLink size={13} />
+              <span>Borrow Full Book (All Pages)</span>
+            </button>
+          )}
+
           <button
             onClick={openDirect}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md transition-all whitespace-nowrap hover:scale-105 active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700/60 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold shadow-sm transition-all whitespace-nowrap"
             title="Open direct book reader in a new tab"
           >
             <ExternalLink size={13} />
-            <span className="hidden md:inline">Open in New Tab</span>
+            <span className="hidden md:inline">Open in Tab</span>
           </button>
 
           <button
@@ -352,6 +506,24 @@ function IntegratedViewerModal({ viewerData, onClose }) {
           </button>
         </div>
       </div>
+
+      {/* ── Page 7 Limit Notice Banner for Archive.org CDL items ── */}
+      {(url.includes('archive.org') || isBorrowable || directUrl?.includes('archive.org')) && (
+        <div className="bg-gradient-to-r from-amber-950 via-[#032316] to-[#021810] border-b border-amber-600/40 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-200 z-10 shadow">
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertTriangle size={15} className="text-amber-400 shrink-0" />
+            <span className="truncate sm:overflow-visible sm:whitespace-normal">
+              <strong>Need to read past Page 7?</strong> Internet Archive enforces a 7-page guest preview inside embedded frames. To unlock all pages without jumping, click to activate your free 1-hour loan:
+            </span>
+          </div>
+          <button
+            onClick={openDirect}
+            className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-lg text-xs flex items-center gap-1.5 transition shadow shrink-0 whitespace-nowrap"
+          >
+            <ExternalLink size={12} /> Unlock All Pages on Archive.org
+          </button>
+        </div>
+      )}
 
       {/* ── Frame Area ── */}
       <div className="flex-1 w-full h-full relative bg-[#fdfaf4] overflow-hidden flex flex-col">
@@ -455,7 +627,50 @@ export default function OpenLibraryExplorer() {
       const res = await fetch(`https://openlibrary.org${path}.json`);
       if (res.ok) {
         const data = await res.json();
-        setNativeDetail({ type, data, originalKey: key, originalBook });
+        let editions = [];
+        let iaMetadata = null;
+        let activeIaId = originalBook?.ia?.[0] || data.ocaid || (Array.isArray(data.ia) ? data.ia[0] : data.ia) || null;
+
+        // If it's a work, fetch editions to find full-access / public domain copies & total page counts
+        if (type === 'work') {
+          try {
+            const edRes = await fetch(`https://openlibrary.org${path}/editions.json?limit=15`);
+            if (edRes.ok) {
+              const edData = await edRes.json();
+              editions = edData.entries || [];
+              if (!activeIaId) {
+                const edWithIa = editions.find(e => e.ocaid || (Array.isArray(e.ia) && e.ia.length > 0));
+                if (edWithIa) {
+                  activeIaId = edWithIa.ocaid || edWithIa.ia[0];
+                }
+              }
+            }
+          } catch (e) {
+            console.warn("Could not fetch editions:", e);
+          }
+        }
+
+        // Fetch Internet Archive metadata if we have an IA identifier (to get true page count, loan status, files)
+        if (activeIaId) {
+          try {
+            const iaRes = await fetch(`https://archive.org/metadata/${activeIaId}`);
+            if (iaRes.ok) {
+              iaMetadata = await iaRes.json();
+            }
+          } catch (e) {
+            console.warn("Could not fetch IA metadata:", e);
+          }
+        }
+
+        setNativeDetail({
+          type,
+          data,
+          originalKey: key,
+          originalBook,
+          editions,
+          iaId: activeIaId,
+          iaMetadata
+        });
       } else {
         alert("Could not load details from Open Library API.");
       }
@@ -1119,6 +1334,14 @@ export default function OpenLibraryExplorer() {
         onFetchAuthor={(authorKey) => {
           setNativeDetail(null);
           fetchNativeDetail(authorKey, 'author');
+        }}
+        onSearchInside={(b) => {
+          setNativeDetail(null);
+          setSearchInsideBook(b);
+        }}
+        onReadEdition={(ed) => {
+          setNativeDetail(null);
+          handleReadOnline(ed, true);
         }}
       />
 
