@@ -479,3 +479,46 @@ CREATE TABLE IF NOT EXISTS announcements (
     valid_until VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 31. Google Books API Integration & Recommended Academic Curricula
+CREATE TABLE IF NOT EXISTS google_books (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    volume_id VARCHAR(100) UNIQUE NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    subtitle VARCHAR(255) NULL,
+    authors TEXT NULL, -- JSON array of author names
+    publisher VARCHAR(255) NULL,
+    published_date VARCHAR(50) NULL,
+    description LONGTEXT NULL,
+    isbn_10 VARCHAR(20) NULL,
+    isbn_13 VARCHAR(20) NULL,
+    page_count INT NULL,
+    categories TEXT NULL, -- JSON array of category strings
+    thumbnail_url TEXT NULL,
+    preview_link TEXT NULL,
+    info_link TEXT NULL,
+    canonical_volume_link TEXT NULL,
+    viewability VARCHAR(50) DEFAULT 'PARTIAL', -- NO_PAGES, PARTIAL, ALL_PAGES, FULL
+    embeddable BOOLEAN DEFAULT TRUE,
+    is_ebook BOOLEAN DEFAULT FALSE,
+    epub_available BOOLEAN DEFAULT FALSE,
+    pdf_available BOOLEAN DEFAULT FALSE,
+    web_reader_link TEXT NULL,
+    is_recommended BOOLEAN DEFAULT FALSE,
+    recommendation_category VARCHAR(100) NULL, -- Computer Science, Cooperative Economics, Agricultural Management
+    recommendation_notes TEXT NULL,
+    saved_by VARCHAR(100) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_gb_volume (volume_id),
+    INDEX idx_gb_isbn13 (isbn_13),
+    INDEX idx_gb_recommended (is_recommended)
+);
+
+-- Sample Recommended Curriculum Seeds for Google Books
+INSERT INTO google_books (volume_id, title, subtitle, authors, publisher, published_date, description, isbn_10, isbn_13, page_count, categories, thumbnail_url, preview_link, viewability, embeddable, is_recommended, recommendation_category, recommendation_notes)
+VALUES
+('Py8u3Obs4f4C', 'Mountain View', 'Images of America', '["Nicholas Perry"]', 'Arcadia Publishing', '2005', 'Historic overview and development of technological infrastructures and institutions.', '0738531367', '9780738531366', 128, '["History / United States"]', 'https://books.google.com/books/content?id=Py8u3Obs4f4C&printsec=frontcover&img=1&zoom=1&source=gbs_api', 'https://books.google.com/books?id=Py8u3Obs4f4C&printsec=frontcover', 'PARTIAL', 1, 1, 'Computer Science & Technology History', 'Official Google Embedded Viewer Reference Volume'),
+('zyTCAlFPjgYC', 'The Google Story', 'Inside the Hottest Business, Media, and Technology Success of Our Time', '["David A. Vise", "Mark Malseed"]', 'Random House Digital, Inc.', '2005-11-15', 'Essential reading on digital information indexing, search algorithms, and modern knowledge infrastructure.', '055380457X', '9780553804577', 207, '["Business & Economics / Entrepreneurship"]', 'https://books.google.com/books/content?id=zyTCAlFPjgYC&printsec=frontcover&img=1&zoom=1&source=gbs_api', 'https://books.google.com/books?id=zyTCAlFPjgYC&printsec=frontcover', 'PARTIAL', 1, 1, 'Information Systems & Management', 'Recommended for technology entrepreneurship and digital library science')
+ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP;
+

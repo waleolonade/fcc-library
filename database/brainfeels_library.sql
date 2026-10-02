@@ -439,3 +439,39 @@ INSERT OR REPLACE INTO announcements (id, title, content, category, priority, au
 INSERT OR REPLACE INTO announcements (id, title, content, category, priority, author, date, valid_until) VALUES ('ANN-02', 'New E-Book Subscriptions Added: ScienceDirect & IEEE Computer Society', 'The Library Directorate has acquired institutional multi-user licenses for 14,000+ new peer-reviewed computer engineering and agricultural economics volumes.', 'Resource Update', 'Resource Update', 'Library Directorate', '12 Sept 2026', '2027-09-18');
 INSERT OR REPLACE INTO announcements (id, title, content, category, priority, author, date, valid_until) VALUES ('ANN-03', 'Student PIN Verification & PVC ID Card Revalidation Notice', 'Students experiencing login issues should visit their faculty librarian for immediate PIN reset. Please note library services require NO direct monetary payments.', 'Administrative', 'Administrative', 'Library Directorate', '08 Sept 2026', '2027-09-18');
 
+-- Table: google_books (Google Books API Recommended Curricula)
+CREATE TABLE IF NOT EXISTS google_books (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    volume_id VARCHAR(100) UNIQUE NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    subtitle VARCHAR(255) NULL,
+    authors TEXT NULL,
+    publisher VARCHAR(255) NULL,
+    published_date VARCHAR(50) NULL,
+    description TEXT NULL,
+    isbn_10 VARCHAR(20) NULL,
+    isbn_13 VARCHAR(20) NULL,
+    page_count INT NULL,
+    categories TEXT NULL,
+    thumbnail_url TEXT NULL,
+    preview_link TEXT NULL,
+    info_link TEXT NULL,
+    canonical_volume_link TEXT NULL,
+    viewability VARCHAR(50) DEFAULT 'PARTIAL',
+    embeddable BOOLEAN DEFAULT 1,
+    is_ebook BOOLEAN DEFAULT 0,
+    epub_available BOOLEAN DEFAULT 0,
+    pdf_available BOOLEAN DEFAULT 0,
+    web_reader_link TEXT NULL,
+    is_recommended BOOLEAN DEFAULT 0,
+    recommendation_category VARCHAR(100) NULL,
+    recommendation_notes TEXT NULL,
+    saved_by VARCHAR(100) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT OR REPLACE INTO google_books (id, volume_id, title, subtitle, authors, publisher, published_date, description, isbn_10, isbn_13, page_count, categories, thumbnail_url, preview_link, viewability, embeddable, is_recommended, recommendation_category, recommendation_notes) VALUES
+(1, 'Py8u3Obs4f4C', 'Mountain View', 'Images of America', '["Nicholas Perry"]', 'Arcadia Publishing', '2005', 'Historic overview and development of technological infrastructures and institutions.', '0738531367', '9780738531366', 128, '["History / United States"]', 'https://books.google.com/books/content?id=Py8u3Obs4f4C&printsec=frontcover&img=1&zoom=1&source=gbs_api', 'https://books.google.com/books?id=Py8u3Obs4f4C&printsec=frontcover', 'PARTIAL', 1, 1, 'Computer Science & Technology History', 'Official Google Embedded Viewer Reference Volume'),
+(2, 'zyTCAlFPjgYC', 'The Google Story', 'Inside the Hottest Business, Media, and Technology Success of Our Time', '["David A. Vise", "Mark Malseed"]', 'Random House Digital, Inc.', '2005-11-15', 'Essential reading on digital information indexing, search algorithms, and modern knowledge infrastructure.', '055380457X', '9780553804577', 207, '["Business & Economics / Entrepreneurship"]', 'https://books.google.com/books/content?id=zyTCAlFPjgYC&printsec=frontcover&img=1&zoom=1&source=gbs_api', 'https://books.google.com/books?id=zyTCAlFPjgYC&printsec=frontcover', 'PARTIAL', 1, 1, 'Information Systems & Management', 'Recommended for technology entrepreneurship and digital library science');
+

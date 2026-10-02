@@ -39,6 +39,7 @@ import GutendexExplorer from './GutendexExplorer';
 import OpenLibraryExplorer from './OpenLibraryExplorer';
 import TroveExplorer from './TroveExplorer';
 import InternetArchiveExplorer from './InternetArchiveExplorer';
+import GoogleBooksExplorer from './GoogleBooksExplorer';
 
 export default function StudentPortal({
   user,
@@ -130,7 +131,9 @@ export default function StudentPortal({
           'references': 'research_references',
           'citations': 'research_references',
           'ai': 'ai_assistant',
-          'assistant': 'ai_assistant'
+          'assistant': 'ai_assistant',
+          'google_books': 'library_google_books',
+          'google': 'library_google_books'
         };
 
         const resolved = routeAliasMap[sub] || sub;
@@ -141,7 +144,7 @@ export default function StudentPortal({
           'research_hnd_projects', 'research_papers', 'research_journals', 'research_topics', 'research_references',
           'ai_assistant', 'notifications', 'profile',
           'kiosk', 'barcode_studio', 'clearance', 'rooms', 'ill', 'communication', 'helpdesk', 'partner_libs',
-          'library_gutendex', 'library_openlibrary', 'library_archive'
+          'library_google_books', 'library_gutendex', 'library_openlibrary', 'library_archive'
         ];
 
         if (validTabs.includes(resolved)) {
@@ -227,6 +230,7 @@ export default function StudentPortal({
     communication: { label: 'Institutional Dispatch', category: 'FACILITIES', icon: MessageSquare },
     helpdesk: { label: 'Ask a Librarian', category: 'FACILITIES', icon: MessageSquare },
     partner_libs: { label: 'Linked Libraries', category: 'FACILITIES', icon: Building2 },
+    library_google_books: { label: 'Google Books (Recommended)', category: 'LIBRARY', icon: Sparkles },
     library_gutendex: { label: 'Project Gutenberg eBooks', category: 'LIBRARY', icon: BookOpen },
     library_openlibrary: { label: 'Open Library Catalog', category: 'LIBRARY', icon: Globe },
     library_archive: { label: 'Internet Archive Books', category: 'LIBRARY', icon: Library },
@@ -439,6 +443,7 @@ export default function StudentPortal({
                         { id: 'library_ebooks', label: 'eBooks', icon: BookOpen, prefix: '├──', badge: digitalEbooks.length },
                         { id: 'library_journals', label: 'Journals', icon: Layers, prefix: '├──' },
                         { id: 'library_digital', label: 'Digital Resources', icon: GraduationCap, prefix: '├──' },
+                        { id: 'library_google_books', label: 'Google Books', icon: Sparkles, prefix: '├──', badgeText: 'RECOMMENDED' },
                         { id: 'library_gutendex', label: 'Project Gutenberg', icon: Globe, prefix: '├──' },
                         { id: 'library_openlibrary', label: 'Open Library', icon: Globe, prefix: '├──' },
                         { id: 'library_archive', label: 'Internet Archive', icon: Library, prefix: '└──' },
@@ -457,9 +462,14 @@ export default function StudentPortal({
                           >
                             <div className="flex items-center gap-1.5 truncate">
                               <span className="font-mono text-emerald-600 text-[10px] select-none">{sub.prefix}</span>
-                              <SubIcon size={13} className={isSubActive ? 'text-white' : 'text-emerald-400/80'} />
+                              <SubIcon size={13} className={isSubActive ? 'text-white' : sub.badgeText ? 'text-amber-400' : 'text-emerald-400/80'} />
                               <span className="truncate">{sub.label}</span>
                             </div>
+                            {sub.badgeText && (
+                              <span className="text-[8px] px-1.5 py-0.5 rounded-full font-black bg-gradient-to-r from-amber-400 to-emerald-400 text-slate-950 uppercase tracking-wider shadow">
+                                {sub.badgeText}
+                              </span>
+                            )}
                             {sub.badge !== undefined && (
                               <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
                                 isSubActive ? 'bg-emerald-800 text-white' : 'bg-emerald-950 text-emerald-400'
@@ -858,6 +868,10 @@ export default function StudentPortal({
                 setActiveBookForReader(b);
               }}
             />
+          ) : activeTab === 'library_google_books' ? (
+            <div className="h-full">
+              <GoogleBooksExplorer />
+            </div>
           ) : activeTab === 'library_gutendex' ? (
             <div className="h-full">
               <GutendexExplorer />

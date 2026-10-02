@@ -13,6 +13,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\TroveController;
 use App\Http\Controllers\GutenbergController;
 use App\Http\Controllers\InternetArchiveController;
+use App\Http\Controllers\GoogleBooksController;
 
 // 0. Trove API Proxy
 Route::get('/trove/search', [TroveController::class, 'search']);
@@ -31,6 +32,22 @@ Route::prefix('internet-archive')->group(function () {
 Route::prefix('external/internet-archive')->group(function () {
     Route::get('/search',                [InternetArchiveController::class, 'search']);
     Route::get('/metadata/{identifier}', [InternetArchiveController::class, 'metadata']);
+});
+
+// 0d. Google Books Official API & Embedded Viewer Integration (Recommended)
+Route::prefix('google-books')->group(function () {
+    Route::get('/search',                [GoogleBooksController::class, 'search']);
+    Route::get('/volume/{volumeId}',     [GoogleBooksController::class, 'volume']);
+    Route::get('/recommendations',       [GoogleBooksController::class, 'recommendations']);
+    Route::get('/saved',                 [GoogleBooksController::class, 'savedBooks']);
+    Route::post('/save',                 [GoogleBooksController::class, 'saveBook']);
+});
+Route::prefix('external/google-books')->group(function () {
+    Route::get('/search',                [GoogleBooksController::class, 'search']);
+    Route::get('/volume/{volumeId}',     [GoogleBooksController::class, 'volume']);
+    Route::get('/recommendations',       [GoogleBooksController::class, 'recommendations']);
+    Route::get('/saved',                 [GoogleBooksController::class, 'savedBooks']);
+    Route::post('/save',                 [GoogleBooksController::class, 'saveBook']);
 });
 
 // 1. Telemetry & Health Check

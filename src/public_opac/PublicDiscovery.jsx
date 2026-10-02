@@ -18,6 +18,7 @@ import OpenLibraryExplorer from '../student/OpenLibraryExplorer';
 import GutendexExplorer from '../student/GutendexExplorer';
 import TroveExplorer from '../student/TroveExplorer';
 import InternetArchiveExplorer from '../student/InternetArchiveExplorer';
+import GoogleBooksExplorer from '../student/GoogleBooksExplorer';
 
 export default function PublicDiscovery({
   books = [],
@@ -41,6 +42,7 @@ export default function PublicDiscovery({
   const [liveOpenLibraryResults, setLiveOpenLibraryResults] = useState([]);
   const [liveGutenbergResults, setLiveGutenbergResults] = useState([]);
   const [liveInternetArchiveResults, setLiveInternetArchiveResults] = useState([]);
+  const [liveGoogleBooksResults, setLiveGoogleBooksResults] = useState([]);
   const [hasQueriedLiveApi, setHasQueriedLiveApi] = useState(false);
   const [activeLiveReader, setActiveLiveReader] = useState(null); // { url, directUrl, title, source }
   const [savedBooks, setSavedBooks] = useState(() => {
@@ -240,10 +242,17 @@ export default function PublicDiscovery({
         .then(data => (data.results || []).slice(0, 6))
         .catch(() => []);
 
-      const [olDocs, gutResults, iaResults] = await Promise.all([olPromise, gutPromise, iaPromise]);
+      // 4. Fetch from Google Books API via backend proxy (limit 6)
+      const gbPromise = fetch(`/api/google-books/search?q=${encodeURIComponent(term)}&maxResults=6`)
+        .then(res => res.ok ? res.json() : { books: [] })
+        .then(data => (data.books || []).slice(0, 6))
+        .catch(() => []);
+
+      const [olDocs, gutResults, iaResults, gbResults] = await Promise.all([olPromise, gutPromise, iaPromise, gbPromise]);
       setLiveOpenLibraryResults(olDocs);
       setLiveGutenbergResults(gutResults);
       setLiveInternetArchiveResults(iaResults);
+      setLiveGoogleBooksResults(gbResults);
     } catch (err) {
       console.error('Error fetching live federated resources:', err);
     } finally {
@@ -254,7 +263,9 @@ export default function PublicDiscovery({
   const handlePerformSearch = (e) => {
     if (e) e.preventDefault();
     sounds.playClick();
-    if (searchTarget === 'openlibrary') {
+    if (searchTarget === 'google_books') {
+      setActiveTab('google_books');
+    } else if (searchTarget === 'openlibrary') {
       setActiveTab('openlibrary');
     } else if (searchTarget === 'gutenberg') {
       setActiveTab('gutenberg');
@@ -422,6 +433,7 @@ export default function PublicDiscovery({
             {[
               { id: 'home', label: 'Discovery Home', icon: Globe },
               { id: 'catalog', label: `College Stacks (${books.length})`, icon: BookOpen },
+              { id: 'google_books', label: 'Google Books (Recommended)', icon: Sparkles, isRecommended: true },
               { id: 'openlibrary', label: 'Open Library (Live API)', icon: Globe },
               { id: 'gutenberg', label: 'Project Gutenberg (E-Books)', icon: BookMarked },
               { id: 'archive', label: 'Internet Archive (Full PDFs)', icon: Library },
@@ -441,11 +453,15 @@ export default function PublicDiscovery({
                   }}
                   className={`px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 ${
                     activeTab === item.id
-                      ? 'bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold shadow'
-                      : 'text-emerald-400/80 hover:text-white hover:bg-emerald-950/60'
+                      ? item.isRecommended
+                        ? 'bg-gradient-to-r from-amber-500/20 to-emerald-500/20 text-amber-300 border border-amber-400 font-bold shadow'
+                        : 'bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold shadow'
+                      : item.isRecommended
+                        ? 'text-amber-400 hover:text-amber-200 hover:bg-amber-950/40 border border-amber-500/30'
+                        : 'text-emerald-400/80 hover:text-white hover:bg-emerald-950/60'
                   }`}
                 >
-                  <Icon size={14} />
+                  <Icon size={14} className={item.isRecommended ? 'text-amber-400' : ''} />
                   <span>{item.label}</span>
                 </button>
               );
@@ -636,6 +652,7 @@ export default function PublicDiscovery({
                 <div className="flex flex-wrap items-center gap-1.5 pb-1">
                   {[
                     { id: 'all', label: 'All Stacks & Live APIs', icon: Sparkles, badge: 'Federated' },
+                    { id: 'google_books', label: 'Google Books', icon: Sparkles, badge: 'Recommended', isRecommended: true },
                     { id: 'stacks', label: `College Stacks (${books.length})`, icon: BookOpen, badge: 'Campus' },
                     { id: 'openlibrary', label: 'Open Library (Live API)', icon: Globe, badge: '30M+ Books' },
                     { id: 'gutenberg', label: 'Project Gutenberg', icon: BookMarked, badge: '70k+ E-Books' },
@@ -651,7 +668,8 @@ export default function PublicDiscovery({
                         onClick={() => {
                           setSearchTarget(src.id);
                           sounds.playClick();
-                          if (src.id === 'openlibrary') setActiveTab('openlibrary');
+                          if (src.id === 'google_books') setActiveTab('google_books');
+                          else if (src.id === 'openlibrary') setActiveTab('openlibrary');
                           else if (src.id === 'gutenberg') setActiveTab('gutenberg');
                           else if (src.id === 'archive') setActiveTab('archive');
                           else if (src.id === 'trove') setActiveTab('trove');
@@ -663,14 +681,22 @@ export default function PublicDiscovery({
                         }}
                         className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
                           isSelected
-                            ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-950 ring-1 ring-emerald-400'
-                            : 'bg-[#021810] text-emerald-300/80 border border-emerald-800/80 hover:border-emerald-600 hover:text-white'
+                            ? src.isRecommended
+                              ? 'bg-gradient-to-r from-amber-500 to-emerald-500 text-slate-950 font-black shadow-lg shadow-amber-950 ring-1 ring-amber-300'
+                              : 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-950 ring-1 ring-emerald-400'
+                            : src.isRecommended
+                              ? 'bg-[#021810] text-amber-300 border border-amber-500/60 hover:border-amber-400'
+                              : 'bg-[#021810] text-emerald-300/80 border border-emerald-800/80 hover:border-emerald-600 hover:text-white'
                         }`}
                       >
-                        <Icon size={13} className={isSelected ? 'text-white' : 'text-emerald-400'} />
+                        <Icon size={13} className={isSelected && !src.isRecommended ? 'text-white' : isSelected && src.isRecommended ? 'text-slate-950' : src.isRecommended ? 'text-amber-400' : 'text-emerald-400'} />
                         <span>{src.label}</span>
                         <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono ${
-                          isSelected ? 'bg-black/30 text-emerald-100' : 'bg-emerald-950 text-emerald-400 border border-emerald-900'
+                          isSelected 
+                            ? 'bg-black/30 text-emerald-100' 
+                            : src.isRecommended
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                              : 'bg-emerald-950 text-emerald-400 border border-emerald-900'
                         }`}>
                           {src.badge}
                         </span>
@@ -1029,6 +1055,82 @@ export default function PublicDiscovery({
                   </div>
                 ) : (
                   <div className="space-y-6">
+                    {/* Google Books Recommended Live Grid */}
+                    {liveGoogleBooksResults.length > 0 && (
+                      <div className="space-y-3 pb-2 border-b border-amber-500/30">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                            <Sparkles size={14} className="text-amber-400 animate-pulse" />
+                            <span>Google Books Curated Previews (FCC Recommended)</span>
+                          </span>
+                          <button
+                            onClick={() => setActiveTab('google_books')}
+                            className="text-amber-400 hover:text-white underline font-semibold flex items-center gap-1"
+                          >
+                            Explore in Google Books Viewer <ArrowRight size={12} />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {liveGoogleBooksResults.map((item, idx) => {
+                            const authors = Array.isArray(item.authors) ? item.authors.join(', ') : item.authors;
+                            return (
+                              <div key={idx} className="p-3.5 rounded-2xl bg-gradient-to-b from-[#032317] to-[#021810] border border-amber-500/40 hover:border-amber-400 transition flex gap-3 group shadow-lg">
+                                <div className="w-16 h-22 bg-[#021810] rounded-lg shrink-0 overflow-hidden border border-amber-900/60 flex items-center justify-center relative">
+                                  {item.thumbnail_url ? (
+                                    <img src={item.thumbnail_url} alt={item.title} className="w-full h-full object-cover" loading="lazy" />
+                                  ) : (
+                                    <BookOpen size={20} className="text-amber-600" />
+                                  )}
+                                  <span className="absolute top-1 left-1 px-1 py-0.2 rounded bg-amber-500 text-slate-950 font-black text-[7px] uppercase">
+                                    REC
+                                  </span>
+                                </div>
+                                <div className="flex-1 min-w-0 flex flex-col justify-between">
+                                  <div>
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                      <span className="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 font-mono text-[9px] border border-amber-800">
+                                        Google Books
+                                      </span>
+                                      {item.published_date && (
+                                        <span className="text-[10px] text-emerald-400 font-mono">
+                                          {item.published_date.slice(0, 4)}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <h4 className="text-xs font-bold text-white line-clamp-2 leading-snug group-hover:text-amber-200">
+                                      {item.title}
+                                    </h4>
+                                    <p className="text-[11px] text-emerald-300/80 truncate mt-0.5">
+                                      {authors || 'Academic Author'}
+                                    </p>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 pt-2">
+                                    <button
+                                      onClick={() => setActiveTab('google_books')}
+                                      className="px-2.5 py-1 bg-gradient-to-r from-amber-500 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 text-slate-950 rounded-lg text-[10px] font-black shadow flex items-center gap-1 transition"
+                                    >
+                                      <BookOpen size={11} /> Read Preview
+                                    </button>
+                                    {item.preview_link && (
+                                      <button
+                                        onClick={() => window.open(item.preview_link, '_blank')}
+                                        className="p-1 rounded-lg text-emerald-400 hover:text-white hover:bg-emerald-900/60"
+                                        title="Open on Google Books Website"
+                                      >
+                                        <ExternalLink size={12} />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Open Library Live Grid */}
                     {liveOpenLibraryResults.length > 0 && (
                       <div className="space-y-3">
@@ -1290,9 +1392,9 @@ export default function PublicDiscovery({
                       </div>
                     )}
 
-                    {liveOpenLibraryResults.length === 0 && liveGutenbergResults.length === 0 && liveInternetArchiveResults.length === 0 && (
+                    {liveOpenLibraryResults.length === 0 && liveGutenbergResults.length === 0 && liveInternetArchiveResults.length === 0 && liveGoogleBooksResults.length === 0 && (
                       <div className="p-4 text-center text-xs text-emerald-400/80">
-                        No live external matches for "{searchQuery}". Try broader keywords or click Open Library or Internet Archive to search millions of records.
+                        No live external matches for "{searchQuery}". Try broader keywords or click Google Books, Open Library, or Internet Archive to search millions of records.
                       </div>
                     )}
                   </div>
@@ -1805,6 +1907,16 @@ export default function PublicDiscovery({
               </div>
             </div>
           </>
+        )}
+
+        {/* VIEW: GOOGLE BOOKS (Recommended Institutional Curriculum & Embedded Viewer) */}
+        {activeTab === 'google_books' && (
+          <div className="h-full mt-4 bg-[#01140d]/80 p-4 sm:p-6 rounded-3xl border border-amber-500/40 shadow-2xl relative overflow-hidden animate-fadeIn">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10">
+               <GoogleBooksExplorer />
+            </div>
+          </div>
         )}
 
         {/* VIEW: OPEN LIBRARY (Live API - 30M+ Items) */}
