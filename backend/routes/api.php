@@ -12,6 +12,7 @@ use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\TroveController;
 use App\Http\Controllers\GutenbergController;
+use App\Http\Controllers\InternetArchiveController;
 
 // 0. Trove API Proxy
 Route::get('/trove/search', [TroveController::class, 'search']);
@@ -20,6 +21,16 @@ Route::get('/trove/search', [TroveController::class, 'search']);
 Route::prefix('gutenberg')->group(function () {
     Route::get('/books',      [GutenbergController::class, 'books']);
     Route::get('/books/{id}', [GutenbergController::class, 'book'])->where('id', '[0-9]+');
+});
+
+// 0c. Internet Archive Official API Integration
+Route::prefix('internet-archive')->group(function () {
+    Route::get('/search',                [InternetArchiveController::class, 'search']);
+    Route::get('/metadata/{identifier}', [InternetArchiveController::class, 'metadata']);
+});
+Route::prefix('external/internet-archive')->group(function () {
+    Route::get('/search',                [InternetArchiveController::class, 'search']);
+    Route::get('/metadata/{identifier}', [InternetArchiveController::class, 'metadata']);
 });
 
 // 1. Telemetry & Health Check

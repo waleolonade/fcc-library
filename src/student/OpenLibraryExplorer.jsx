@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, BookOpen, User, Calendar, Image as ImageIcon, ChevronLeft, ChevronRight, Loader2, AlertTriangle, ExternalLink, X, FileSearch, List, FileText, RotateCw, Copy, Check, Eye } from 'lucide-react';
+import { Search, BookOpen, User, Calendar, Image as ImageIcon, ChevronLeft, ChevronRight, Loader2, AlertTriangle, ExternalLink, X, FileSearch, List, FileText, RotateCw, Copy, Check, Eye, Library, Download } from 'lucide-react';
 
 // ─── Safe string extractor ─────────────────────────────────────────────────────
 // Open Library API returns inconsistent shapes: sometimes plain strings,
@@ -130,48 +130,42 @@ function NativeDetailModal({ nativeDetail, onClose, onRead, onOpenUrl, onFetchAu
 
           {/* ── FULL ACCESS & READING OPTIONS PANEL ── */}
           {type !== 'author' && activeIaId && (
-            <div className={`p-4 rounded-2xl border ${isCdlRestricted ? 'bg-gradient-to-br from-amber-950/40 via-[#021810] to-[#032316] border-amber-600/50 shadow-lg' : 'bg-gradient-to-br from-emerald-950/40 via-[#021810] to-[#032316] border-emerald-600/50 shadow-lg'} space-y-3.5`}>
+            <div className="p-4 rounded-2xl border bg-gradient-to-br from-emerald-950/40 via-[#021810] to-[#032316] border-emerald-600/50 shadow-lg space-y-3.5">
               <div className="flex items-start gap-3">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isCdlRestricted ? 'bg-amber-900/60 text-amber-300 border border-amber-700/50' : 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50'}`}>
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-emerald-900/60 text-emerald-300 border border-emerald-700/50">
                   <BookOpen size={18} />
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    {isCdlRestricted ? 'Digital Lending Access Options' : 'Complete Full-Access Volume'}
+                    Complete Digitized Volume
                     <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-black/40 text-emerald-300 border border-emerald-800">
                       ID: {activeIaId}
                     </span>
                   </h4>
                   <p className="text-xs text-emerald-300/90 mt-1 leading-relaxed">
-                    {isCdlRestricted ? (
-                      <>
-                        <strong>Why previews stop at page 7 in embedded viewers:</strong> Internet Archive applies a 7-page limit to embedded iframes for in-copyright books. Click <strong className="text-amber-300">"Borrow Full Book on Archive.org"</strong> below to activate your free 1-hour unlimited loan and read every page without jumping!
-                      </>
-                    ) : (
-                      'This edition is in the public domain and fully open access. You can read, flip, or search every page without limits.'
-                    )}
+                    Directly connected to Internet Archive and Open Library APIs. Stream the full PDF, view raw catalog metadata, or launch our integrated reader with complete access.
                   </p>
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                <button
+                  onClick={onRead}
+                  className="flex-1 min-w-[200px] px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white rounded-xl text-xs font-bold shadow-lg flex items-center justify-center gap-2 transition transform hover:scale-[1.01] active:scale-[0.98]"
+                >
+                  <Eye size={14} />
+                  <span>Read Online (All {totalPages || ''} Pages)</span>
+                </button>
+
                 {directArchiveUrl && (
                   <button
                     onClick={() => window.open(directArchiveUrl, '_blank', 'noopener,noreferrer')}
-                    className="flex-1 min-w-[240px] px-4 py-2.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs font-bold shadow-lg flex items-center justify-center gap-2 transition transform hover:scale-[1.01] active:scale-[0.98]"
+                    className="px-4 py-2.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/70 text-emerald-300 hover:text-white rounded-xl text-xs font-bold shadow flex items-center justify-center gap-2 transition"
                   >
                     <ExternalLink size={14} />
-                    <span>Borrow Full Book on Archive.org (All {totalPages || ''} Pages)</span>
+                    <span>Archive.org Source</span>
                   </button>
                 )}
-
-                <button
-                  onClick={onRead}
-                  className="px-4 py-2.5 bg-emerald-800/70 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold border border-emerald-600/60 shadow flex items-center justify-center gap-2 transition"
-                >
-                  <Eye size={14} />
-                  <span>Read Embedded Preview</span>
-                </button>
 
                 {onSearchInside && (
                   <button
@@ -345,9 +339,9 @@ function NativeDetailModal({ nativeDetail, onClose, onRead, onOpenUrl, onFetchAu
             {type !== 'author' && directArchiveUrl && (
               <button
                 onClick={() => window.open(directArchiveUrl, '_blank', 'noopener,noreferrer')}
-                className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-xl font-bold shadow-lg transition flex items-center gap-2 text-xs"
+                className="bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/60 px-4 py-2 rounded-xl font-bold shadow transition flex items-center gap-2 text-xs"
               >
-                <ExternalLink size={14} /> Borrow Full Book (All Pages)
+                <ExternalLink size={14} /> Archive Source
               </button>
             )}
             {type !== 'author' && (
@@ -355,7 +349,7 @@ function NativeDetailModal({ nativeDetail, onClose, onRead, onOpenUrl, onFetchAu
                 onClick={onRead}
                 className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-bold shadow-lg transition flex items-center gap-2 text-xs"
               >
-                <BookOpen size={14} /> Read Embedded Preview
+                <BookOpen size={14} /> Read Online
               </button>
             )}
           </div>
@@ -377,12 +371,128 @@ function IntegratedViewerModal({ viewerData, onClose }) {
   const [stalledNotice, setStalledNotice] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Federated Cross-API States
+  const [currentUrl, setCurrentUrl] = useState(viewerData?.url || '');
+  const [activeProvider, setActiveProvider] = useState(viewerData?.readerType === 'pdf' ? 'pdf' : 'archive'); // 'pdf' | 'archive' | 'gutenberg' | 'txt' | 'edition'
+  const [gutenbergMatch, setGutenbergMatch] = useState(null);
+  const [searchingGutenberg, setSearchingGutenberg] = useState(false);
+  const [altEditions, setAltEditions] = useState([]);
+  const [iaData, setIaData] = useState(null);
+  const [iaPdf, setIaPdf] = useState(null);
+  const [iaTxt, setIaTxt] = useState(null);
+
   useEffect(() => {
     if (!viewerData) return;
+    const initialUrl = viewerData.url || '';
+    setCurrentUrl(initialUrl);
+    setActiveProvider(viewerData.readerType === 'pdf' ? 'pdf' : 'archive');
     setLoading(true);
     setStalledNotice(false);
+    setGutenbergMatch(null);
+    setAltEditions([]);
+    setIaData(null);
+    setIaPdf(null);
+    setIaTxt(null);
 
-    // If viewer is loading or if third-party cookies block the loan manifest, show guidance after 7 seconds
+    // 1. Resolve Internet Archive API for complete unrestricted files
+    const targetIaId = viewerData.iaId || (viewerData.url?.match(/archive\.org\/(?:details|embed)\/([^\/?#]+)/)?.[1]);
+    if (targetIaId) {
+      fetch(`/api/internet-archive/metadata/${targetIaId}`)
+        .then(r => r.json())
+        .then(res => {
+          if (res.success && res.data) {
+            setIaData(res.data);
+            if (res.data.files?.pdf?.url) {
+              setIaPdf(res.data.files.pdf);
+              // If book was opened in PDF mode or has full PDF stream, prioritize direct PDF!
+              if (viewerData.readerType === 'pdf' || res.data.can_read_full || !viewerData.url?.includes('/details/')) {
+                setCurrentUrl(res.data.files.pdf.url);
+                setActiveProvider('pdf');
+                setLoading(false);
+              }
+            }
+            if (res.data.files?.txt) {
+              setIaTxt(res.data.files.txt);
+            }
+          }
+        })
+        .catch(err => {
+          fetch(`https://archive.org/metadata/${targetIaId}`)
+            .then(r => r.json())
+            .then(raw => {
+              const files = raw.files || [];
+              const pdf = files.find(f => f.name?.toLowerCase().endsWith('.pdf') && !f.name.includes('_encrypted') && !f.name.includes('_lcp'));
+              if (pdf) {
+                const pdfUrl = `https://archive.org/download/${targetIaId}/${encodeURIComponent(pdf.name)}`;
+                const resolvedPdf = { name: pdf.name, url: pdfUrl, size: pdf.size };
+                setIaPdf(resolvedPdf);
+                if (viewerData.readerType === 'pdf') {
+                  setCurrentUrl(pdfUrl);
+                  setActiveProvider('pdf');
+                  setLoading(false);
+                }
+              }
+            })
+            .catch(() => {});
+        });
+    }
+
+    // 2. Query Gutendex for complete full-text public domain version
+    const rawTitle = viewerData.title || '';
+    const cleanTitle = rawTitle
+      .replace(/[\(\[\{].*?[\)\]\}]/g, '')
+      .replace(/[:\-–—].*$/, '')
+      .replace(/[^a-zA-Z0-9\s]/g, ' ')
+      .trim();
+
+    if (cleanTitle && cleanTitle.length > 2) {
+      setSearchingGutenberg(true);
+      fetch(`https://gutendex.com/books/?search=${encodeURIComponent(cleanTitle)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.results && data.results.length > 0) {
+            const match = data.results.find(b => {
+              const bTitle = b.title.toLowerCase();
+              const cTitle = cleanTitle.toLowerCase();
+              return bTitle.includes(cTitle) || cTitle.includes(bTitle);
+            }) || data.results[0];
+
+            if (match && match.formats) {
+              const htmlUrl = match.formats['text/html'] || match.formats['text/html; charset=utf-8'];
+              const textUrl = match.formats['text/plain; charset=utf-8'] || match.formats['text/plain'];
+              const readUrl = htmlUrl || textUrl;
+              if (readUrl) {
+                setGutenbergMatch({
+                  id: match.id,
+                  title: match.title,
+                  readUrl,
+                  authors: match.authors?.map(a => a.name).join(', ')
+                });
+              }
+            }
+          }
+        })
+        .catch(err => console.warn('Gutendex error:', err))
+        .finally(() => setSearchingGutenberg(false));
+    }
+
+    // 3. Check Open Library editions for public / unrestricted copies
+    const workKey = viewerData.originalBook?.key || (viewerData.openLibraryUrl ? viewerData.openLibraryUrl.replace('https://openlibrary.org', '') : null);
+    if (workKey && workKey.startsWith('/works/')) {
+      fetch(`https://openlibrary.org${workKey}/editions.json?limit=15`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.entries) {
+            const publicCopies = data.entries.filter(e => 
+              (e.ebook_access === 'public' || e.ebook_access === 'full') &&
+              (e.ocaid || (e.ia && e.ia.length > 0))
+            );
+            setAltEditions(publicCopies);
+          }
+        })
+        .catch(err => console.warn('OL editions error:', err));
+    }
+
     const timer = setTimeout(() => {
       setStalledNotice(true);
     }, 7000);
@@ -400,15 +510,17 @@ function IntegratedViewerModal({ viewerData, onClose }) {
 
   if (!viewerData) return null;
 
-  const url = viewerData.url || '';
+  const url = currentUrl || viewerData.url || '';
   const directUrl = viewerData.directUrl || viewerData.url;
   const title = viewerData.title || 'Integrated Reader';
   const author = viewerData.author || '';
-  const isBorrowable = viewerData.isBorrowable;
 
   const handleCopy = () => {
-    if (directUrl) {
-      navigator.clipboard.writeText(directUrl);
+    let copyTarget = directUrl;
+    if (activeProvider === 'pdf' && iaPdf?.url) copyTarget = iaPdf.url;
+    else if (activeProvider === 'gutenberg' && gutenbergMatch?.readUrl) copyTarget = gutenbergMatch.readUrl;
+    if (copyTarget) {
+      navigator.clipboard.writeText(copyTarget);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -421,11 +533,13 @@ function IntegratedViewerModal({ viewerData, onClose }) {
   };
 
   const openDirect = () => {
-    window.open(directUrl, '_blank', 'noopener,noreferrer');
+    let targetUrl = directUrl;
+    if (activeProvider === 'pdf' && iaPdf?.url) targetUrl = iaPdf.url;
+    else if (activeProvider === 'gutenberg' && gutenbergMatch?.readUrl) targetUrl = gutenbergMatch.readUrl;
+    else if (activeProvider === 'txt' && iaTxt?.url) targetUrl = iaTxt.url;
+    window.open(targetUrl, '_blank', 'noopener,noreferrer');
   };
 
-  // Trusted library embed hosts should NOT be sandboxed with restrictive attributes,
-  // which prevent BookReader's web components, indexedDB/localStorage, and loans from initializing.
   const isTrustedProvider = url.includes('archive.org') || url.includes('openlibrary.org') || url.includes('gutenberg.org');
 
   return (
@@ -441,9 +555,14 @@ function IntegratedViewerModal({ viewerData, onClose }) {
               <h3 className="text-emerald-100 font-bold text-sm truncate max-w-[280px] sm:max-w-md" title={title}>
                 {title}
               </h3>
-              {isBorrowable && (
-                <span className="hidden sm:inline-block px-2 py-0.5 bg-amber-950/70 border border-amber-600/50 text-amber-300 text-[10px] font-semibold rounded-full shrink-0">
-                  Controlled Digital Lending
+              {activeProvider === 'pdf' && (
+                <span className="hidden sm:inline-block px-2 py-0.5 bg-emerald-950 border border-emerald-500 text-emerald-300 text-[10px] font-bold rounded-full shrink-0">
+                  Full PDF (All Pages)
+                </span>
+              )}
+              {activeProvider === 'gutenberg' && (
+                <span className="hidden sm:inline-block px-2 py-0.5 bg-emerald-950 border border-emerald-500 text-emerald-300 text-[10px] font-bold rounded-full shrink-0">
+                  100% Full Unrestricted Text
                 </span>
               )}
             </div>
@@ -451,29 +570,98 @@ function IntegratedViewerModal({ viewerData, onClose }) {
               {author && <span className="truncate max-w-[200px]">{author}</span>}
               {author && <span>•</span>}
               <span className="font-mono text-emerald-500">
-                {url.includes('archive.org') ? 'Internet Archive BookReader' : url.includes('openlibrary.org') ? 'Open Library' : 'External Document'}
+                {activeProvider === 'pdf' ? 'Internet Archive API • Complete PDF Stream' : activeProvider === 'gutenberg' ? 'Project Gutenberg Full-Text Reader' : url.includes('archive.org') ? 'Internet Archive BookReader' : url.includes('openlibrary.org') ? 'Open Library' : 'External Document'}
               </span>
             </div>
           </div>
         </div>
 
+        {/* ── Source Switcher Tabs ── */}
+        <div className="flex items-center gap-1.5 bg-[#021810] p-1 rounded-xl border border-emerald-800/80">
+          {iaPdf && (
+            <button
+              onClick={() => {
+                setCurrentUrl(iaPdf.url);
+                setActiveProvider('pdf');
+                setLoading(true);
+              }}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                activeProvider === 'pdf'
+                  ? 'bg-emerald-500 text-black shadow ring-1 ring-emerald-300'
+                  : 'text-emerald-400 hover:text-white'
+              }`}
+              title="Read complete unabridged PDF with all pages unlocked"
+            >
+              <FileText size={12} />
+              <span>Full Book PDF</span>
+            </button>
+          )}
+
+          {viewerData.url && viewerData.url !== iaPdf?.url && (
+            <button
+              onClick={() => {
+                setCurrentUrl(viewerData.url);
+                setActiveProvider('archive');
+                setLoading(true);
+              }}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                activeProvider === 'archive'
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'text-emerald-400 hover:text-white'
+              }`}
+            >
+              <Library size={12} />
+              <span>Book Reader</span>
+            </button>
+          )}
+
+          {gutenbergMatch ? (
+            <button
+              onClick={() => {
+                setCurrentUrl(gutenbergMatch.readUrl);
+                setActiveProvider('gutenberg');
+                setLoading(true);
+              }}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                activeProvider === 'gutenberg'
+                  ? 'bg-emerald-500 text-black shadow ring-1 ring-emerald-300'
+                  : 'bg-emerald-950/80 text-emerald-300 hover:text-white border border-emerald-700'
+              }`}
+              title="Switch to Project Gutenberg unabridged text"
+            >
+              <BookOpen size={12} />
+              <span>Gutenberg (Full Text)</span>
+            </button>
+          ) : searchingGutenberg ? (
+            <span className="px-2 py-1 text-[10px] text-emerald-500 flex items-center gap-1">
+              <Loader2 size={10} className="animate-spin" /> Cross-checking APIs...
+            </span>
+          ) : null}
+
+          {altEditions.length > 0 && (
+            <span className="hidden xl:inline-block px-2 py-0.5 text-[10px] font-mono text-emerald-400">
+              +{altEditions.length} Public Edition{altEditions.length > 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+
         {/* ── Action Controls ── */}
         <div className="flex items-center gap-2 shrink-0">
-          {(url.includes('archive.org') || isBorrowable || directUrl?.includes('archive.org')) && (
+          {iaPdf && (
             <button
-              onClick={openDirect}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-lg text-xs font-bold shadow-md transition-all whitespace-nowrap animate-pulse hover:animate-none"
-              title="Borrow on Archive.org to unlock all pages beyond page 7"
+              onClick={() => window.open(iaPdf.url, '_blank')}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700/60 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold shadow-sm transition whitespace-nowrap"
+              title="Download full PDF for offline reading"
             >
-              <ExternalLink size={13} />
-              <span>Borrow Full Book (All Pages)</span>
+              <Download size={13} />
+              <span className="hidden sm:inline">Download PDF</span>
             </button>
           )}
 
           <button
             onClick={openDirect}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700/60 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold shadow-sm transition-all whitespace-nowrap"
-            title="Open direct book reader in a new tab"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/60 hover:bg-emerald-800 text-emerald-300 hover:text-white border border-emerald-700/60 rounded-lg text-xs font-semibold shadow-sm transition whitespace-nowrap"
+            title="Open direct document in a new tab"
           >
             <ExternalLink size={13} />
             <span className="hidden md:inline">Open in Tab</span>
@@ -507,20 +695,48 @@ function IntegratedViewerModal({ viewerData, onClose }) {
         </div>
       </div>
 
-      {/* ── Page 7 Limit Notice Banner for Archive.org CDL items ── */}
-      {(url.includes('archive.org') || isBorrowable || directUrl?.includes('archive.org')) && (
-        <div className="bg-gradient-to-r from-amber-950 via-[#032316] to-[#021810] border-b border-amber-600/40 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-200 z-10 shadow">
-          <div className="flex items-center gap-2 min-w-0">
-            <AlertTriangle size={15} className="text-amber-400 shrink-0" />
-            <span className="truncate sm:overflow-visible sm:whitespace-normal">
-              <strong>Need to read past Page 7?</strong> Internet Archive enforces a 7-page guest preview inside embedded frames. To unlock all pages without jumping, click to activate your free 1-hour loan:
+      {/* ── Active Provider Status Banners ── */}
+      {activeProvider === 'pdf' && (
+        <div className="bg-[#032316] border-b border-emerald-600/50 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-200 z-10 shadow">
+          <div className="flex items-center gap-2">
+            <Check size={15} className="text-emerald-400 shrink-0" />
+            <span>
+              <strong>Internet Archive Full Access:</strong> Streaming official uncompressed PDF with all {iaData?.total_pages ? `${iaData.total_pages} pages` : 'pages'} unlocked.
+            </span>
+          </div>
+          {iaPdf && (
+            <button
+              onClick={() => window.open(iaPdf.url, '_blank')}
+              className="px-2.5 py-1 bg-emerald-900/60 hover:bg-emerald-800 text-emerald-300 hover:text-white rounded border border-emerald-700 text-[11px] font-semibold transition flex items-center gap-1"
+            >
+              <Download size={11} /> Save PDF ({iaPdf.size ? `${(iaPdf.size / 1024 / 1024).toFixed(1)} MB` : 'Full Volume'})
+            </button>
+          )}
+        </div>
+      )}
+
+      {activeProvider === 'gutenberg' && (
+        <div className="bg-[#032316] border-b border-emerald-600/50 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-200 z-10 shadow">
+          <div className="flex items-center gap-2">
+            <Check size={15} className="text-emerald-400 shrink-0" />
+            <span>
+              <strong>Reading via Project Gutenberg:</strong> 100% full unabridged edition with all chapters, all pages, and zero omitted content.
             </span>
           </div>
           <button
-            onClick={openDirect}
-            className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-lg text-xs flex items-center gap-1.5 transition shadow shrink-0 whitespace-nowrap"
+            onClick={() => {
+              if (iaPdf) {
+                setCurrentUrl(iaPdf.url);
+                setActiveProvider('pdf');
+              } else {
+                setCurrentUrl(viewerData.url);
+                setActiveProvider('archive');
+              }
+              setLoading(true);
+            }}
+            className="px-2.5 py-1 bg-emerald-900/60 hover:bg-emerald-800 text-emerald-300 hover:text-white rounded border border-emerald-700 text-[11px] font-semibold transition"
           >
-            <ExternalLink size={12} /> Unlock All Pages on Archive.org
+            Switch to Digitized Scan
           </button>
         </div>
       )}
@@ -531,7 +747,9 @@ function IntegratedViewerModal({ viewerData, onClose }) {
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#021810]/75 backdrop-blur-xs transition-opacity duration-300">
             <div className="bg-[#032316] p-5 rounded-2xl border border-emerald-500/40 shadow-2xl flex flex-col items-center gap-3">
               <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
-              <p className="text-emerald-200 text-xs font-bold tracking-wide">Connecting to Book Reader...</p>
+              <p className="text-emerald-200 text-xs font-bold tracking-wide">
+                Connecting to {activeProvider === 'gutenberg' ? 'Project Gutenberg Full Text...' : 'Book Reader...'}
+              </p>
             </div>
           </div>
         )}
@@ -818,6 +1036,30 @@ export default function OpenLibraryExplorer() {
       // 1. Direct Internet Archive Viewer if available
       if (book.ia && book.ia.length > 0) {
         const iaId = book.ia[0];
+        try {
+          const res = await fetch(`/api/internet-archive/metadata/${iaId}`);
+          if (res.ok) {
+            const mData = await res.json();
+            if (mData.success && mData.data?.files?.pdf?.url) {
+              setViewerData({
+                url: mData.data.files.pdf.url,
+                pdfUrl: mData.data.files.pdf.url,
+                readerType: 'pdf',
+                directUrl: `https://archive.org/details/${iaId}`,
+                openLibraryUrl: book.key ? `https://openlibrary.org${book.key}` : null,
+                title: bookTitle,
+                author: bookAuthor,
+                iaId: iaId,
+                iaFiles: mData.data.files,
+                originalBook: book,
+              });
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn("Could not query IA metadata:", e);
+        }
+
         setViewerData({
           url: `https://archive.org/details/${iaId}?view=theater&ui=embed`,
           directUrl: `https://archive.org/details/${iaId}`,

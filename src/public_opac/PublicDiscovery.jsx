@@ -6,7 +6,7 @@ import {
   Check, Copy, Star, Bookmark, BookCheck, Sliders, ChevronDown,
   ChevronUp, Database, FileText, Newspaper, Radio, Video, Award,
   Volume2, Shield, AlertCircle, RefreshCw, Send, X, Share2, Tag, Scan,
-  BookMarked, Library, Eye, Loader2, AlertTriangle
+  BookMarked, Library, Eye, Loader2, AlertTriangle, Download
 } from 'lucide-react';
 import { INSTITUTION, INITIAL_PARTNER_LIBRARIES } from '../data/institutionalSeedData';
 import PartnerLibrariesGateway from '../common/PartnerLibrariesGateway';
@@ -17,6 +17,7 @@ import { PATTERNS } from '../utils/backgroundPatterns';
 import OpenLibraryExplorer from '../student/OpenLibraryExplorer';
 import GutendexExplorer from '../student/GutendexExplorer';
 import TroveExplorer from '../student/TroveExplorer';
+import InternetArchiveExplorer from '../student/InternetArchiveExplorer';
 
 export default function PublicDiscovery({
   books = [],
@@ -39,6 +40,7 @@ export default function PublicDiscovery({
   const [liveFederatedLoading, setLiveFederatedLoading] = useState(false);
   const [liveOpenLibraryResults, setLiveOpenLibraryResults] = useState([]);
   const [liveGutenbergResults, setLiveGutenbergResults] = useState([]);
+  const [liveInternetArchiveResults, setLiveInternetArchiveResults] = useState([]);
   const [hasQueriedLiveApi, setHasQueriedLiveApi] = useState(false);
   const [activeLiveReader, setActiveLiveReader] = useState(null); // { url, directUrl, title, source }
   const [savedBooks, setSavedBooks] = useState(() => {
@@ -232,9 +234,16 @@ export default function PublicDiscovery({
         .then(data => (data.results || []).slice(0, 6))
         .catch(() => []);
 
-      const [olDocs, gutResults] = await Promise.all([olPromise, gutPromise]);
+      // 3. Fetch from Official Internet Archive API via backend proxy (limit 6)
+      const iaPromise = fetch(`/api/internet-archive/search?q=${encodeURIComponent(term)}&filter=open&rows=6`)
+        .then(res => res.ok ? res.json() : { results: [] })
+        .then(data => (data.results || []).slice(0, 6))
+        .catch(() => []);
+
+      const [olDocs, gutResults, iaResults] = await Promise.all([olPromise, gutPromise, iaPromise]);
       setLiveOpenLibraryResults(olDocs);
       setLiveGutenbergResults(gutResults);
+      setLiveInternetArchiveResults(iaResults);
     } catch (err) {
       console.error('Error fetching live federated resources:', err);
     } finally {
@@ -249,6 +258,8 @@ export default function PublicDiscovery({
       setActiveTab('openlibrary');
     } else if (searchTarget === 'gutenberg') {
       setActiveTab('gutenberg');
+    } else if (searchTarget === 'archive') {
+      setActiveTab('archive');
     } else if (searchTarget === 'trove') {
       setActiveTab('trove');
     } else if (searchTarget === 'stacks') {
@@ -413,6 +424,7 @@ export default function PublicDiscovery({
               { id: 'catalog', label: `College Stacks (${books.length})`, icon: BookOpen },
               { id: 'openlibrary', label: 'Open Library (Live API)', icon: Globe },
               { id: 'gutenberg', label: 'Project Gutenberg (E-Books)', icon: BookMarked },
+              { id: 'archive', label: 'Internet Archive (Full PDFs)', icon: Library },
               { id: 'trove', label: 'Trove Archives', icon: Library },
               { id: 'journals', label: 'E-Journals', icon: Newspaper },
               { id: 'databases', label: 'Databases', icon: Database },
@@ -627,6 +639,7 @@ export default function PublicDiscovery({
                     { id: 'stacks', label: `College Stacks (${books.length})`, icon: BookOpen, badge: 'Campus' },
                     { id: 'openlibrary', label: 'Open Library (Live API)', icon: Globe, badge: '30M+ Books' },
                     { id: 'gutenberg', label: 'Project Gutenberg', icon: BookMarked, badge: '70k+ E-Books' },
+                    { id: 'archive', label: 'Internet Archive', icon: Library, badge: 'Full Books' },
                     { id: 'trove', label: 'Trove Archives', icon: Library, badge: 'National' }
                   ].map(src => {
                     const Icon = src.icon;
@@ -640,6 +653,7 @@ export default function PublicDiscovery({
                           sounds.playClick();
                           if (src.id === 'openlibrary') setActiveTab('openlibrary');
                           else if (src.id === 'gutenberg') setActiveTab('gutenberg');
+                          else if (src.id === 'archive') setActiveTab('archive');
                           else if (src.id === 'trove') setActiveTab('trove');
                           else if (src.id === 'stacks') setActiveTab('catalog');
                           else {
@@ -1179,9 +1193,106 @@ export default function PublicDiscovery({
                       </div>
                     )}
 
-                    {liveOpenLibraryResults.length === 0 && liveGutenbergResults.length === 0 && (
+                    {/* Internet Archive Live Grid */}
+                    {liveInternetArchiveResults.length > 0 && (
+                      <div className="space-y-3 pt-2 border-t border-emerald-800/60">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-emerald-300 flex items-center gap-1.5">
+                            <Library size={14} className="text-emerald-400" />
+                            <span>Internet Archive Direct Full-Text Books</span>
+                          </span>
+                          <button
+                            onClick={() => setActiveTab('archive')}
+                            className="text-emerald-400 hover:text-white underline font-semibold flex items-center gap-1"
+                          >
+                            Explore all in Internet Archive <ArrowRight size={12} />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {liveInternetArchiveResults.map((item, idx) => (
+                            <div key={idx} className="p-3.5 rounded-2xl bg-[#032317] border border-emerald-800/80 hover:border-emerald-500 transition flex gap-3 group">
+                              <div className="w-16 h-22 bg-[#021810] rounded-lg shrink-0 overflow-hidden border border-emerald-900 flex items-center justify-center">
+                                <img
+                                  src={item.cover_url}
+                                  alt={item.title}
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                  onError={(e) => { e.target.style.display = 'none'; }}
+                                />
+                              </div>
+                              <div className="flex-1 min-w-0 flex flex-col justify-between">
+                                <div>
+                                  <div className="flex items-center gap-1.5 mb-1">
+                                    <span className="px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 font-mono text-[9px] border border-emerald-700">
+                                      {item.is_restricted ? 'Borrowable' : 'Full Access'}
+                                    </span>
+                                    {item.year && (
+                                      <span className="text-[10px] text-emerald-500 font-mono">
+                                        {item.year}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <h4 className="text-xs font-bold text-white line-clamp-2 leading-snug group-hover:text-emerald-300">
+                                    {item.title}
+                                  </h4>
+                                  <p className="text-[11px] text-emerald-400/80 truncate mt-0.5">
+                                    {item.creator || 'Unknown Author'}
+                                  </p>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 pt-2">
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        const res = await fetch(`/api/internet-archive/metadata/${item.identifier}`);
+                                        if (res.ok) {
+                                          const mData = await res.json();
+                                          if (mData.success && mData.data?.files?.pdf?.url) {
+                                            setActiveLiveReader({
+                                              url: mData.data.files.pdf.url,
+                                              pdfUrl: mData.data.files.pdf.url,
+                                              directUrl: item.details_url,
+                                              title: item.title,
+                                              source: 'Internet Archive API',
+                                              identifier: item.identifier,
+                                              readerType: 'pdf'
+                                            });
+                                            return;
+                                          }
+                                        }
+                                      } catch (e) {}
+
+                                      setActiveLiveReader({
+                                        url: `https://archive.org/details/${item.identifier}?view=theater&ui=embed`,
+                                        directUrl: item.details_url,
+                                        title: item.title,
+                                        source: 'Internet Archive',
+                                        identifier: item.identifier
+                                      });
+                                    }}
+                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-bold shadow flex items-center gap-1 transition"
+                                  >
+                                    <Eye size={11} /> Read Book
+                                  </button>
+                                  <button
+                                    onClick={() => window.open(item.details_url, '_blank')}
+                                    className="p-1 rounded-lg text-emerald-400 hover:text-white hover:bg-emerald-900/60"
+                                    title="Open on archive.org"
+                                  >
+                                    <ExternalLink size={12} />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {liveOpenLibraryResults.length === 0 && liveGutenbergResults.length === 0 && liveInternetArchiveResults.length === 0 && (
                       <div className="p-4 text-center text-xs text-emerald-400/80">
-                        No live external matches for "{searchQuery}". Try broader keywords or click Open Library to search 30M+ records.
+                        No live external matches for "{searchQuery}". Try broader keywords or click Open Library or Internet Archive to search millions of records.
                       </div>
                     )}
                   </div>
@@ -1724,6 +1835,15 @@ export default function PublicDiscovery({
             </div>
           </div>
         )}
+
+        {/* VIEW: INTERNET ARCHIVE REPOSITORY (Live Official IA API) */}
+        {activeTab === 'archive' && (
+          <div className="h-full mt-4 bg-[#01140d]/80 p-4 sm:p-6 rounded-3xl border border-emerald-900/50 shadow-2xl relative overflow-hidden animate-fadeIn">
+            <div className="relative z-10">
+               <InternetArchiveExplorer />
+            </div>
+          </div>
+        )}
       </main>
 
       {/* ASK A LIBRARIAN MODAL */}
@@ -1830,78 +1950,340 @@ export default function PublicDiscovery({
       </footer>
 
       {/* ─── LIVE FEDERATED MODAL READER (Public Access • No Login Required) ─── */}
-      {activeLiveReader && (
-        <div className="fixed inset-0 z-[120] flex flex-col bg-[#021810] animate-in fade-in duration-200">
-          <div className="flex flex-wrap items-center justify-between p-3.5 bg-[#032316] border-b border-emerald-800/60 shadow-xl gap-3">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className="w-9 h-9 rounded-xl bg-emerald-950/80 border border-emerald-700/50 flex items-center justify-center text-emerald-400 shrink-0">
-                <BookOpen size={18} />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-emerald-100 font-bold text-sm truncate max-w-[280px] sm:max-w-md">
-                  {activeLiveReader.title}
-                </h3>
-                <span className="text-[11px] font-mono text-emerald-400">
-                  {activeLiveReader.source} • Public Access (No Login Required)
-                </span>
-              </div>
-            </div>
+      <LiveFederatedModalReader
+        activeLiveReader={activeLiveReader}
+        onClose={() => setActiveLiveReader(null)}
+      />
+    </div>
+  );
+}
 
-            <div className="flex items-center gap-2 shrink-0">
-              {(activeLiveReader.url?.includes('archive.org') || activeLiveReader.directUrl?.includes('archive.org')) && (
-                <button
-                  onClick={() => window.open(activeLiveReader.directUrl || activeLiveReader.url, '_blank', 'noopener,noreferrer')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-lg text-xs font-bold shadow-md transition whitespace-nowrap animate-pulse hover:animate-none"
-                  title="Borrow on Archive.org to unlock all pages beyond page 7"
-                >
-                  <ExternalLink size={13} />
-                  <span>Borrow Full Book (All Pages)</span>
-                </button>
-              )}
-              <button
-                onClick={() => window.open(activeLiveReader.directUrl || activeLiveReader.url, '_blank', 'noopener,noreferrer')}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md transition"
-              >
-                <ExternalLink size={13} />
-                <span>Open in New Tab</span>
-              </button>
-              <button
-                onClick={() => setActiveLiveReader(null)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold shadow-md transition"
-              >
-                <X size={14} />
-                <span>Close</span>
-              </button>
-            </div>
+// Subcomponent for the Live Federated Modal Reader with Gutenberg Auto-Discovery
+function LiveFederatedModalReader({ activeLiveReader, onClose }) {
+  const [iframeKey, setIframeKey] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [currentUrl, setCurrentUrl] = useState(activeLiveReader?.url || '');
+  const [activeProvider, setActiveProvider] = useState(activeLiveReader?.readerType === 'pdf' ? 'pdf' : 'archive');
+  const [gutenbergMatch, setGutenbergMatch] = useState(null);
+  const [searchingGutenberg, setSearchingGutenberg] = useState(false);
+  const [iaData, setIaData] = useState(null);
+  const [iaPdf, setIaPdf] = useState(null);
+
+  useEffect(() => {
+    if (!activeLiveReader) return;
+    setCurrentUrl(activeLiveReader.url || '');
+    setActiveProvider(activeLiveReader.readerType === 'pdf' ? 'pdf' : 'archive');
+    setLoading(true);
+    setGutenbergMatch(null);
+    setIaData(null);
+    setIaPdf(null);
+
+    // 1. Check Internet Archive API for unencrypted full PDF
+    const targetIaId = activeLiveReader.identifier || (activeLiveReader.url?.match(/archive\.org\/(?:details|embed)\/([^\/?#]+)/)?.[1]);
+    if (targetIaId) {
+      fetch(`/api/internet-archive/metadata/${targetIaId}`)
+        .then(r => r.json())
+        .then(res => {
+          if (res.success && res.data) {
+            setIaData(res.data);
+            if (res.data.files?.pdf?.url) {
+              setIaPdf(res.data.files.pdf);
+              if (activeLiveReader.readerType === 'pdf' || res.data.can_read_full || !activeLiveReader.url?.includes('/details/')) {
+                setCurrentUrl(res.data.files.pdf.url);
+                setActiveProvider('pdf');
+                setLoading(false);
+              }
+            }
+          }
+        })
+        .catch(() => {});
+    }
+
+    const rawTitle = activeLiveReader.title || '';
+    const cleanTitle = rawTitle
+      .replace(/[\(\[\{].*?[\)\]\}]/g, '')
+      .replace(/[:\-–—].*$/, '')
+      .replace(/[^a-zA-Z0-9\s]/g, ' ')
+      .trim();
+
+    if (cleanTitle && cleanTitle.length > 2) {
+      setSearchingGutenberg(true);
+      fetch(`https://gutendex.com/books/?search=${encodeURIComponent(cleanTitle)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.results && data.results.length > 0) {
+            const match = data.results.find(b => {
+              const bTitle = b.title.toLowerCase();
+              const cTitle = cleanTitle.toLowerCase();
+              return bTitle.includes(cTitle) || cTitle.includes(bTitle);
+            }) || data.results[0];
+
+            if (match && match.formats) {
+              const htmlUrl = match.formats['text/html'] || match.formats['text/html; charset=utf-8'];
+              const textUrl = match.formats['text/plain; charset=utf-8'] || match.formats['text/plain'];
+              const readUrl = htmlUrl || textUrl;
+              if (readUrl) {
+                setGutenbergMatch({
+                  id: match.id,
+                  title: match.title,
+                  readUrl,
+                  authors: match.authors?.map(a => a.name).join(', ')
+                });
+              }
+            }
+          }
+        })
+        .catch(err => console.warn('Gutendex error:', err))
+        .finally(() => setSearchingGutenberg(false));
+    }
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeLiveReader, iframeKey, onClose]);
+
+  if (!activeLiveReader) return null;
+
+  const url = currentUrl || activeLiveReader.url || '';
+  const directUrl = activeLiveReader.directUrl || activeLiveReader.url;
+  const title = activeLiveReader.title || 'Live Reader';
+
+  const openDirect = () => {
+    let target = directUrl;
+    if (activeProvider === 'pdf' && iaPdf?.url) target = iaPdf.url;
+    else if (activeProvider === 'gutenberg' && gutenbergMatch?.readUrl) target = gutenbergMatch.readUrl;
+    window.open(target, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleCopy = () => {
+    let target = directUrl;
+    if (activeProvider === 'pdf' && iaPdf?.url) target = iaPdf.url;
+    else if (activeProvider === 'gutenberg' && gutenbergMatch?.readUrl) target = gutenbergMatch.readUrl;
+    if (target) {
+      navigator.clipboard.writeText(target);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[120] flex flex-col bg-[#021810] animate-in fade-in duration-200">
+      {/* ── Top Bar ── */}
+      <div className="flex flex-wrap items-center justify-between p-3.5 bg-[#032316] border-b border-emerald-800/60 shadow-xl gap-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div className="w-9 h-9 rounded-xl bg-emerald-950/80 border border-emerald-700/50 flex items-center justify-center text-emerald-400 shrink-0">
+            <BookOpen size={18} />
           </div>
-
-          {/* ── Archive.org Page 7 CDL Limit Notice ── */}
-          {(activeLiveReader.url?.includes('archive.org') || activeLiveReader.directUrl?.includes('archive.org')) && (
-            <div className="bg-gradient-to-r from-amber-950 via-[#032316] to-[#021810] border-b border-amber-600/40 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-200 z-10 shadow">
-              <div className="flex items-center gap-2 min-w-0">
-                <AlertTriangle size={15} className="text-amber-400 shrink-0" />
-                <span className="truncate sm:overflow-visible sm:whitespace-normal">
-                  <strong>Need to read past Page 7?</strong> Internet Archive enforces a 7-page guest preview inside embedded frames. To unlock all pages without jumping, click to activate your free 1-hour loan:
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="text-emerald-100 font-bold text-sm truncate max-w-[280px] sm:max-w-md">
+                {title}
+              </h3>
+              {activeProvider === 'pdf' ? (
+                <span className="hidden sm:inline-block px-2 py-0.5 bg-emerald-950 border border-emerald-500 text-emerald-300 text-[10px] font-bold rounded-full shrink-0">
+                  Full PDF (All Pages)
                 </span>
-              </div>
-              <button
-                onClick={() => window.open(activeLiveReader.directUrl || activeLiveReader.url, '_blank', 'noopener,noreferrer')}
-                className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-lg text-xs flex items-center gap-1.5 transition shadow shrink-0 whitespace-nowrap"
-              >
-                <ExternalLink size={12} /> Unlock All Pages on Archive.org
-              </button>
+              ) : activeProvider === 'gutenberg' ? (
+                <span className="hidden sm:inline-block px-2 py-0.5 bg-emerald-950 border border-emerald-500 text-emerald-300 text-[10px] font-bold rounded-full shrink-0">
+                  100% Full Unrestricted Text
+                </span>
+              ) : null}
             </div>
+            <span className="text-[11px] font-mono text-emerald-400">
+              {activeProvider === 'pdf' ? 'Internet Archive API • Full Volume PDF Stream' : activeProvider === 'gutenberg' ? 'Project Gutenberg Full-Text Reader' : `${activeLiveReader.source || 'Digital Repository'} • Public Access`}
+            </span>
+          </div>
+        </div>
+
+        {/* ── Source Switcher Tabs ── */}
+        <div className="flex items-center gap-1.5 bg-[#021810] p-1 rounded-xl border border-emerald-800/80">
+          {iaPdf && (
+            <button
+              onClick={() => {
+                setCurrentUrl(iaPdf.url);
+                setActiveProvider('pdf');
+                setLoading(true);
+              }}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                activeProvider === 'pdf'
+                  ? 'bg-emerald-500 text-black shadow ring-1 ring-emerald-300'
+                  : 'text-emerald-400 hover:text-white'
+              }`}
+            >
+              <FileText size={12} />
+              <span>Full Book PDF</span>
+            </button>
           )}
 
-          <iframe
-            src={activeLiveReader.url}
-            className="flex-1 w-full h-full border-none bg-[#fdfaf4]"
-            title={activeLiveReader.title}
-            allow="fullscreen; autoplay; clipboard-write; encrypted-media; picture-in-picture"
-            allowFullScreen={true}
-          />
+          {activeLiveReader.url && activeLiveReader.url !== iaPdf?.url && (
+            <button
+              onClick={() => {
+                setCurrentUrl(activeLiveReader.url);
+                setActiveProvider('archive');
+                setLoading(true);
+              }}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                activeProvider === 'archive'
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'text-emerald-400 hover:text-white'
+              }`}
+            >
+              <Library size={12} />
+              <span>Book Reader</span>
+            </button>
+          )}
+
+          {gutenbergMatch ? (
+            <button
+              onClick={() => {
+                setCurrentUrl(gutenbergMatch.readUrl);
+                setActiveProvider('gutenberg');
+                setLoading(true);
+              }}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                activeProvider === 'gutenberg'
+                  ? 'bg-emerald-500 text-black shadow ring-1 ring-emerald-300'
+                  : 'bg-emerald-950/80 text-emerald-300 hover:text-white border border-emerald-700'
+              }`}
+              title="Switch to Project Gutenberg unabridged text"
+            >
+              <BookOpen size={12} />
+              <span>Gutenberg (Full Text)</span>
+            </button>
+          ) : searchingGutenberg ? (
+            <span className="px-2 py-1 text-[10px] text-emerald-500 flex items-center gap-1">
+              <Loader2 size={10} className="animate-spin" /> Cross-checking APIs...
+            </span>
+          ) : null}
+        </div>
+
+        {/* ── Action Controls ── */}
+        <div className="flex items-center gap-2 shrink-0">
+          {iaPdf && (
+            <button
+              onClick={() => window.open(iaPdf.url, '_blank')}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700/60 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold shadow-sm transition whitespace-nowrap"
+              title="Download full PDF for offline reading"
+            >
+              <Download size={13} />
+              <span className="hidden sm:inline">Download PDF</span>
+            </button>
+          )}
+
+          <button
+            onClick={openDirect}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/60 hover:bg-emerald-800 text-emerald-300 hover:text-white border border-emerald-700/60 rounded-lg text-xs font-semibold shadow-sm transition whitespace-nowrap"
+            title="Open direct document in a new tab"
+          >
+            <ExternalLink size={13} />
+            <span className="hidden md:inline">Open in Tab</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setLoading(true);
+              setIframeKey(k => k + 1);
+            }}
+            className="p-2 bg-emerald-900/40 hover:bg-emerald-800 border border-emerald-800 text-emerald-300 hover:text-white rounded-lg transition"
+            title="Reload Frame"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          </button>
+
+          <button
+            onClick={handleCopy}
+            className="p-2 bg-emerald-900/40 hover:bg-emerald-800 border border-emerald-800 text-emerald-300 hover:text-white rounded-lg transition"
+            title={copied ? "Copied!" : "Copy link"}
+          >
+            {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+          </button>
+
+          <div className="h-5 w-px bg-emerald-800/60 mx-1 hidden sm:block" />
+
+          <button
+            onClick={onClose}
+            className="flex items-center gap-1 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold shadow-md transition"
+          >
+            <X size={14} />
+            <span>Close</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── Status Banners ── */}
+      {activeProvider === 'pdf' && (
+        <div className="bg-[#032316] border-b border-emerald-600/50 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-200 z-10 shadow">
+          <div className="flex items-center gap-2">
+            <Check size={15} className="text-emerald-400 shrink-0" />
+            <span>
+              <strong>Internet Archive Full Access:</strong> Streaming official uncompressed PDF with all {iaData?.total_pages ? `${iaData.total_pages} pages` : 'pages'} unlocked.
+            </span>
+          </div>
+          {iaPdf && (
+            <button
+              onClick={() => window.open(iaPdf.url, '_blank')}
+              className="px-2.5 py-1 bg-emerald-900/60 hover:bg-emerald-800 text-emerald-300 hover:text-white rounded border border-emerald-700 text-[11px] font-semibold transition flex items-center gap-1"
+            >
+              <Download size={11} /> Save PDF ({iaPdf.size ? `${(iaPdf.size / 1024 / 1024).toFixed(1)} MB` : 'Full Volume'})
+            </button>
+          )}
         </div>
       )}
+
+      {activeProvider === 'gutenberg' && (
+        <div className="bg-[#032316] border-b border-emerald-600/50 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-200 z-10 shadow">
+          <div className="flex items-center gap-2">
+            <Check size={15} className="text-emerald-400 shrink-0" />
+            <span>
+              <strong>Reading via Project Gutenberg:</strong> 100% full unabridged edition with all chapters, all pages, and zero omitted content.
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              if (iaPdf) {
+                setCurrentUrl(iaPdf.url);
+                setActiveProvider('pdf');
+              } else {
+                setCurrentUrl(activeLiveReader.url);
+                setActiveProvider('archive');
+              }
+              setLoading(true);
+            }}
+            className="px-2.5 py-1 bg-emerald-900/60 hover:bg-emerald-800 text-emerald-300 hover:text-white rounded border border-emerald-700 text-[11px] font-semibold transition"
+          >
+            Switch to Digitized Scan
+          </button>
+        </div>
+      )}
+
+      <div className="flex-1 w-full h-full relative bg-[#fdfaf4] overflow-hidden flex flex-col">
+        {loading && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#021810]/75 backdrop-blur-xs transition-opacity duration-300">
+            <div className="bg-[#032316] p-5 rounded-2xl border border-emerald-500/40 shadow-2xl flex flex-col items-center gap-3">
+              <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
+              <p className="text-emerald-200 text-xs font-bold tracking-wide">
+                Connecting to {activeProvider === 'gutenberg' ? 'Project Gutenberg Full Text...' : 'Book Reader...'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        <iframe
+          key={iframeKey}
+          src={url}
+          className="flex-1 w-full h-full border-none bg-[#fdfaf4]"
+          title={title}
+          allow="fullscreen; autoplay; clipboard-write; encrypted-media; picture-in-picture"
+          allowFullScreen={true}
+          onLoad={() => setLoading(false)}
+        />
+      </div>
     </div>
   );
 }

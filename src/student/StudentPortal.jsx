@@ -38,6 +38,7 @@ import { sounds } from '../utils/soundEffects';
 import GutendexExplorer from './GutendexExplorer';
 import OpenLibraryExplorer from './OpenLibraryExplorer';
 import TroveExplorer from './TroveExplorer';
+import InternetArchiveExplorer from './InternetArchiveExplorer';
 
 export default function StudentPortal({
   user,
@@ -140,7 +141,7 @@ export default function StudentPortal({
           'research_hnd_projects', 'research_papers', 'research_journals', 'research_topics', 'research_references',
           'ai_assistant', 'notifications', 'profile',
           'kiosk', 'barcode_studio', 'clearance', 'rooms', 'ill', 'communication', 'helpdesk', 'partner_libs',
-          'library_gutendex', 'library_openlibrary'
+          'library_gutendex', 'library_openlibrary', 'library_archive'
         ];
 
         if (validTabs.includes(resolved)) {
@@ -228,6 +229,7 @@ export default function StudentPortal({
     partner_libs: { label: 'Linked Libraries', category: 'FACILITIES', icon: Building2 },
     library_gutendex: { label: 'Project Gutenberg eBooks', category: 'LIBRARY', icon: BookOpen },
     library_openlibrary: { label: 'Open Library Catalog', category: 'LIBRARY', icon: Globe },
+    library_archive: { label: 'Internet Archive Books', category: 'LIBRARY', icon: Library },
   };
 
   const currentMeta = tabMetadata[activeTab] || tabMetadata.home;
@@ -438,7 +440,8 @@ export default function StudentPortal({
                         { id: 'library_journals', label: 'Journals', icon: Layers, prefix: '├──' },
                         { id: 'library_digital', label: 'Digital Resources', icon: GraduationCap, prefix: '├──' },
                         { id: 'library_gutendex', label: 'Project Gutenberg', icon: Globe, prefix: '├──' },
-                        { id: 'library_openlibrary', label: 'Open Library', icon: Globe, prefix: '└──' },
+                        { id: 'library_openlibrary', label: 'Open Library', icon: Globe, prefix: '├──' },
+                        { id: 'library_archive', label: 'Internet Archive', icon: Library, prefix: '└──' },
                       ].map(sub => {
                         const SubIcon = sub.icon;
                         const isSubActive = activeTab === sub.id;
@@ -862,6 +865,10 @@ export default function StudentPortal({
           ) : activeTab === 'library_openlibrary' ? (
             <div className="h-full">
               <OpenLibraryExplorer />
+            </div>
+          ) : activeTab === 'library_archive' ? (
+            <div className="h-full">
+              <InternetArchiveExplorer />
             </div>
           ) : activeTab.startsWith('my_') ? (
             /* ============================================================== */
