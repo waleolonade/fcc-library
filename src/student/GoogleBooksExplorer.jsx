@@ -41,24 +41,48 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
   const [viewerLoading, setViewerLoading] = useState(false);
   const [viewerError, setViewerError] = useState(false);
   const [viewerReady, setViewerReady] = useState(false);
-  const [embedMode, setEmbedMode] = useState('jsapi'); // 'jsapi' | 'iframe'
   const viewerCanvasRef = useRef(null);
   const viewerInstanceRef = useRef(null);
 
-  // Helper to construct official Google Books iframe URL
-  const getDirectEmbedUrl = (b) => {
-    if (!b) return '';
-    const volId = b.google_volume_id || b.id || b.volume_id;
+  // Extract all valid candidate identifiers for the official Google Books DefaultViewer
+  const extractCandidateIdentifiers = (book) => {
+    if (!book) return [];
+    const list = [];
+
+    // 1. ISBN-10 with ISBN: prefix
+    if (book.isbn_10) {
+      const clean10 = String(book.isbn_10).replace(/[^0-9Xx]/g, '').toUpperCase();
+      if (clean10) list.push(`ISBN:${clean10}`);
+    }
+
+    // 2. ISBN-13 with ISBN: prefix
+    if (book.isbn_13) {
+      const clean13 = String(book.isbn_13).replace(/[^0-9Xx]/g, '').toUpperCase();
+      if (clean13) list.push(`ISBN:${clean13}`);
+    }
+
+    // 3. Industry identifiers array (from Google Books API volumeInfo)
+    if (Array.isArray(book.industryIdentifiers)) {
+      book.industryIdentifiers.forEach(item => {
+        if (item?.identifier) {
+          const clean = String(item.identifier).replace(/[^0-9Xx]/g, '').toUpperCase();
+          if (clean) list.push(`ISBN:${clean}`);
+        }
+      });
+    }
+
+    // 4. OCLC / LCCN if available
+    if (book.oclc) list.push(`OCLC:${book.oclc}`);
+    if (book.lccn) list.push(`LCCN:${book.lccn}`);
+
+    // 5. Google Volume ID
+    const volId = book.google_volume_id || book.volume_id || book.id;
     if (volId) {
-      return `https://books.google.com/books?id=${volId}&lpg=PP1&pg=PP1&output=embed`;
+      list.push(volId);
+      list.push(`id:${volId}`);
     }
-    if (b.isbn_10) {
-      return `https://books.google.com/books?isbn=${b.isbn_10}&output=embed`;
-    }
-    if (b.isbn_13) {
-      return `https://books.google.com/books?isbn=${b.isbn_13}&output=embed`;
-    }
-    return b.preview_link || `https://books.google.com/books?id=${volId}`;
+
+    return [...new Set(list)];
   };
 
   // Saved / Bookmarked books
@@ -280,6 +304,27 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
   useEffect(() => {
     fetchRecommendations();
     executeSearch(query, filterType, orderBy, printType, 0);
+
+    // Preload Google Books Embedded Viewer JSAPI
+    if (!document.getElementById('google-books-api-script')) {
+      const script = document.createElement('script');
+      script.id = 'google-books-api-script';
+      script.src = 'https://www.google.com/books/jsapi.js';
+      script.type = 'text/javascript';
+      script.async = true;
+      script.onload = () => {
+        try {
+          if (window.google?.books?.load) {
+            window.google.books.load();
+          }
+        } catch (e) {}
+      };
+      document.head.appendChild(script);
+    } else if (window.google?.books?.load) {
+      try {
+        window.google.books.load();
+      } catch (e) {}
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle Search Submission
@@ -371,7 +416,6 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
     setViewerLoading(true);
     setViewerError(false);
     setViewerReady(false);
-    setEmbedMode('iframe'); // Default to direct official Google Books interactive embedded reader
   };
 
   const closeViewer = () => {
@@ -393,20 +437,9 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeViewerBook]);
 
-  // Handle iframe loading timeout safeguard so viewer never hangs
+  // Google Books Embedded Viewer Canvas Initializer
   useEffect(() => {
-    if (activeViewerBook && embedMode === 'iframe') {
-      const timer = setTimeout(() => {
-        setViewerLoading(false);
-        setViewerReady(true);
-      }, 1400);
-      return () => clearTimeout(timer);
-    }
-  }, [activeViewerBook, embedMode]);
-
-  // Main Google Books DefaultViewer Loader with Observer & Timeout Safeguard (for JSAPI mode)
-  useEffect(() => {
-    if (!activeViewerBook || embedMode !== 'jsapi') return;
+    if (!activeViewerBook) return;
 
     let isSubscribed = true;
     let observer = null;
@@ -416,93 +449,90 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
     setViewerError(false);
     setViewerReady(false);
 
-    // Watcher: automatically dismisses loading screen as soon as Google injects elements
-    const watchForRender = (targetContainer) => {
-      if (!targetContainer) return;
+    const candidates = extractCandidateIdentifiers(activeViewerBook);
 
-      const checkDom = () => {
-        if (targetContainer.children.length > 0 || targetContainer.querySelector('iframe')) {
-          if (isSubscribed) {
-            setViewerLoading(false);
-            setViewerReady(true);
-            setViewerError(false);
-          }
-          return true;
-        }
-        return false;
-      };
-
-      if (checkDom()) return;
-
-      observer = new MutationObserver(() => {
-        if (checkDom() && observer) {
-          observer.disconnect();
-        }
-      });
-      observer.observe(targetContainer, { childList: true, subtree: true });
-    };
-
-    // Helper to initialize Google DefaultViewer
     const initViewer = () => {
       if (!isSubscribed) return;
       const targetContainer = viewerCanvasRef.current;
-      if (!targetContainer || !window.google?.books?.DefaultViewer) {
-        setEmbedMode('iframe');
-        setViewerLoading(false);
-        setViewerReady(true);
+      if (!targetContainer) return;
+
+      if (!window.google?.books?.DefaultViewer) {
+        setTimeout(initViewer, 150);
         return;
       }
 
       try {
         targetContainer.innerHTML = '';
-        watchForRender(targetContainer);
+
+        // MutationObserver: As soon as Google injects the reader elements, reveal the canvas
+        observer = new MutationObserver(() => {
+          if (targetContainer.children.length > 0) {
+            if (isSubscribed) {
+              setViewerLoading(false);
+              setViewerReady(true);
+              setViewerError(false);
+            }
+            if (observer) observer.disconnect();
+          }
+        });
+        observer.observe(targetContainer, { childList: true, subtree: true });
 
         const viewer = new window.google.books.DefaultViewer(targetContainer);
         viewerInstanceRef.current = viewer;
 
-        // Primary identifier: volume ID directly, fallback to ISBN
-        let primaryId = activeViewerBook.google_volume_id || activeViewerBook.id || activeViewerBook.volume_id;
-        if (!primaryId && activeViewerBook.isbn_10) primaryId = `ISBN:${activeViewerBook.isbn_10}`;
-        if (!primaryId && activeViewerBook.isbn_13) primaryId = `ISBN:${activeViewerBook.isbn_13}`;
+        viewer.load(
+          candidates,
+          () => {
+            // notFoundCallback
+            if (!isSubscribed) return;
+            console.info('Google Books: Embedded preview unavailable for candidate identifiers', candidates);
+            setViewerLoading(false);
+            setViewerReady(false);
+            setViewerError(true);
+          },
+          () => {
+            // successCallback
+            if (!isSubscribed) return;
+            setViewerLoading(false);
+            setViewerReady(true);
+            setViewerError(false);
+          }
+        );
 
-        const onNotFound = () => {
-          if (!isSubscribed) return;
-          console.info('Google Books: Embedded canvas not available for identifier, activating direct interactive reader:', primaryId);
-          setEmbedMode('iframe');
-          setViewerLoading(false);
-          setViewerReady(true);
-        };
-
-        const onSuccess = () => {
-          if (!isSubscribed) return;
-          setViewerReady(true);
-          setViewerLoading(false);
-          setViewerError(false);
-        };
-
-        viewer.load(primaryId, onNotFound, onSuccess);
-
-        // Safety fallback timer: if DefaultViewer doesn't populate within 2.5 seconds, activate direct iframe mode
+        // Safety timeout: dismiss loading after 3.8s if elements injected or show clean fallback
         safetyTimer = setTimeout(() => {
           if (!isSubscribed) return;
-          setEmbedMode('iframe');
-          setViewerLoading(false);
-          setViewerReady(true);
-        }, 2500);
+          if (targetContainer.children.length > 0) {
+            setViewerLoading(false);
+            setViewerReady(true);
+            setViewerError(false);
+          } else {
+            setViewerLoading(false);
+            setViewerError(true);
+          }
+        }, 3800);
 
       } catch (err) {
-        console.warn('DefaultViewer initialization issue, activating direct reader mode:', err);
+        console.warn('Google Books DefaultViewer error:', err);
         if (isSubscribed) {
-          setEmbedMode('iframe');
           setViewerLoading(false);
-          setViewerReady(true);
+          setViewerError(true);
         }
       }
     };
 
-    // Load Google jsapi if needed
+    // Ensure JSAPI script is ready
     if (window.google?.books?.DefaultViewer) {
       initViewer();
+    } else if (window.google?.books?.load) {
+      try {
+        window.google.books.load();
+        window.google.books.setOnLoadCallback(() => {
+          if (isSubscribed) initViewer();
+        });
+      } catch {
+        initViewer();
+      }
     } else {
       let script = document.getElementById('google-books-api-script');
       if (!script) {
@@ -510,49 +540,36 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
         script.id = 'google-books-api-script';
         script.src = 'https://www.google.com/books/jsapi.js';
         script.type = 'text/javascript';
-        script.async = true;
         document.head.appendChild(script);
       }
 
-      const pollForReady = () => {
-        if (window.google?.books?.load) {
-          try {
-            window.google.books.load({ language: 'en' });
-            window.google.books.setOnLoadCallback(() => {
-              if (isSubscribed) initViewer();
-            });
-          } catch (e) {}
-        }
-
-        let elapsed = 0;
-        const interval = setInterval(() => {
-          elapsed += 100;
-          if (window.google?.books?.DefaultViewer) {
-            clearInterval(interval);
+      const onLoad = () => {
+        try {
+          window.google.books.load();
+          window.google.books.setOnLoadCallback(() => {
             if (isSubscribed) initViewer();
-          } else if (elapsed > 2000) {
-            clearInterval(interval);
-            if (isSubscribed) {
-              setEmbedMode('iframe');
-              setViewerLoading(false);
-              setViewerReady(true);
-            }
-          }
-        }, 100);
+          });
+        } catch {
+          initViewer();
+        }
       };
 
-      if (window.google?.books) {
-        pollForReady();
-      } else {
-        script.addEventListener('load', pollForReady);
-        script.addEventListener('error', () => {
+      script.addEventListener('load', onLoad);
+
+      let tries = 0;
+      const poll = setInterval(() => {
+        tries++;
+        if (window.google?.books?.DefaultViewer) {
+          clearInterval(poll);
+          if (isSubscribed) initViewer();
+        } else if (tries > 30) {
+          clearInterval(poll);
           if (isSubscribed) {
-            setEmbedMode('iframe');
             setViewerLoading(false);
-            setViewerReady(true);
+            setViewerError(true);
           }
-        });
-      }
+        }
+      }, 100);
     }
 
     return () => {
@@ -560,7 +577,7 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
       if (observer) observer.disconnect();
       if (safetyTimer) clearTimeout(safetyTimer);
     };
-  }, [activeViewerBook, embedMode]);
+  }, [activeViewerBook]);
 
   // Programmatic Viewer Interactions
   const handleViewerNextPage = () => {
@@ -1078,43 +1095,7 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
 
             {/* Viewer Controls & Close */}
             <div className="flex items-center gap-2">
-              {/* Reader Engine Switcher */}
-              <div className="flex items-center bg-[#021810] p-1 rounded-xl border border-emerald-800 text-xs">
-                <button
-                  onClick={() => {
-                    setEmbedMode('iframe');
-                    setViewerLoading(false);
-                    setViewerReady(true);
-                  }}
-                  className={`px-2.5 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
-                    embedMode === 'iframe'
-                      ? 'bg-emerald-600 text-white shadow'
-                      : 'text-emerald-400 hover:text-white'
-                  }`}
-                  title="Official Google Books Interactive Embedded Reader"
-                >
-                  <BookOpen className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Interactive Reader</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setEmbedMode('jsapi');
-                    setViewerLoading(true);
-                    setViewerReady(false);
-                  }}
-                  className={`px-2.5 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
-                    embedMode === 'jsapi'
-                      ? 'bg-emerald-600 text-white shadow'
-                      : 'text-emerald-400 hover:text-white'
-                  }`}
-                  title="Official Google Books JS API DefaultViewer"
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">JS API Canvas</span>
-                </button>
-              </div>
-
-              {embedMode === 'jsapi' && viewerReady && (
+              {viewerReady && (
                 <div className="hidden md:flex items-center gap-1 bg-[#021810] p-1 rounded-xl border border-emerald-800">
                   <button
                     onClick={handleViewerPrevPage}
@@ -1177,74 +1158,90 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
               <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#021810]/90 backdrop-blur-sm space-y-3">
                 <Loader2 className="w-10 h-10 text-emerald-400 animate-spin" />
                 <div className="text-sm font-bold text-white">Connecting to Google Books Reader...</div>
-                <div className="text-xs text-emerald-400 font-mono">Loading full-resolution book preview & pages</div>
+                <div className="text-xs text-emerald-400 font-mono">Initializing vector canvas & high-resolution pages</div>
               </div>
             )}
 
             {viewerError && (
-              <div className="max-w-md p-6 bg-[#032317] rounded-3xl border border-amber-500/50 text-center space-y-4 shadow-2xl z-10">
-                <AlertTriangle className="w-12 h-12 text-amber-400 mx-auto" />
-                <h4 className="text-lg font-bold text-white">Full In-Frame Preview Restricted</h4>
-                <p className="text-xs text-emerald-300/90 leading-relaxed">
-                  Google Books restricts embedded canvas rendering for this specific edition due to publisher permissions or third-party cookie policies.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-2 pt-2">
-                  <button
-                    onClick={() => { setEmbedMode('iframe'); setViewerError(false); }}
-                    className="flex-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs flex items-center justify-center gap-2 shadow"
-                  >
-                    <BookOpen className="w-4 h-4" />
-                    <span>Try Interactive Reader Mode</span>
-                  </button>
-                  {activeViewerBook.preview_link && (
+              <div className="max-w-lg p-6 sm:p-8 bg-[#032317] rounded-3xl border border-amber-500/50 text-center space-y-4 shadow-2xl z-10 animate-fadeIn">
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center">
+                  <AlertTriangle className="w-7 h-7 text-amber-400" />
+                </div>
+                <div>
+                  <span className="px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-300 font-mono text-[10px] uppercase font-bold border border-amber-500/30">
+                    Publisher Rights Notice
+                  </span>
+                  <h4 className="text-lg font-bold text-white mt-2">
+                    In-Frame Canvas Restricted by Publisher
+                  </h4>
+                  <p className="text-xs text-emerald-300/80 leading-relaxed mt-1">
+                    Google Books restricts third-party website canvas rendering for this specific title under publisher digital copyright policies. You can access the full interactive edition directly on Google Books or through our integrated open repository partners.
+                  </p>
+                </div>
+
+                <div className="pt-2 flex flex-col gap-2.5">
+                  {activeViewerBook.preview_link ? (
                     <a
                       href={activeViewerBook.preview_link}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-4 py-2.5 rounded-xl bg-[#021810] border border-emerald-800 text-emerald-300 hover:text-white font-bold text-xs flex items-center justify-center gap-1.5"
+                      className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition"
                     >
                       <ExternalLink className="w-4 h-4" />
-                      <span>Open on Google</span>
+                      <span>Read on Google Books Official Web Reader</span>
+                    </a>
+                  ) : (
+                    <a
+                      href={`https://books.google.com/books?id=${activeViewerBook.google_volume_id || activeViewerBook.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>Open Volume on Google Books</span>
                     </a>
                   )}
+
+                  <div className="flex gap-2">
+                    <a
+                      href={`https://archive.org/search?query=${encodeURIComponent(activeViewerBook.title)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 py-2.5 px-3 rounded-xl bg-[#021810] border border-emerald-800 text-emerald-300 hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition"
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                      <span>Internet Archive</span>
+                    </a>
+                    <a
+                      href={`https://openlibrary.org/search?q=${encodeURIComponent(activeViewerBook.title)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 py-2.5 px-3 rounded-xl bg-[#021810] border border-emerald-800 text-emerald-300 hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition"
+                    >
+                      <BookOpen className="w-3.5 h-3.5" />
+                      <span>Open Library</span>
+                    </a>
+                  </div>
+
                   <button
                     onClick={closeViewer}
-                    className="px-4 py-2.5 rounded-xl bg-[#021810] border border-emerald-800 text-emerald-300 hover:text-white font-bold text-xs"
+                    className="w-full py-2.5 rounded-xl bg-[#021810]/60 hover:bg-[#021810] border border-emerald-900 text-emerald-400 hover:text-white font-bold text-xs transition"
                   >
-                    Back to Catalog
+                    Return to Catalog
                   </button>
                 </div>
               </div>
             )}
 
-            {/* IFRAME INTERACTIVE READER (Fast, direct, high-res flipbook) */}
-            {embedMode === 'iframe' && (
-              <iframe
-                key={activeViewerBook.google_volume_id || activeViewerBook.id}
-                src={getDirectEmbedUrl(activeViewerBook)}
-                title={activeViewerBook.title}
-                className="w-full h-full max-w-5xl rounded-2xl bg-white shadow-2xl border-none"
-                style={{ minHeight: '580px' }}
-                allow="fullscreen"
-                onLoad={() => {
-                  setViewerLoading(false);
-                  setViewerReady(true);
-                  setViewerError(false);
-                }}
-              />
-            )}
-
-            {/* JSAPI CANVAS (Official DefaultViewer API) */}
-            {embedMode === 'jsapi' && (
-              <div
-                id="viewerCanvas"
-                ref={viewerCanvasRef}
-                className={`w-full h-full max-w-5xl rounded-2xl bg-white shadow-2xl transition-opacity duration-300 ${
-                  viewerLoading || viewerError ? 'opacity-0 pointer-events-none' : 'opacity-100'
-                }`}
-                style={{ minHeight: '580px' }}
-              />
-            )}
+            {/* The Official Google Books DefaultViewer Canvas */}
+            <div
+              id="viewerCanvas"
+              ref={viewerCanvasRef}
+              className={`w-full h-full max-w-5xl rounded-2xl bg-white shadow-2xl transition-opacity duration-300 ${
+                viewerLoading || viewerError ? 'opacity-0 pointer-events-none' : 'opacity-100'
+              }`}
+              style={{ minHeight: '620px', height: '100%' }}
+            />
           </div>
         </div>
       )}
