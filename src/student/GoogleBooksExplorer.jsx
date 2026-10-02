@@ -621,11 +621,22 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
               </span>
             </div>
 
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white tracking-tight">
-              Google Books & Embedded Viewer API
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white tracking-tight flex flex-wrap items-center gap-3">
+              <span>Google Books</span>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white/10 border border-white/20 backdrop-blur-sm text-xs font-semibold text-emerald-200">
+                <span className="text-[10px] text-emerald-300/80 font-mono">powered by</span>
+                <span className="font-bold tracking-tight text-xs">
+                  <span className="text-[#4285F4]">G</span>
+                  <span className="text-[#EA4335]">o</span>
+                  <span className="text-[#FBBC05]">o</span>
+                  <span className="text-[#4285F4]">g</span>
+                  <span className="text-[#34A853]">l</span>
+                  <span className="text-[#EA4335]">e</span>
+                </span>
+              </span>
             </h1>
             <p className="text-xs sm:text-sm text-emerald-200/90 leading-relaxed">
-              Explore millions of digitized academic monographs, textbooks, and peer-reviewed reference works directly in-app. Featuring direct page-turn controls, full-text previewing, and zero omitted pages.
+              Explore digitized academic monographs, textbooks, and reference works powered by the Google Books API Family and official Google Preview capabilities.
             </p>
 
             {/* Quick Keyword Formula Pills */}
@@ -739,9 +750,10 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
                     <button
                       onClick={() => openEmbeddedViewer(rec)}
                       className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md transition"
+                      title="Open Google Preview"
                     >
                       <BookOpen className="w-3.5 h-3.5" />
-                      <span>Read (Embedded)</span>
+                      <span>Google Preview</span>
                     </button>
 
                     <button
@@ -764,7 +776,7 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
       </div>
 
       {/* ========================================================================= */}
-      {/* 3. SEARCH & FILTER CONTROLS                                               */}
+      {/* 3. SEARCH & FILTER CONTROLS (Google Books API Compliant)                  */}
       {/* ========================================================================= */}
       <div className="space-y-4 bg-[#032317] p-5 rounded-3xl border border-emerald-800/80 shadow-xl">
         {/* Curated Domain Pills */}
@@ -783,36 +795,54 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
           ))}
         </div>
 
-        {/* Search Bar */}
-        <form onSubmit={handleSearchSubmit} className="flex flex-col sm:flex-row gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by title, author, subject, or ISBN (e.g., Computer Science inauthor:Knuth)..."
-              className="w-full pl-11 pr-4 py-3 bg-[#021810] border border-emerald-700/80 rounded-2xl text-emerald-100 placeholder-emerald-600 text-sm focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => setQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500 hover:text-white p-1"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
+        {/* Search Bar with Mandatory Google Attribution */}
+        <form onSubmit={handleSearchSubmit} className="space-y-2">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search Books by title, author, subject, or ISBN (e.g. Computer Science inauthor:Knuth)..."
+                className="w-full pl-11 pr-4 py-3 bg-[#021810] border border-emerald-700/80 rounded-2xl text-emerald-100 placeholder-emerald-600 text-sm focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500 hover:text-white p-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Submit Button (Guideline: Verbs allowed: 'Search', 'Search Books', 'Search in this book') */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-sm rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 transition disabled:opacity-60"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              <span>Search Books</span>
+            </button>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-sm rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 transition disabled:opacity-60"
-          >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-            <span>Search Google Books</span>
-          </button>
+          <div className="flex items-center justify-between px-1 text-[11px] text-emerald-400/80 font-mono">
+            <span>Official Google Books API Family Search</span>
+            <div className="flex items-center gap-1.5 opacity-90 hover:opacity-100 transition">
+              <span className="text-[10px] text-emerald-300/70 font-mono">powered by</span>
+              <span className="font-bold text-xs tracking-tight">
+                <span className="text-[#4285F4]">G</span>
+                <span className="text-[#EA4335]">o</span>
+                <span className="text-[#FBBC05]">o</span>
+                <span className="text-[#4285F4]">g</span>
+                <span className="text-[#34A853]">l</span>
+                <span className="text-[#EA4335]">e</span>
+              </span>
+            </div>
+          </div>
         </form>
 
         {/* Refinement Selectors: Filter, Order, Print Type */}
@@ -892,8 +922,32 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
       )}
 
       {/* ========================================================================= */}
-      {/* 4. RESULTS GRID                                                           */}
+      {/* 4. GOOGLE BOOKS SEARCH RESULTS (Strict Branding Guidelines Compliant)     */}
       {/* ========================================================================= */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-2 border-b border-emerald-900/60">
+        <div className="flex items-center gap-2">
+          <h2 className="text-base sm:text-lg font-bold text-white tracking-wide">
+            Google Books search results
+          </h2>
+          {totalItems > 0 && (
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              {totalItems.toLocaleString()} volumes
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 opacity-80 hover:opacity-100 transition">
+          <span className="text-[10px] text-emerald-300/70 font-mono">powered by</span>
+          <span className="font-bold text-xs tracking-tight">
+            <span className="text-[#4285F4]">G</span>
+            <span className="text-[#EA4335]">o</span>
+            <span className="text-[#FBBC05]">o</span>
+            <span className="text-[#4285F4]">g</span>
+            <span className="text-[#34A853]">l</span>
+            <span className="text-[#EA4335]">e</span>
+          </span>
+        </div>
+      </div>
+
       {error && (
         <div className="p-4 rounded-2xl bg-rose-950/60 border border-rose-800 text-rose-200 text-xs flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -922,9 +976,9 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
       ) : books.length === 0 ? (
         <div className="p-12 text-center bg-[#021810] rounded-3xl border border-emerald-900/60 space-y-3">
           <BookOpen className="w-12 h-12 text-emerald-600 mx-auto" />
-          <h3 className="text-base font-bold text-white">No Google Books Found</h3>
+          <h3 className="text-base font-bold text-white">No Google Books search results</h3>
           <p className="text-xs text-emerald-400/80 max-w-md mx-auto">
-            Try broadening your search query or removing quotation marks. You can also search by author or ISBN.
+            Try broadening your search query or removing quotation marks. You can also search by author, title, or ISBN.
           </p>
         </div>
       ) : (
@@ -955,15 +1009,15 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
                       </div>
                     )}
 
-                    {/* Embeddable Status Indicator */}
+                    {/* Viewability Level Indicator (Strict Guidelines: 'Full view' or 'Limited preview') */}
                     <div className="absolute top-2 right-2">
-                      {b.embeddable ? (
+                      {b.viewability === 'FULL' || b.viewability === 'ALL_PAGES' ? (
                         <span className="px-2 py-0.5 rounded-full bg-emerald-600/90 text-white font-mono text-[9px] font-bold shadow">
-                          Embeddable
+                          Full view
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded-full bg-slate-800/90 text-slate-300 font-mono text-[9px]">
-                          Web View
+                        <span className="px-2 py-0.5 rounded-full bg-slate-900/90 border border-amber-500/40 text-amber-300 font-mono text-[9px] font-bold shadow">
+                          Limited preview
                         </span>
                       )}
                     </div>
@@ -999,14 +1053,15 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
                   </div>
                 </div>
 
-                {/* Actions: In-App Embedded Viewer, Bookmark, External */}
+                {/* Actions: Google Preview Button, Bookmark, Prominent Link */}
                 <div className="flex items-center gap-1.5 pt-3 mt-3 border-t border-emerald-900/60">
                   <button
                     onClick={() => openEmbeddedViewer(b)}
-                    className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow transition"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow transition"
+                    title="Launch Google Preview"
                   >
                     <BookOpen className="w-3.5 h-3.5" />
-                    <span>Read Preview</span>
+                    <span>Google Preview</span>
                   </button>
 
                   <button
@@ -1027,7 +1082,7 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
                       target="_blank"
                       rel="noopener noreferrer"
                       className="p-1.5 rounded-xl bg-[#021810] text-emerald-400 hover:text-white border border-emerald-800 hover:border-emerald-600 transition"
-                      title="Open on Google Books Website"
+                      title="View on Google Books"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
                     </a>
@@ -1083,7 +1138,7 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
                     {activeViewerBook.title}
                   </h3>
                   <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/40">
-                    Google Books Embedded Viewer
+                    Google Preview
                   </span>
                 </div>
                 <div className="text-xs text-emerald-300/80 font-mono">
@@ -1135,9 +1190,10 @@ export default function GoogleBooksExplorer({ initialQuery = 'Computer Science' 
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-3 py-2 bg-[#021810] hover:bg-emerald-900/50 text-emerald-300 hover:text-white border border-emerald-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
+                  title="View on Google Books"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Google Books Tab</span>
+                  <span className="hidden sm:inline">View on Google Books</span>
                 </a>
               )}
 
