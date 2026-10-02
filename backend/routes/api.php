@@ -60,6 +60,9 @@ Route::get('/catalog/{id}', [CatalogController::class, 'show']);
 Route::post('/catalog/check-duplicate', [CatalogController::class, 'checkDuplicate']);
 Route::post('/catalog', [CatalogController::class, 'store']);
 Route::delete('/catalog/{id}', [CatalogController::class, 'destroy']);
+Route::get('/favorites', [CatalogController::class, 'getFavorites']);
+Route::post('/favorites/toggle', [CatalogController::class, 'toggleFavorite']);
+
 
 // 7. Patrons API
 Route::get('/patrons', [PatronController::class, 'index']);

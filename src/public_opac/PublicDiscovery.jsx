@@ -164,7 +164,26 @@ export default function PublicDiscovery({
     setShowAutocomplete(combined.length > 0);
   }, [searchQuery, books]);
 
-  // Sync Saved Books from storage
+  // Load saved bookmarks from SQL database (if backend is active)
+  useEffect(() => {
+    fetch('/api/favorites?user_id=guest_opac')
+      .then(res => {
+        if (!res.ok) throw new Error('Backend not available');
+        return res.json();
+      })
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          setSavedBooks(prev => {
+            const merged = Array.from(new Set([...prev, ...data]));
+            localStorage.setItem('fcc_saved_books_list', JSON.stringify(merged));
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Sync Saved Books from storage and SQL database
   const handleToggleSaveBook = (bookId, e) => {
     e?.stopPropagation();
     let updated;
@@ -176,6 +195,13 @@ export default function PublicDiscovery({
     }
     setSavedBooks(updated);
     localStorage.setItem('fcc_saved_books_list', JSON.stringify(updated));
+
+    // Persist to SQL backend database
+    fetch('/api/favorites/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: 'guest_opac', book_id: bookId })
+    }).catch(() => {});
   };
 
   // Fetch live external API resources from Open Library & Gutendex (No login required)

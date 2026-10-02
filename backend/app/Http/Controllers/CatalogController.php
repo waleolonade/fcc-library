@@ -273,4 +273,55 @@ class CatalogController extends Controller
             'message' => 'No bibliographic record found for ISBN ' . $cleanIsbn
         ], 404);
     }
+
+    public function getFavorites(Request $request)
+    {
+        $userId = $request->query('user_id', 'guest_opac');
+        $favorites = DB::table('favorites')
+            ->where('user_identifier', $userId)
+            ->pluck('book_id');
+
+        return response()->json($favorites);
+    }
+
+    public function toggleFavorite(Request $request)
+    {
+        $userId = $request->input('user_id', 'guest_opac');
+        $bookId = $request->input('book_id');
+
+        if (!$bookId) {
+            return response()->json(['error' => 'book_id is required'], 422);
+        }
+
+        $existing = DB::table('favorites')
+            ->where('user_identifier', $userId)
+            ->where('book_id', $bookId)
+            ->first();
+
+        if ($existing) {
+            DB::table('favorites')
+                ->where('user_identifier', $userId)
+                ->where('book_id', $bookId)
+                ->delete();
+            $saved = false;
+        } else {
+            DB::table('favorites')->insert([
+                'user_identifier' => $userId,
+                'book_id' => $bookId,
+                'created_at' => now(),
+            ]);
+            $saved = true;
+        }
+
+        $allFavorites = DB::table('favorites')
+            ->where('user_identifier', $userId)
+            ->pluck('book_id');
+
+        return response()->json([
+            'saved' => $saved,
+            'book_id' => $bookId,
+            'favorites' => $allFavorites
+        ]);
+    }
 }
+
