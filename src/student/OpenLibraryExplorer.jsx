@@ -402,16 +402,15 @@ function IntegratedViewerModal({ viewerData, onClose }) {
         .then(res => {
           if (res.success && res.data) {
             setIaData(res.data);
-            if (res.data.files?.pdf?.url) {
+            if (res.data.files?.pdf?.url && !res.data.is_restricted) {
               setIaPdf(res.data.files.pdf);
-              // If book was opened in PDF mode or has full PDF stream, prioritize direct PDF!
-              if (viewerData.readerType === 'pdf' || res.data.can_read_full || !viewerData.url?.includes('/details/')) {
+              if (viewerData.readerType === 'pdf' || res.data.can_read_full) {
                 setCurrentUrl(res.data.files.pdf.url);
                 setActiveProvider('pdf');
                 setLoading(false);
               }
             }
-            if (res.data.files?.txt) {
+            if (res.data.files?.txt && !res.data.is_restricted) {
               setIaTxt(res.data.files.txt);
             }
           }
@@ -420,16 +419,19 @@ function IntegratedViewerModal({ viewerData, onClose }) {
           fetch(`https://archive.org/metadata/${targetIaId}`)
             .then(r => r.json())
             .then(raw => {
-              const files = raw.files || [];
-              const pdf = files.find(f => f.name?.toLowerCase().endsWith('.pdf') && !f.name.includes('_encrypted') && !f.name.includes('_lcp'));
-              if (pdf) {
-                const pdfUrl = `https://archive.org/download/${targetIaId}/${encodeURIComponent(pdf.name)}`;
-                const resolvedPdf = { name: pdf.name, url: pdfUrl, size: pdf.size };
-                setIaPdf(resolvedPdf);
-                if (viewerData.readerType === 'pdf') {
-                  setCurrentUrl(pdfUrl);
-                  setActiveProvider('pdf');
-                  setLoading(false);
+              const isRes = raw.metadata?.['access-restricted-item'] === 'true';
+              if (!isRes) {
+                const files = raw.files || [];
+                const pdf = files.find(f => f.name?.toLowerCase().endsWith('.pdf') && !f.name.includes('_encrypted') && !f.name.includes('_lcp'));
+                if (pdf) {
+                  const pdfUrl = `https://archive.org/download/${targetIaId}/${encodeURIComponent(pdf.name)}`;
+                  const resolvedPdf = { name: pdf.name, url: pdfUrl, size: pdf.size };
+                  setIaPdf(resolvedPdf);
+                  if (viewerData.readerType === 'pdf') {
+                    setCurrentUrl(pdfUrl);
+                    setActiveProvider('pdf');
+                    setLoading(false);
+                  }
                 }
               }
             })
@@ -1040,7 +1042,7 @@ export default function OpenLibraryExplorer() {
           const res = await fetch(`/api/internet-archive/metadata/${iaId}`);
           if (res.ok) {
             const mData = await res.json();
-            if (mData.success && mData.data?.files?.pdf?.url) {
+            if (mData.success && mData.data?.files?.pdf?.url && !mData.data?.is_restricted) {
               setViewerData({
                 url: mData.data.files.pdf.url,
                 pdfUrl: mData.data.files.pdf.url,

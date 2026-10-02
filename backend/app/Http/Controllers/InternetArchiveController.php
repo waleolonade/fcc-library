@@ -243,14 +243,15 @@ class InternetArchiveController extends Controller
                 }
             }
 
-            // Determine best reading URL: prioritize direct PDF for full access to all pages
+            // Determine best reading URL
+            // Unrestricted items stream full PDF; restricted CDL items must use BookReader to avoid 401 Authorization Required nginx
             $readUrl = null;
             $readerType = 'embed';
 
-            if ($bestPdf) {
+            if (!$isRestricted && $bestPdf) {
                 $readUrl = $bestPdf['url'];
                 $readerType = 'pdf';
-            } elseif ($bestTxt) {
+            } elseif (!$isRestricted && $bestTxt) {
                 $readUrl = $bestTxt['url'];
                 $readerType = 'txt';
             } else {
@@ -282,17 +283,17 @@ class InternetArchiveController extends Controller
                     'subjects'      => $subjects,
                     'total_pages'   => $totalPages,
                     'is_restricted' => $isRestricted,
-                    'can_read_full' => ($bestPdf !== null || $bestTxt !== null || !$isRestricted),
+                    'can_read_full' => !$isRestricted && ($bestPdf !== null || $bestTxt !== null),
                     'cover_url'     => self::BASE_URL . "/services/img/{$identifier}",
                     'details_url'   => self::BASE_URL . "/details/{$identifier}",
                     'borrow_url'    => self::BASE_URL . "/details/{$identifier}",
                     'read_url'      => $readUrl,
                     'reader_type'   => $readerType,
                     'files' => [
-                        'pdf'  => $bestPdf,
-                        'epub' => $bestEpub,
-                        'txt'  => $bestTxt,
-                        'all'  => $allDownloadable
+                        'pdf'  => !$isRestricted ? $bestPdf : null,
+                        'epub' => !$isRestricted ? $bestEpub : null,
+                        'txt'  => !$isRestricted ? $bestTxt : null,
+                        'all'  => !$isRestricted ? $allDownloadable : []
                     ]
                 ]
             ]);

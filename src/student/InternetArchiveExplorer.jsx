@@ -111,8 +111,8 @@ export default function InternetArchiveExplorer() {
 
   // Launch in-app reader for any book
   const openReader = async (item) => {
-    // If we already have full metadata with best PDF
-    if (item.files?.pdf?.url) {
+    // If we already have full metadata with best PDF and item is unrestricted
+    if (!item.is_restricted && item.files?.pdf?.url) {
       setActiveReader({
         url: item.files.pdf.url,
         directUrl: item.files.pdf.url,
@@ -120,7 +120,8 @@ export default function InternetArchiveExplorer() {
         creator: item.creator,
         type: 'pdf',
         identifier: item.identifier,
-        isRestricted: false
+        isRestricted: false,
+        pdfUrl: item.files.pdf.url
       });
       return;
     }
@@ -134,13 +135,13 @@ export default function InternetArchiveExplorer() {
           const d = data.data;
           setActiveReader({
             url: d.read_url,
-            directUrl: d.files?.pdf?.url || d.details_url,
+            directUrl: (!d.is_restricted && d.files?.pdf?.url) ? d.files.pdf.url : d.details_url,
             title: d.title,
             creator: d.creator,
             type: d.reader_type,
             identifier: d.identifier,
             isRestricted: d.is_restricted,
-            pdfUrl: d.files?.pdf?.url || null
+            pdfUrl: (!d.is_restricted && d.files?.pdf?.url) ? d.files.pdf.url : null
           });
           return;
         }
@@ -646,7 +647,7 @@ export default function InternetArchiveExplorer() {
 
             {/* Actions */}
             <div className="flex items-center gap-2 shrink-0">
-              {activeReader.pdfUrl && (
+              {!activeReader.isRestricted && activeReader.pdfUrl && (
                 <a
                   href={activeReader.pdfUrl}
                   download

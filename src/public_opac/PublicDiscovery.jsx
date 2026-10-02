@@ -1248,7 +1248,7 @@ export default function PublicDiscovery({
                                         const res = await fetch(`/api/internet-archive/metadata/${item.identifier}`);
                                         if (res.ok) {
                                           const mData = await res.json();
-                                          if (mData.success && mData.data?.files?.pdf?.url) {
+                                          if (mData.success && mData.data?.files?.pdf?.url && !mData.data?.is_restricted) {
                                             setActiveLiveReader({
                                               url: mData.data.files.pdf.url,
                                               pdfUrl: mData.data.files.pdf.url,
@@ -1987,9 +1987,9 @@ function LiveFederatedModalReader({ activeLiveReader, onClose }) {
         .then(res => {
           if (res.success && res.data) {
             setIaData(res.data);
-            if (res.data.files?.pdf?.url) {
+            if (res.data.files?.pdf?.url && !res.data.is_restricted) {
               setIaPdf(res.data.files.pdf);
-              if (activeLiveReader.readerType === 'pdf' || res.data.can_read_full || !activeLiveReader.url?.includes('/details/')) {
+              if (activeLiveReader.readerType === 'pdf' || res.data.can_read_full) {
                 setCurrentUrl(res.data.files.pdf.url);
                 setActiveProvider('pdf');
                 setLoading(false);
