@@ -76,4 +76,14 @@ class Book extends Model
         return is_array($raw) ? $raw : (json_decode($raw, true) ?: []);
     }
     public function getReferenceStyleAttribute() { return $this->attributes['reference_style'] ?? 'APA 7th'; }
+
+    public function reviews()
+    {
+        return $this->hasMany(Review::class, 'book_id', 'id');
+    }
+
+    public function reservations()
+    {
+        return $this->hasMany(Reservation::class, 'book_id', 'id');
+    }
 }

@@ -41,6 +41,13 @@ class SourceRegistry
             'preset' => null,
             'description' => 'Physical copies, digital uploads and HND/ND projects owned by FCC.',
         ],
+        'lms_api' => [
+            'label' => 'LMS Academic Library API',
+            'types' => ['book', 'ebook'],
+            'strengths' => ['owned', 'borrow', 'textbook', 'academic'],
+            'preset' => 'API-LMS',
+            'description' => 'Real-time Library Management System API with full-text search, live copy stacks, hold reservation queue, and peer review metrics.',
+        ],
         'google_books' => [
             'label' => 'Google Books',
             'types' => ['book', 'ebook'],

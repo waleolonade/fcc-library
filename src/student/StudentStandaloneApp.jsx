@@ -4,7 +4,7 @@ import {
   Sparkles, Layers, Bookmark, MapPin, Filter, AlertTriangle,
   Award, ShieldCheck, Globe, MessageSquare, Printer, Fingerprint,
   Building2, Key, Bell, User, Clock, ChevronLeft, ChevronRight,
-  Menu, X, HelpCircle, Settings, Shield, PlusCircle, Wifi, Compass, Link2, Copy
+  Menu, X, HelpCircle, Settings, Shield, PlusCircle, Wifi, Compass, Link2, Copy, Database
 } from 'lucide-react';
 import { INSTITUTION } from '../data/institutionalSeedData';
 import { libraryApi } from '../api/libraryApi';
@@ -32,6 +32,7 @@ import BiometricScannerModal from '../common/BiometricScannerModal';
 import StudentCardAndLoans from './StudentCardAndLoans';
 import GraduationClearance from './GraduationClearance';
 import StudentReservations from './StudentReservations';
+import LmsApiExplorer from './LmsApiExplorer';
 
 export default function StudentStandaloneApp() {
   const [studentUser, setStudentUser] = useState(() => {
@@ -461,6 +462,7 @@ export default function StudentStandaloneApp() {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Sparkles },
     { id: 'catalog', label: 'Discover Library', icon: Search },
+    { id: 'lms', label: 'LMS Academic API Hub', icon: Database },
     { id: 'loans', label: 'My Library & Loans', icon: BookOpen, badge: loans.filter(l => l.matric === studentUser?.matric).length },
     { id: 'reservations', label: 'Reservations', icon: Clock, badge: reservations.filter(r => r.matric === studentUser?.matric).length },
     { id: 'digital', label: 'Digital Library', icon: Layers },
@@ -764,6 +766,15 @@ export default function StudentStandaloneApp() {
                 setShowAcquisitionModal(true);
                 window.location.hash = '#/acquisition';
                 setCurrentHashUri('#/acquisition');
+              }}
+            />
+          ) : activeTab === 'lms' || activeTab === 'library_lms' ? (
+            <LmsApiExplorer
+              user={studentUser}
+              onSelectBook={openBookDetails}
+              onOpenReader={openBookReader}
+              onReserve={(b) => {
+                refreshDataFromApi();
               }}
             />
           ) : activeTab === 'loans' ? (

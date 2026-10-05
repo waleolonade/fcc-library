@@ -20,8 +20,18 @@ use App\Http\Controllers\Api\ReservationController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\AuthorController;
 use App\Http\Controllers\Api\RecommendationController;
+use App\Http\Controllers\Api\LmsApiController;
 
-// 00. Federated API Overlay (Unified On-Demand Resource Engine)
+// 00. LMS Academic Library API Gateway (Dedicated First-Class Engine)
+Route::prefix('lms')->group(function () {
+    Route::get('/books',      [LmsApiController::class, 'index']);
+    Route::get('/search',     [LmsApiController::class, 'search']);
+    Route::get('/books/{id}', [LmsApiController::class, 'show']);
+    Route::get('/categories', [LmsApiController::class, 'categories']);
+    Route::get('/stats',      [LmsApiController::class, 'stats']);
+});
+
+// 00b. Federated API Overlay (Unified On-Demand Resource Engine)
 Route::prefix('overlay')->group(function () {
     Route::get('/sources',      [OverlayController::class, 'sources']);
     Route::post('/ask',         [OverlayController::class, 'ask']);

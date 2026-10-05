@@ -635,6 +635,32 @@ export const libraryApi = {
   },
 
   // -------------------------------------------------------------
+  // 11. LMS ACADEMIC LIBRARY API (Dedicated Engine)
+  // -------------------------------------------------------------
+  lms: {
+    async getBooks(params = {}) {
+      const query = new URLSearchParams(params).toString();
+      const res = await fetchApi(`/lms/books${query ? `?${query}` : ''}`);
+      return res || { data: [], total: 0 };
+    },
+    async search(q = '', limit = 15) {
+      const res = await fetchApi(`/lms/search?q=${encodeURIComponent(q)}&limit=${limit}`);
+      return res || { results: [], count: 0 };
+    },
+    async getBook(id) {
+      return await fetchApi(`/lms/books/${encodeURIComponent(id)}`);
+    },
+    async getCategories() {
+      const res = await fetchApi('/lms/categories');
+      return res || { departments: [], subjects: [] };
+    },
+    async getStats() {
+      const res = await fetchApi('/lms/stats');
+      return res || null;
+    }
+  },
+
+  // -------------------------------------------------------------
   // 11a. BOOK RESERVATIONS API (Direct from library-management-system-api)
   // -------------------------------------------------------------
   reservations: {

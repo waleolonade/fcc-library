@@ -8,6 +8,7 @@ import {
 import { parseNaturalLanguageQuery, filterCatalogByNlp } from '../utils/nlpSearch';
 import TraceBadge from '../common/TraceBadge';
 import { sounds } from '../utils/soundEffects';
+import { libraryApi } from '../api/libraryApi';
 
 const DEFAULT_RECENT_SEARCHES = [
   'artificial intelligence',
@@ -48,8 +49,12 @@ export default function SmartCatalogSearch({
   const [isSearchingGlobal, setIsSearchingGlobal] = useState(false);
   const [globalProviders, setGlobalProviders] = useState([]);
 
+  // LMS API Search states
+  const [lmsResults, setLmsResults] = useState([]);
+  const [isSearchingLms, setIsSearchingLms] = useState(false);
+
   const categories = [
-    'Everything', 'Books', 'eBooks & PDFs', 'Journals', 'Theses & Projects', 'Course Materials', 'Global Library APIs'
+    'Everything', 'Books', 'eBooks & PDFs', 'Journals', 'Theses & Projects', 'Course Materials', 'LMS Academic API', 'Global Library APIs'
   ];
 
   const handleSearchGlobalApis = async (term = searchQuery) => {
@@ -69,9 +74,25 @@ export default function SmartCatalogSearch({
     }
   };
 
+  const handleSearchLmsApi = async (term = searchQuery) => {
+    setIsSearchingLms(true);
+    try {
+      const res = await libraryApi.lms.search(term || 'economics agriculture technology cooperative');
+      if (res && res.results) {
+        setLmsResults(res.results);
+      }
+    } catch (err) {
+      console.error('Error querying LMS API:', err);
+    } finally {
+      setIsSearchingLms(false);
+    }
+  };
+
   useEffect(() => {
     if (activeCategory === 'Global Library APIs') {
       handleSearchGlobalApis(searchQuery);
+    } else if (activeCategory === 'LMS Academic API') {
+      handleSearchLmsApi(searchQuery);
     }
   }, [activeCategory]);
 
@@ -364,6 +385,7 @@ export default function SmartCatalogSearch({
           <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto text-xs pb-1">
             {categories.map(cat => {
               const isGlobal = cat === 'Global Library APIs';
+              const isLms = cat === 'LMS Academic API';
               return (
                 <button
                   key={cat}
@@ -372,19 +394,26 @@ export default function SmartCatalogSearch({
                     sounds.playClick();
                     if (isGlobal) {
                       handleSearchGlobalApis(searchQuery);
+                    } else if (isLms) {
+                      handleSearchLmsApi(searchQuery);
                     }
                   }}
                   className={`px-3 py-1.5 rounded-full font-semibold transition whitespace-nowrap flex items-center gap-1.5 ${
                     activeCategory === cat
                       ? isGlobal
                         ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950 scale-105'
+                        : isLms
+                        ? 'bg-teal-600 text-white shadow-md shadow-teal-950 scale-105'
                         : 'bg-emerald-600 text-white shadow-md shadow-emerald-950 scale-105'
                       : isGlobal
                         ? 'bg-indigo-950/40 border border-indigo-800/60 text-indigo-300 hover:bg-indigo-900/50'
+                        : isLms
+                        ? 'bg-teal-950/40 border border-teal-800/60 text-teal-300 hover:bg-teal-900/50'
                         : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   {isGlobal && <Globe size={13} className="text-cyan-400 animate-pulse" />}
+                  {isLms && <Database size={13} className="text-teal-300 animate-pulse" />}
                   <span>{cat}</span>
                 </button>
               );
@@ -499,6 +528,11 @@ export default function SmartCatalogSearch({
               Discovered <strong className="text-white">{globalResults.length}</strong> monographs across World Open Access Repositories
               {searchQuery && <span> for "<strong className="text-cyan-400">{searchQuery}</strong>"</span>}
             </span>
+          ) : activeCategory === 'LMS Academic API' ? (
+            <span>
+              Fetched <strong className="text-white">{lmsResults.length}</strong> books via LMS Academic Core API
+              {searchQuery && <span> for "<strong className="text-teal-400">{searchQuery}</strong>"</span>}
+            </span>
           ) : (
             <span>
               Showing <strong className="text-white">{filteredResults.length}</strong> {activeCategory.toLowerCase()} found
@@ -510,6 +544,8 @@ export default function SmartCatalogSearch({
         <span className="font-mono text-[11px] text-slate-500 hidden sm:inline">
           {activeCategory === 'Global Library APIs'
             ? 'Open Library • Google Books • Gutenberg • Crossref • OpenAlex'
+            : activeCategory === 'LMS Academic API'
+            ? 'LMS REST API v2.0 • Real-Time Stacks & Hold Queues'
             : 'MySQL Dual-Driver & MARC21 Synchronized'}
         </span>
       </div>
@@ -624,6 +660,91 @@ export default function SmartCatalogSearch({
                       <PlusCircle size={13} className="text-emerald-400" />
                       <span>Request Physical Copy</span>
                     </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : activeCategory === 'LMS Academic API' ? (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-teal-950/30 border border-teal-800/50 text-xs">
+            <div className="flex items-center gap-2">
+              <Database size={18} className="text-teal-400" />
+              <div>
+                <span className="font-bold text-white">LMS Academic API Live Gateway:</span>
+                <span className="text-slate-300 ml-1.5">
+                  Direct real-time query across institutional holdings, physical stacks, hold queues, and peer reviews.
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => handleSearchLmsApi(searchQuery)}
+              disabled={isSearchingLms}
+              className="px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-semibold transition flex items-center gap-1.5"
+            >
+              <RefreshCw size={13} className={isSearchingLms ? 'animate-spin' : ''} />
+              <span>{isSearchingLms ? 'Querying API...' : 'Refresh LMS Results'}</span>
+            </button>
+          </div>
+
+          {isSearchingLms ? (
+            <div className="p-12 text-center rounded-3xl bg-slate-900/80 border border-slate-800 space-y-3">
+              <RefreshCw size={28} className="text-teal-400 animate-spin mx-auto" />
+              <p className="text-sm font-semibold text-white">Fetching books from LMS Academic Library API...</p>
+              <p className="text-xs text-slate-400">Pinging /api/lms/search with real-time stock and hold metrics</p>
+            </div>
+          ) : lmsResults.length === 0 ? (
+            <div className="p-10 rounded-3xl bg-slate-900 border border-slate-800 text-center space-y-3">
+              <AlertCircle size={28} className="text-amber-400 mx-auto" />
+              <h4 className="text-base font-bold text-white">No LMS books found for this query</h4>
+              <p className="text-xs text-slate-400">Try searching for economics, microfinance, banking, agriculture, or computing.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {lmsResults.map((item) => (
+                <div
+                  key={item.uid || item.externalId}
+                  className="p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-teal-500/50 transition-all flex flex-col justify-between group shadow-xl space-y-3"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-teal-950 text-teal-300 border border-teal-800">
+                        {item.holdings?.callNumber || 'FCC-STACK'}
+                      </span>
+                      <span className="text-amber-400 text-xs font-mono font-bold">
+                        ★ {item.rating || 5.0} {item.reviews_count ? `(${item.reviews_count})` : ''}
+                      </span>
+                    </div>
+
+                    <h3 className="font-bold text-white text-sm group-hover:text-teal-300 transition line-clamp-2">
+                      {item.title}
+                    </h3>
+                    <p className="text-xs text-slate-400">{item.authors ? item.authors.join(', ') : 'Academic Author'}</p>
+                    <p className="text-xs text-slate-300/80 line-clamp-2 leading-relaxed">{item.description}</p>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => {
+                        sounds.playClick();
+                        if (onSelectBook) onSelectBook(item);
+                      }}
+                      className="flex-1 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold text-center"
+                    >
+                      View Details
+                    </button>
+                    {item.readUrl && (
+                      <button
+                        onClick={() => {
+                          sounds.playSuccessChime();
+                          if (onOpenReader) onOpenReader(item);
+                        }}
+                        className="py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
+                      >
+                        Read E-Book
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

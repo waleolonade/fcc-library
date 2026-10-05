@@ -11,6 +11,20 @@ class LibraryApiSeeder extends Seeder
     {
         $apis = [
             [
+                'id' => 'API-LMS',
+                'name' => 'LMS Academic Library Management API',
+                'provider' => 'Federal Cooperative College & Global LMS Network',
+                'category' => 'Core Academic Books & Holdings',
+                'endpoint_template' => '/api/lms/books?q={query}&per_page=12',
+                'auth_type' => 'Internal Free Open Access',
+                'api_key' => null,
+                'response_type' => 'json',
+                'description' => 'Real-time Library Management System API with full-text search, live copy stacks, hold reservation queue, and peer review metrics.',
+                'docs_url' => '/api/lms/books',
+                'status' => 'Active',
+                'is_preset' => true,
+            ],
+            [
                 'id' => 'API-OPENLIB',
                 'name' => 'Open Library Book Search & Covers API',
                 'provider' => 'Internet Archive (San Francisco, CA, USA)',

@@ -41,6 +41,7 @@ import TroveExplorer from './TroveExplorer';
 import InternetArchiveExplorer from './InternetArchiveExplorer';
 import GoogleBooksExplorer from './GoogleBooksExplorer';
 import ApiOverlayDiscovery from './ApiOverlayDiscovery';
+import LmsApiExplorer from './LmsApiExplorer';
 
 export default function StudentPortal({
   user,
@@ -148,7 +149,7 @@ export default function StudentPortal({
           'research_hnd_projects', 'research_papers', 'research_journals', 'research_topics', 'research_references',
           'ai_assistant', 'notifications', 'profile',
           'kiosk', 'barcode_studio', 'clearance', 'rooms', 'ill', 'communication', 'helpdesk', 'partner_libs',
-          'library_google_books', 'library_gutendex', 'library_openlibrary', 'library_archive'
+          'library_lms', 'library_google_books', 'library_gutendex', 'library_openlibrary', 'library_archive'
         ];
 
         if (validTabs.includes(resolved)) {
@@ -246,6 +247,7 @@ export default function StudentPortal({
     helpdesk: { label: 'Ask a Librarian', category: 'FACILITIES', icon: MessageSquare },
     partner_libs: { label: 'Linked Libraries', category: 'FACILITIES', icon: Building2 },
     library_discover: { label: 'Federated API Overlay & Discover', category: 'LIBRARY', icon: Zap },
+    library_lms: { label: 'LMS Academic API Hub', category: 'LIBRARY', icon: Database },
     library_google_books: { label: 'Google Books (Recommended)', category: 'LIBRARY', icon: Sparkles },
     library_gutendex: { label: 'Project Gutenberg eBooks', category: 'LIBRARY', icon: BookOpen },
     library_openlibrary: { label: 'Open Library Catalog', category: 'LIBRARY', icon: Globe },
@@ -460,6 +462,7 @@ export default function StudentPortal({
                         { id: 'library_ebooks', label: 'eBooks', icon: BookOpen, prefix: '├──', badge: digitalEbooks.length },
                         { id: 'library_journals', label: 'Journals', icon: Layers, prefix: '├──' },
                         { id: 'library_digital', label: 'Digital Resources', icon: GraduationCap, prefix: '├──' },
+                        { id: 'library_lms', label: 'LMS Academic API', icon: Database, prefix: '├──', badgeText: 'NEW API' },
                         { id: 'library_google_books', label: 'Google Books', icon: Sparkles, prefix: '├──', badgeText: 'RECOMMENDED' },
                         { id: 'library_gutendex', label: 'Project Gutenberg', icon: Globe, prefix: '├──' },
                         { id: 'library_openlibrary', label: 'Open Library', icon: Globe, prefix: '├──' },
@@ -885,6 +888,33 @@ export default function StudentPortal({
                 setActiveBookForReader(b);
               }}
             />
+          ) : activeTab === 'library_lms' ? (
+            <div className="h-full">
+              <LmsApiExplorer
+                user={user}
+                onSelectBook={(b) => {
+                  setActiveBookDetails(b);
+                }}
+                onOpenReader={(b) => {
+                  setActiveBookDetails(null);
+                  setActiveBookForReader(b);
+                }}
+                onReserve={(b) => {
+                  setLocalReservations(prev => [
+                    {
+                      id: `res-${Date.now()}`,
+                      bookId: b.id,
+                      matric: user?.matric,
+                      title: b.title,
+                      author: b.author,
+                      date: new Date().toISOString().split('T')[0],
+                      status: 'Confirmed'
+                    },
+                    ...prev
+                  ]);
+                }}
+              />
+            </div>
           ) : activeTab === 'library_google_books' ? (
             <div className="h-full">
               <GoogleBooksExplorer />
