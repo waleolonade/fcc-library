@@ -635,8 +635,38 @@ export const libraryApi = {
   },
 
   // -------------------------------------------------------------
-  // 11. LMS ACADEMIC LIBRARY API (Dedicated Engine)
+  // 11. THETECHGUY44 LIBRARY MANAGEMENT SYSTEM API
+  // Author: Muhammad Yahaya Gana (@Thetechguy44 / Dev Gana)
+  // Repo: https://github.com/Thetechguy44/library-management-system-api
+  // Commits: https://github.com/Thetechguy44/library-management-system-api/commits?author=Thetechguy44
   // -------------------------------------------------------------
+  thetechguy44: {
+    async getBooks(params = {}) {
+      const query = new URLSearchParams(params).toString();
+      const res = await fetchApi(`/thetechguy44/books${query ? `?${query}` : ''}`);
+      return res || { data: [], total: 0 };
+    },
+    async search(q = '', limit = 15) {
+      const res = await fetchApi(`/thetechguy44/search?q=${encodeURIComponent(q)}&limit=${limit}`);
+      return res || { results: [], count: 0 };
+    },
+    async getBook(id) {
+      return await fetchApi(`/thetechguy44/books/${encodeURIComponent(id)}`);
+    },
+    async getCategories() {
+      const res = await fetchApi('/thetechguy44/categories');
+      return res || { departments: [], subjects: [] };
+    },
+    async getStats() {
+      const res = await fetchApi('/thetechguy44/stats');
+      return res || null;
+    },
+    getRepoUrl: () => 'https://github.com/Thetechguy44/library-management-system-api',
+    getCommitsUrl: () => 'https://github.com/Thetechguy44/library-management-system-api/commits?author=Thetechguy44',
+    author: 'Thetechguy44 (Muhammad Yahaya Gana / Dev Gana)',
+  },
+
+  // Backward compatibility alias for thetechguy44
   lms: {
     async getBooks(params = {}) {
       const query = new URLSearchParams(params).toString();
@@ -657,7 +687,10 @@ export const libraryApi = {
     async getStats() {
       const res = await fetchApi('/lms/stats');
       return res || null;
-    }
+    },
+    getRepoUrl: () => 'https://github.com/Thetechguy44/library-management-system-api',
+    getCommitsUrl: () => 'https://github.com/Thetechguy44/library-management-system-api/commits?author=Thetechguy44',
+    author: 'Thetechguy44 (Muhammad Yahaya Gana / Dev Gana)',
   },
 
   // -------------------------------------------------------------

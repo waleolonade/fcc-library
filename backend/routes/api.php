@@ -22,7 +22,18 @@ use App\Http\Controllers\Api\AuthorController;
 use App\Http\Controllers\Api\RecommendationController;
 use App\Http\Controllers\Api\LmsApiController;
 
-// 00. LMS Academic Library API Gateway (Dedicated First-Class Engine)
+// 00. Thetechguy44 Library Management System API Gateway
+Route::get('/books',      [LmsApiController::class, 'index']);
+Route::get('/books/{id}', [LmsApiController::class, 'show']);
+
+Route::prefix('thetechguy44')->group(function () {
+    Route::get('/books',      [LmsApiController::class, 'index']);
+    Route::get('/search',     [LmsApiController::class, 'search']);
+    Route::get('/books/{id}', [LmsApiController::class, 'show']);
+    Route::get('/categories', [LmsApiController::class, 'categories']);
+    Route::get('/stats',      [LmsApiController::class, 'stats']);
+});
+
 Route::prefix('lms')->group(function () {
     Route::get('/books',      [LmsApiController::class, 'index']);
     Route::get('/search',     [LmsApiController::class, 'search']);

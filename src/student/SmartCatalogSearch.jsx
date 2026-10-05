@@ -54,7 +54,7 @@ export default function SmartCatalogSearch({
   const [isSearchingLms, setIsSearchingLms] = useState(false);
 
   const categories = [
-    'Everything', 'Books', 'eBooks & PDFs', 'Journals', 'Theses & Projects', 'Course Materials', 'LMS Academic API', 'Global Library APIs'
+    'Everything', 'Books', 'eBooks & PDFs', 'Journals', 'Theses & Projects', 'Course Materials', 'Thetechguy44 Library API', 'Global Library APIs'
   ];
 
   const handleSearchGlobalApis = async (term = searchQuery) => {
@@ -77,12 +77,12 @@ export default function SmartCatalogSearch({
   const handleSearchLmsApi = async (term = searchQuery) => {
     setIsSearchingLms(true);
     try {
-      const res = await libraryApi.lms.search(term || 'economics agriculture technology cooperative');
+      const res = await (libraryApi.thetechguy44 || libraryApi.lms).search(term || 'economics agriculture technology cooperative');
       if (res && res.results) {
         setLmsResults(res.results);
       }
     } catch (err) {
-      console.error('Error querying LMS API:', err);
+      console.error('Error querying Thetechguy44 API:', err);
     } finally {
       setIsSearchingLms(false);
     }
@@ -91,7 +91,7 @@ export default function SmartCatalogSearch({
   useEffect(() => {
     if (activeCategory === 'Global Library APIs') {
       handleSearchGlobalApis(searchQuery);
-    } else if (activeCategory === 'LMS Academic API') {
+    } else if (activeCategory === 'Thetechguy44 Library API' || activeCategory === 'LMS Academic API') {
       handleSearchLmsApi(searchQuery);
     }
   }, [activeCategory]);
@@ -385,7 +385,7 @@ export default function SmartCatalogSearch({
           <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto text-xs pb-1">
             {categories.map(cat => {
               const isGlobal = cat === 'Global Library APIs';
-              const isLms = cat === 'LMS Academic API';
+              const isLms = cat === 'Thetechguy44 Library API' || cat === 'LMS Academic API';
               return (
                 <button
                   key={cat}
@@ -666,38 +666,51 @@ export default function SmartCatalogSearch({
             </div>
           )}
         </div>
-      ) : activeCategory === 'LMS Academic API' ? (
+      ) : (activeCategory === 'Thetechguy44 Library API' || activeCategory === 'LMS Academic API') ? (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-teal-950/30 border border-teal-800/50 text-xs">
-            <div className="flex items-center gap-2">
-              <Database size={18} className="text-teal-400" />
+          <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-teal-950/40 border border-teal-800/70 text-xs shadow-lg">
+            <div className="flex items-center gap-2.5">
+              <Database size={20} className="text-teal-400 shrink-0" />
               <div>
-                <span className="font-bold text-white">LMS Academic API Live Gateway:</span>
-                <span className="text-slate-300 ml-1.5">
-                  Direct real-time query across institutional holdings, physical stacks, hold queues, and peer reviews.
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-white text-sm">Thetechguy44 Library API Live Gateway</span>
+                  <a
+                    href="https://github.com/Thetechguy44/library-management-system-api/commits?author=Thetechguy44"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2 py-0.5 rounded bg-teal-950 text-teal-300 border border-teal-700 font-mono text-[10px] hover:text-white flex items-center gap-1 transition"
+                  >
+                    <span>Thetechguy44 Commits</span>
+                    <ExternalLink size={10} />
+                  </a>
+                </div>
+                <p className="text-slate-300 text-[11px] mt-0.5">
+                  Built by <strong className="text-white">Muhammad Yahaya Gana</strong> (@Thetechguy44 / Dev Gana). Direct real-time query across holdings, physical stacks, hold queues, and peer reviews.
+                </p>
               </div>
             </div>
-            <button
-              onClick={() => handleSearchLmsApi(searchQuery)}
-              disabled={isSearchingLms}
-              className="px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-semibold transition flex items-center gap-1.5"
-            >
-              <RefreshCw size={13} className={isSearchingLms ? 'animate-spin' : ''} />
-              <span>{isSearchingLms ? 'Querying API...' : 'Refresh LMS Results'}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleSearchLmsApi(searchQuery)}
+                disabled={isSearchingLms}
+                className="px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-semibold transition flex items-center gap-1.5"
+              >
+                <RefreshCw size={13} className={isSearchingLms ? 'animate-spin' : ''} />
+                <span>{isSearchingLms ? 'Querying API...' : 'Refresh Results'}</span>
+              </button>
+            </div>
           </div>
 
           {isSearchingLms ? (
             <div className="p-12 text-center rounded-3xl bg-slate-900/80 border border-slate-800 space-y-3">
               <RefreshCw size={28} className="text-teal-400 animate-spin mx-auto" />
-              <p className="text-sm font-semibold text-white">Fetching books from LMS Academic Library API...</p>
-              <p className="text-xs text-slate-400">Pinging /api/lms/search with real-time stock and hold metrics</p>
+              <p className="text-sm font-semibold text-white">Fetching books from Thetechguy44 Library API...</p>
+              <p className="text-xs text-slate-400">Pinging /api/thetechguy44/search with real-time stock and hold metrics</p>
             </div>
           ) : lmsResults.length === 0 ? (
             <div className="p-10 rounded-3xl bg-slate-900 border border-slate-800 text-center space-y-3">
               <AlertCircle size={28} className="text-amber-400 mx-auto" />
-              <h4 className="text-base font-bold text-white">No LMS books found for this query</h4>
+              <h4 className="text-base font-bold text-white">No books found in Thetechguy44 API for this query</h4>
               <p className="text-xs text-slate-400">Try searching for economics, microfinance, banking, agriculture, or computing.</p>
             </div>
           ) : (

@@ -94,8 +94,17 @@ class LmsApiController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'api' => 'LMS Academic Library API v2.0',
+            'api' => 'Thetechguy44 Library Management System API',
+            'author' => 'Thetechguy44 (Dev Gana)',
+            'repository' => 'https://github.com/Thetechguy44/library-management-system-api',
             'latency_ms' => $latencyMs,
+            'api_metadata' => [
+                'name' => 'Thetechguy44 Library Management System API',
+                'author' => 'Thetechguy44 (Muhammad Yahaya Gana / Dev Gana)',
+                'repository' => 'https://github.com/Thetechguy44/library-management-system-api',
+                'commits_url' => 'https://github.com/Thetechguy44/library-management-system-api/commits?author=Thetechguy44',
+                'routes' => ['/api/books', '/api/authors', '/api/recommendations', '/api/reservations', '/api/fines', '/api/books/{id}/reviews']
+            ],
             'total' => $paginator->total(),
             'per_page' => $paginator->perPage(),
             'current_page' => $paginator->currentPage(),
@@ -106,7 +115,7 @@ class LmsApiController extends Controller
 
     /**
      * Unified Multi-Source Overlay Search
-     * GET /api/lms/search
+     * GET /api/lms/search or /api/thetechguy44/search
      * Returns schema-normalized records compatible with federated search
      */
     public function search(Request $request)
@@ -133,9 +142,9 @@ class LmsApiController extends Controller
                 : ($book->copies_available > 0 ? 'on_shelf' : 'borrow');
 
             return [
-                'uid' => 'lms_' . $book->id,
-                'source' => 'lms_api',
-                'sourceLabel' => 'LMS Academic Library API',
+                'uid' => 'ttg_' . $book->id,
+                'source' => 'thetechguy44',
+                'sourceLabel' => 'Thetechguy44 Library API',
                 'externalId' => (string) $book->id,
                 'type' => $book->is_digital ? 'ebook' : 'book',
                 'title' => $book->title,
@@ -250,6 +259,12 @@ class LmsApiController extends Controller
             ->get();
 
         return response()->json([
+            'developer_info' => [
+                'name' => 'Thetechguy44 Library Management System API',
+                'author' => 'Thetechguy44 (Muhammad Yahaya Gana / Dev Gana)',
+                'repository' => 'https://github.com/Thetechguy44/library-management-system-api',
+                'commits_url' => 'https://github.com/Thetechguy44/library-management-system-api/commits?author=Thetechguy44'
+            ],
             'total_books' => $totalBooks,
             'digital_books' => $digitalCount,
             'physical_books' => $physicalCount,

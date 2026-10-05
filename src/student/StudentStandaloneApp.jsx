@@ -462,7 +462,7 @@ export default function StudentStandaloneApp() {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Sparkles },
     { id: 'catalog', label: 'Discover Library', icon: Search },
-    { id: 'lms', label: 'LMS Academic API Hub', icon: Database },
+    { id: 'lms', label: 'Thetechguy44 Library API', icon: Database },
     { id: 'loans', label: 'My Library & Loans', icon: BookOpen, badge: loans.filter(l => l.matric === studentUser?.matric).length },
     { id: 'reservations', label: 'Reservations', icon: Clock, badge: reservations.filter(r => r.matric === studentUser?.matric).length },
     { id: 'digital', label: 'Digital Library', icon: Layers },

@@ -197,8 +197,8 @@ class LibraryApiController extends Controller
         $results = [];
 
         foreach ($apis as $api) {
-            // Direct native query for LMS Academic Library API
-            if ($api->id === 'API-LMS' || str_starts_with($api->endpoint_template, '/api/lms')) {
+            // Direct native query for Thetechguy44 Library Management System API
+            if ($api->id === 'API-THETECHGUY44' || $api->id === 'API-LMS' || str_starts_with($api->endpoint_template, '/api/lms') || str_starts_with($api->endpoint_template, '/api/thetechguy44') || str_starts_with($api->endpoint_template, '/api/books')) {
                 $lmsBooks = \App\Models\Book::where(function ($b) use ($rawQuery) {
                     $b->where('title', 'like', "%{$rawQuery}%")
                       ->orWhere('author', 'like', "%{$rawQuery}%")
@@ -208,16 +208,16 @@ class LibraryApiController extends Controller
 
                 foreach ($lmsBooks as $b) {
                     $results[] = [
-                        'id' => 'LMS-' . $b->id,
+                        'id' => 'TTG-' . $b->id,
                         'title' => $b->title,
                         'author' => $b->author,
                         'year' => $b->year ?: 2024,
                         'isbn' => $b->isbn,
                         'coverUrl' => $b->cover_url ?: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=300&auto=format&fit=crop&q=80',
-                        'publisher' => $b->publisher ?: 'FCC Academic Press',
+                        'publisher' => $b->publisher ?: 'Thetechguy44 Library Press',
                         'abstract' => $b->abstract,
-                        'sourceApi' => 'LMS Academic Library API',
-                        'sourceId' => 'API-LMS',
+                        'sourceApi' => 'Thetechguy44 Library API',
+                        'sourceId' => 'API-THETECHGUY44',
                         'externalUrl' => "/#/book/{$b->id}",
                         'subject' => $b->subject ?: 'Core Curriculum',
                         'isDigital' => (bool) $b->is_digital,

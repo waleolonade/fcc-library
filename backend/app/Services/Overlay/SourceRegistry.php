@@ -41,12 +41,19 @@ class SourceRegistry
             'preset' => null,
             'description' => 'Physical copies, digital uploads and HND/ND projects owned by FCC.',
         ],
+        'thetechguy44' => [
+            'label' => 'Thetechguy44 Library API',
+            'types' => ['book', 'ebook'],
+            'strengths' => ['owned', 'borrow', 'textbook', 'academic'],
+            'preset' => 'API-THETECHGUY44',
+            'description' => 'Library Management System API authored by Thetechguy44 with full-text search, live copy stacks, hold reservation queue, and peer review metrics.',
+        ],
         'lms_api' => [
-            'label' => 'LMS Academic Library API',
+            'label' => 'Thetechguy44 Library API (LMS)',
             'types' => ['book', 'ebook'],
             'strengths' => ['owned', 'borrow', 'textbook', 'academic'],
             'preset' => 'API-LMS',
-            'description' => 'Real-time Library Management System API with full-text search, live copy stacks, hold reservation queue, and peer review metrics.',
+            'description' => 'Real-time Library Management System API authored by Thetechguy44 with full-text search, live copy stacks, hold reservation queue, and peer review metrics.',
         ],
         'google_books' => [
             'label' => 'Google Books',

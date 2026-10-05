@@ -3,11 +3,49 @@ import {
   Search, BookOpen, Star, Bookmark, Filter, RefreshCw, CheckCircle2,
   ExternalLink, Layers, Database, Sparkles, BookCheck, Clock, MapPin,
   ChevronRight, ArrowUpDown, UserCheck, ShieldCheck, Globe, Building2,
-  Send, Quote, AlertCircle, X, Award, FileText, Check
+  Send, Quote, AlertCircle, X, Award, FileText, Check, GitCommit, Code2, Tag
 } from 'lucide-react';
 import { libraryApi } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
 import TraceBadge from '../common/TraceBadge';
+
+const THETECHGUY44_COMMITS = [
+  { oid: '1e1e302', date: 'Dec 12, 2024', message: 'route change and file setup', author: 'DevGana (@Thetechguy44)', tags: ['routing', 'config'] },
+  { oid: '1a8405a', date: 'Sep 25, 2024', message: 'added review feature test', author: 'Dev Gana (@Thetechguy44)', tags: ['tests', 'reviews'] },
+  { oid: 'f8f42fc', date: 'Sep 25, 2024', message: 'added review factory class', author: 'Dev Gana (@Thetechguy44)', tags: ['factories', 'reviews'] },
+  { oid: 'dd020e9', date: 'Sep 25, 2024', message: 'added reservation feature test', author: 'Dev Gana (@Thetechguy44)', tags: ['tests', 'reservations'] },
+  { oid: 'f310bd3', date: 'Sep 25, 2024', message: 'added resevation factory class', author: 'Dev Gana (@Thetechguy44)', tags: ['factories', 'reservations'] },
+  { oid: 'eb1de59', date: 'Sep 24, 2024', message: 'update review controller update function', author: 'Dev Gana (@Thetechguy44)', tags: ['controllers', 'reviews'] },
+  { oid: '5c8c26f', date: 'Sep 24, 2024', message: 'update api route file', author: 'Dev Gana (@Thetechguy44)', tags: ['routes', 'api'] },
+  { oid: '1331736', date: 'Sep 23, 2024', message: 'created fine test feature', author: 'Dev Gana (@Thetechguy44)', tags: ['tests', 'fines'] },
+  { oid: '3b1b46d', date: 'Sep 23, 2024', message: 'update db seeder file', author: 'Dev Gana (@Thetechguy44)', tags: ['database', 'seeders'] },
+  { oid: 'd3a0bcb', date: 'Sep 23, 2024', message: 'update fine seeder', author: 'Dev Gana (@Thetechguy44)', tags: ['database', 'fines'] },
+  { oid: '8456fbc', date: 'Sep 23, 2024', message: 'added review seeder', author: 'Dev Gana (@Thetechguy44)', tags: ['database', 'reviews'] },
+  { oid: 'fd25587', date: 'Sep 23, 2024', message: 'added reservation seeder', author: 'Dev Gana (@Thetechguy44)', tags: ['database', 'reservations'] },
+  { oid: '168cdf2', date: 'Sep 22, 2024', message: 'done api documentation for review module', author: 'Dev Gana (@Thetechguy44)', tags: ['docs', 'reviews'] },
+  { oid: '27690ab', date: 'Sep 22, 2024', message: 'done api documentation for reservation module', author: 'Dev Gana (@Thetechguy44)', tags: ['docs', 'reservations'] },
+  { oid: 'd0058de', date: 'Sep 22, 2024', message: 'done api documentation for fine module', author: 'Dev Gana (@Thetechguy44)', tags: ['docs', 'fines'] },
+  { oid: '14d4700', date: 'Sep 22, 2024', message: 'added delete method for review module', author: 'Dev Gana (@Thetechguy44)', tags: ['controllers', 'reviews'] },
+  { oid: '1fa05ab', date: 'Sep 22, 2024', message: 'added update method for review module', author: 'Dev Gana (@Thetechguy44)', tags: ['controllers', 'reviews'] },
+  { oid: 'fe645c8', date: 'Sep 21, 2024', message: 'added store method for review module', author: 'Dev Gana (@Thetechguy44)', tags: ['controllers', 'reviews'] },
+  { oid: 'd72d76f', date: 'Sep 21, 2024', message: 'stated working on review', author: 'Dev Gana (@Thetechguy44)', tags: ['features', 'reviews'] },
+  { oid: 'c2b60a0', date: 'Sep 20, 2024', message: 'working on reviews', author: 'Dev Gana (@Thetechguy44)', tags: ['features', 'reviews'] },
+  { oid: '777a921', date: 'Sep 20, 2024', message: 'added recommendation controller', author: 'Dev Gana (@Thetechguy44)', tags: ['controllers', 'recommendations'] },
+  { oid: 'a85954d', date: 'Sep 20, 2024', message: 'added recommedation fuctions', author: 'Dev Gana (@Thetechguy44)', tags: ['services', 'recommendations'] },
+  { oid: '6da1581', date: 'Sep 15, 2024', message: 'added recommendation service file', author: 'Dev Gana (@Thetechguy44)', tags: ['services', 'recommendations'] },
+  { oid: '17febc2', date: 'Sep 15, 2024', message: 'make some changes', author: 'Dev Gana (@Thetechguy44)', tags: ['core', 'updates'] },
+  { oid: 'b607a93', date: 'Sep 14, 2024', message: 'added show and store methods for reservation', author: 'Dev Gana (@Thetechguy44)', tags: ['controllers', 'reservations'] },
+  { oid: 'e77f4a1', date: 'Sep 14, 2024', message: 'added index for reservation', author: 'Dev Gana (@Thetechguy44)', tags: ['controllers', 'reservations'] },
+  { oid: '7e66be4', date: 'Sep 14, 2024', message: 'added migration and relationship', author: 'Dev Gana (@Thetechguy44)', tags: ['migrations', 'schema'] },
+  { oid: '1b6ae45', date: 'Sep 14, 2024', message: 'create reservation files module', author: 'Dev Gana (@Thetechguy44)', tags: ['scaffolding', 'reservations'] },
+  { oid: '634c995', date: 'Sep 13, 2024', message: 'added payFine funtion', author: 'Dev Gana (@Thetechguy44)', tags: ['controllers', 'fines'] },
+  { oid: '44e196e', date: 'Sep 13, 2024', message: 'added calculatefine record', author: 'Dev Gana (@Thetechguy44)', tags: ['services', 'fines'] },
+  { oid: '2bd881b', date: 'Sep 13, 2024', message: 'added fine seeder', author: 'Dev Gana (@Thetechguy44)', tags: ['database', 'fines'] },
+  { oid: '271873b', date: 'Sep 13, 2024', message: 'added fine show fine and Gate protection', author: 'Dev Gana (@Thetechguy44)', tags: ['security', 'fines'] },
+  { oid: '55bc759', date: 'Sep 12, 2024', message: 'added fine index', author: 'Dev Gana (@Thetechguy44)', tags: ['controllers', 'fines'] },
+  { oid: '2831e46', date: 'Sep 12, 2024', message: 'added fine controller', author: 'Dev Gana (@Thetechguy44)', tags: ['controllers', 'fines'] },
+  { oid: 'a957922', date: 'Sep 12, 2024', message: 'working on Fine module', author: 'Dev Gana (@Thetechguy44)', tags: ['scaffolding', 'fines'] },
+];
 
 export default function LmsApiExplorer({
   user,
@@ -15,7 +53,7 @@ export default function LmsApiExplorer({
   onOpenReader,
   onReserve
 }) {
-  const [activeSubTab, setActiveSubTab] = useState('books'); // 'books' | 'authors' | 'recommendations' | 'api_docs'
+  const [activeSubTab, setActiveSubTab] = useState('books'); // 'books' | 'authors' | 'recommendations' | 'commits' | 'api_docs'
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('All');
   const [availabilityOnly, setAvailabilityOnly] = useState(false);
@@ -108,29 +146,51 @@ export default function LmsApiExplorer({
 
   return (
     <div className="space-y-6 animate-fadeIn font-sans pb-12">
-      {/* 1. LMS API MASTHEAD BANNER */}
+      {/* 1. THETECHGUY44 API MASTHEAD BANNER */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#021d13] via-[#03291b] to-[#01140d] border border-emerald-700/60 p-6 sm:p-8 shadow-2xl text-emerald-50">
         <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-10 -left-10 w-72 h-72 bg-teal-500/10 rounded-full blur-2xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <div className="flex flex-wrap items-center gap-2">
               <span className="px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500 text-xs font-mono font-bold flex items-center gap-1.5 shadow">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                LMS REST API v2.0 • Online (Active)
+                Thetechguy44 Library API • Online (Active)
               </span>
               <span className="px-2.5 py-0.5 rounded-lg bg-[#021810] text-emerald-400 border border-emerald-800 text-[11px] font-mono">
-                /api/lms/books
+                /api/books & /api/thetechguy44/*
               </span>
-              <TraceBadge uri="#/library_lms" label="#/library_lms" />
+              <a
+                href="https://github.com/Thetechguy44/library-management-system-api/commits?author=Thetechguy44"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2.5 py-0.5 rounded-lg bg-teal-950/80 text-teal-300 hover:text-white border border-teal-700 text-[11px] font-mono flex items-center gap-1 transition shadow group"
+                title="View commits by author Thetechguy44 on GitHub"
+              >
+                <GitCommit size={12} className="text-teal-400 group-hover:rotate-45 transition-transform" />
+                <span>Thetechguy44 Commits (34)</span>
+                <ExternalLink size={10} className="text-teal-400/80" />
+              </a>
+              <a
+                href="https://github.com/Thetechguy44/library-management-system-api"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2.5 py-0.5 rounded-lg bg-[#021810] text-emerald-400 hover:text-white border border-emerald-800 text-[11px] font-mono flex items-center gap-1 transition"
+                title="View GitHub Repository"
+              >
+                <Code2 size={12} className="text-emerald-400" />
+                <span>Repo</span>
+                <ExternalLink size={10} className="text-emerald-400/80" />
+              </a>
+              <TraceBadge uri="#/library_lms" label="#/thetechguy44_api" />
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              LMS Academic Library API Hub
+              Thetechguy44 Library Management System API
             </h1>
             <p className="text-xs sm:text-sm text-emerald-200/90 max-w-2xl leading-relaxed">
-              Integrated from the Global Library Management System. Provides dedicated endpoints for book discovery, live stack holdings, automated hold queues, scholar reviews, and institutional authors.
+              Created by <span className="text-white font-bold">Muhammad Yahaya Gana</span> (<a href="https://github.com/Thetechguy44" target="_blank" rel="noopener noreferrer" className="text-teal-300 hover:underline">@Thetechguy44</a> / Dev Gana). Fully integrated into FCC Smart Library with dedicated live endpoints for catalog search, book reservations, fine management, reviews, and author directories.
             </p>
           </div>
 
@@ -177,6 +237,7 @@ export default function LmsApiExplorer({
           { id: 'books', label: 'Search & Books Catalog', icon: Search, badge: books.length },
           { id: 'authors', label: 'Authors Directory', icon: UserCheck, badge: authors.length },
           { id: 'recommendations', label: 'Smart Recommendations', icon: Sparkles, badge: recommendations.length },
+          { id: 'commits', label: 'Thetechguy44 Commits', icon: GitCommit, badge: THETECHGUY44_COMMITS.length },
           { id: 'api_docs', label: 'API Architecture & Live Endpoints', icon: Database }
         ].map((tab) => {
           const Icon = tab.icon;
@@ -533,13 +594,97 @@ export default function LmsApiExplorer({
         </div>
       )}
 
+      {/* THETECHGUY44 COMMITS SUB-TAB */}
+      {activeSubTab === 'commits' && (
+        <div className="space-y-4">
+          <div className="p-5 rounded-2xl bg-[#021810] border border-teal-800/80 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <GitCommit size={18} className="text-teal-400" />
+                <h2 className="text-sm font-bold text-white">Thetechguy44 Commits & Engineering Log</h2>
+                <span className="px-2 py-0.5 rounded-full bg-teal-950 text-teal-300 border border-teal-800 text-[10px] font-mono">
+                  34 Commits
+                </span>
+              </div>
+              <p className="text-xs text-emerald-200/90 max-w-2xl">
+                Authored by <strong className="text-white">Muhammad Yahaya Gana</strong> (@Thetechguy44 / Dev Gana) building the Library Management System REST API. Features verified feature tests, seeders, fine calculators, review pipelines, and reservation queues.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <a
+                href="https://github.com/Thetechguy44/library-management-system-api/commits?author=Thetechguy44"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow transition"
+              >
+                <span>View Author Commits on GitHub</span>
+                <ExternalLink size={13} />
+              </a>
+              <a
+                href="https://github.com/Thetechguy44/library-management-system-api"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-teal-300 border border-teal-700/80 font-mono text-xs flex items-center gap-1.5 transition"
+              >
+                <span>Repository</span>
+                <ExternalLink size={13} />
+              </a>
+            </div>
+          </div>
+
+          {/* Commits Timeline */}
+          <div className="space-y-2">
+            {THETECHGUY44_COMMITS.map((c, idx) => (
+              <div
+                key={c.oid + idx}
+                className="p-3.5 rounded-2xl bg-[#021810] border border-emerald-900/60 hover:border-teal-500/50 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+              >
+                <div className="flex items-start sm:items-center gap-3">
+                  <div className="w-7 h-7 rounded-xl bg-teal-950/80 border border-teal-800/80 flex items-center justify-center shrink-0 text-teal-400 group-hover:scale-110 transition-transform">
+                    <GitCommit size={14} />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-bold text-white group-hover:text-teal-300 transition">
+                        {c.message}
+                      </span>
+                      {c.tags?.map(t => (
+                        <span key={t} className="px-1.5 py-0.2 rounded bg-[#032317] border border-emerald-800/60 text-emerald-400 text-[9px] font-mono uppercase">
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="text-[11px] text-emerald-400/80 font-mono flex items-center gap-2 mt-0.5">
+                      <span>{c.author}</span>
+                      <span>•</span>
+                      <span>{c.date}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <a
+                  href={`https://github.com/Thetechguy44/library-management-system-api/commit/${c.oid}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1 rounded-xl bg-[#032317] hover:bg-teal-950 text-teal-300 hover:text-white border border-teal-800/80 font-mono text-[11px] flex items-center gap-1.5 shrink-0 self-start sm:self-auto transition"
+                >
+                  <span>{c.oid}</span>
+                  <ExternalLink size={11} />
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* API DOCS & LIVE ENDPOINTS SUB-TAB */}
       {activeSubTab === 'api_docs' && (
         <div className="space-y-4">
           <div className="p-4 rounded-2xl bg-[#021810] border border-emerald-800/80 space-y-1">
-            <h2 className="text-sm font-bold text-white">LMS Academic API Specification & Endpoints</h2>
+            <h2 className="text-sm font-bold text-white">Thetechguy44 API Architecture & Endpoints</h2>
             <p className="text-xs text-emerald-300">
-              Interactive documentation for developers, mobile apps, and student research scripts connecting to the backend SQLite/MySQL engine.
+              Interactive documentation for developers, mobile apps, and student research scripts connecting to Thetechguy44's backend routes.
             </p>
           </div>
 
