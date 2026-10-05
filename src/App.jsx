@@ -144,7 +144,10 @@ export default function App() {
                   pdfPages: b.pdf_pages || b.pdfPages,
                   fileSize: b.file_size || b.fileSize,
                   fileName: b.file_name || b.fileName,
-                  isDigital: b.is_digital !== undefined ? b.is_digital : b.isDigital
+                  fileDataUrl: b.file_data_url || b.fileDataUrl || '',
+                  externalUrl: b.external_url || b.externalUrl || '',
+                  abstract: b.abstract || '',
+                  isDigital: b.is_digital !== undefined ? Boolean(b.is_digital) : Boolean(b.isDigital)
                 };
                 map.set(normalized.id.toUpperCase(), { ...map.get(normalized.id.toUpperCase()), ...normalized });
               }

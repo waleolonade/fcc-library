@@ -250,7 +250,7 @@ class ResourceController extends Controller
             'isDigital' => (bool)$book->is_digital,
             'copies' => $copies,
             'qrCode' => [
-                'target_url' => "http://localhost:5173/#/book/{$book->id}",
+                'target_url' => "http://localhost:5172/#/book/{$book->id}",
                 'label' => "Scan for Mobile OPAC Dossier: {$book->title}"
             ]
         ]);

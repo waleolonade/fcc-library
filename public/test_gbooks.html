@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Books Embedded Viewer - FCC Smart Library</title>
+  <script type="text/javascript" src="https://www.google.com/books/jsapi.js"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #021810;
+      color: #ecfdf5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+    .header {
+      width: 100%;
+      max-width: 900px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status {
+      font-size: 13px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #6ee7b7;
+      font-family: monospace;
+    }
+    .nav-btn {
+      padding: 8px 16px;
+      border-radius: 12px;
+      background: #047857;
+      color: white;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+    .nav-btn:hover {
+      background: #059669;
+    }
+    #viewerCanvas {
+      width: 100%;
+      max-width: 900px;
+      height: 700px;
+      background: #ffffff;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>
+        <span>Google Books Official Viewer</span>
+        <span style="font-size: 11px; background: rgba(245, 158, 11, 0.2); color: #fbbf24; padding: 2px 8px; border-radius: 10px; border: 1px solid rgba(245, 158, 11, 0.4);">NBTE Accredited</span>
+      </h1>
+      <p style="margin: 4px 0 0 0; font-size: 12px; color: #a7f3d0;">Book: <strong>Mountain View</strong> (ISBN: 0738531367)</p>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <div id="status" class="status">Connecting to Google Books...</div>
+      <a href="/#/opac" class="nav-btn">Back to OPAC</a>
+    </div>
+  </div>
+
+  <div id="viewerCanvas"></div>
+
+  <script type="text/javascript">
+    const statusDiv = document.getElementById('status');
+    
+    function initializeBook() {
+      statusDiv.innerText = 'Initializing Google Books DefaultViewer...';
+      const canvas = document.getElementById('viewerCanvas');
+      if (!canvas) return;
+
+      try {
+        const viewer = new google.books.DefaultViewer(canvas);
+        const identifiers = ['ISBN:0738531367', 'ISBN:055380457X'];
+        
+        statusDiv.innerText = 'Loading pages for ' + identifiers[0] + '...';
+        viewer.load(identifiers, function() {
+          statusDiv.innerText = 'Notice: In-frame preview restricted by publisher';
+          statusDiv.style.background = 'rgba(239, 68, 68, 0.2)';
+          statusDiv.style.color = '#fca5a5';
+        }, function() {
+          statusDiv.innerText = '✓ Book loaded successfully';
+          statusDiv.style.background = 'rgba(16, 185, 129, 0.2)';
+          statusDiv.style.color = '#6ee7b7';
+        });
+      } catch (err) {
+        statusDiv.innerText = 'Error: ' + err.message;
+        statusDiv.style.background = 'rgba(239, 68, 68, 0.2)';
+        statusDiv.style.color = '#fca5a5';
+      }
+    }
+
+    function startLoader() {
+      if (window.google && window.google.books) {
+        if (window.google.books.DefaultViewer) {
+          initializeBook();
+        } else {
+          try {
+            google.books.load();
+            google.books.setOnLoadCallback(initializeBook);
+          } catch(e) {
+            statusDiv.innerText = 'Initializing API...';
+            setTimeout(startLoader, 200);
+          }
+        }
+      } else {
+        setTimeout(startLoader, 150);
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', startLoader);
+    } else {
+      startLoader();
+    }
+  </script>
+</body>
+</html>

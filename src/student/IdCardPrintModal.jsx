@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { QrCode, Printer, X, Shield, Sparkles, UserCheck, CheckCircle2 } from 'lucide-react';
+import { Printer, QrCode, Shield, X } from 'lucide-react';
+import { useState } from 'react';
 import { INSTITUTION } from '../data/institutionalSeedData';
 
 export default function IdCardPrintModal({ user, onClose }) {
@@ -121,7 +121,7 @@ export default function IdCardPrintModal({ user, onClose }) {
               </div>
 
               <div className="text-center text-[8px] text-slate-500 font-mono">
-                AUTONOMOUS LSP NODE • 127.0.0.1:5173
+                AUTONOMOUS LSP NODE • 127.0.0.1:5172
               </div>
             </div>
           )}

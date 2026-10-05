@@ -115,6 +115,10 @@ function normalizeBook(raw, fallbackId = 'FCC-PDF-3779') {
     pdfPages: raw.pdfPages || raw.pdf_pages || 320,
     fileSize: raw.fileSize || raw.file_size || '6.5 MB',
     fileName: raw.fileName || raw.file_name || 'monograph.pdf',
+    fileDataUrl: raw.fileDataUrl || raw.file_data_url || raw.pdfUrl || '',
+    pdfUrl: raw.fileDataUrl || raw.file_data_url || raw.pdfUrl || '',
+    externalUrl: raw.externalUrl || raw.external_url || '',
+    isDigital: Boolean(raw.isDigital || raw.is_digital),
     materialType: raw.materialType || (raw.is_digital || raw.isDigital ? 'Interactive PDF & E-Book' : 'Hardcover & Print'),
     cover: raw.cover || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&auto=format&fit=crop&q=80',
     abstract: raw.abstract || 'Peer-reviewed institutional treatise archived in the FCC Smart Library & Digital Repository.',
@@ -726,7 +730,7 @@ export default function BookDossierView({
 
               <div className="p-3 bg-white rounded-2xl inline-block shadow-inner">
                 <QrCodeSvg
-                  value={`http://localhost:5173/#/book/${book.id}`}
+                  value={`http://localhost:5172/#/book/${book.id}`}
                   size={120}
                   className="mx-auto"
                 />

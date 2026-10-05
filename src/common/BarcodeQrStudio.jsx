@@ -123,7 +123,7 @@ export default function BarcodeQrStudio({ user, books = [], patrons = [] }) {
   const [studentLibraryId, setStudentLibraryId] = useState('STU/2026/00125');
   const [selectedBookId, setSelectedBookId] = useState(books[0]?.id || 'FCC-B001');
   const [shelfCoordinate, setShelfCoordinate] = useState('Floor 2 • West Stacks • Shelf 14A');
-  const [digitalUrl, setDigitalUrl] = useState('http://localhost:5173/#/book/FCC-PDF-3779');
+  const [digitalUrl, setDigitalUrl] = useState('http://localhost:5172/#/book/FCC-PDF-3779');
   const [copied, setCopied] = useState(false);
 
   const selectedBook = books.find(b => b.id === selectedBookId) || books[0] || {

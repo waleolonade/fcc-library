@@ -730,6 +730,16 @@ export default function FccAdminLibrary({
       }));
       checkDuplicateWithLaravel(autoTitle, '', '', file.name);
     }
+
+    // Read full file as Base64 Data URL so it is viewable in DigitalBookReader
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      setPdfForm(prev => ({
+        ...prev,
+        fileDataUrl: uploadEvent.target?.result || ''
+      }));
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleReAnalyzeAdminPdf = () => {
@@ -765,6 +775,7 @@ export default function FccAdminLibrary({
       pdfPages: parseInt(pdfForm.pdfPages, 10) || 120,
       fileSize: pdfForm.fileSize || '3.5 MB',
       fileName: pdfForm.fileName || 'monograph.pdf',
+      fileDataUrl: pdfForm.fileDataUrl || '',
       isDigital: true,
       format: 'E-Book',
       abstract: pdfForm.abstract || 'Curriculum research monograph archived in Federal Co-operative College Institutional Repository.',
@@ -782,8 +793,20 @@ export default function FccAdminLibrary({
       });
       if (res.ok) {
         const data = await res.json();
-        setBooks([newBookPayload, ...books]);
-        localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify([newBookPayload, ...books]));
+        const finalBook = data.book ? {
+          ...data.book,
+          callNumber: data.book.call_number || data.book.callNumber || newBookPayload.callNumber,
+          shelfLocation: data.book.shelf_location || data.book.shelfLocation || newBookPayload.shelfLocation,
+          fileDataUrl: data.book.file_data_url || newBookPayload.fileDataUrl,
+          fileName: data.book.file_name || newBookPayload.fileName,
+          isDigital: true
+        } : newBookPayload;
+
+        setBooks([finalBook, ...books]);
+        localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify([finalBook, ...books]));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: finalBook }));
+        }
         if (soundEnabled) sounds.playSuccessChime();
         alert(`Ingested "${newBookPayload.title}" into Central MARC 21 Catalog & Laravel 11 Database!`);
         // Reset form
@@ -793,6 +816,10 @@ export default function FccAdminLibrary({
     } catch (e) {
       // Local fallback
       setBooks([newBookPayload, ...books]);
+      localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify([newBookPayload, ...books]));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: newBookPayload }));
+      }
       alert(`Locally ingested "${newBookPayload.title}" into Catalog!`);
     } finally {
       setIsSubmittingBook(false);

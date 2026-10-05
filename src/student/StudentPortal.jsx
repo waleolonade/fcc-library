@@ -5,7 +5,7 @@ import {
   Award, ShieldCheck, Globe, MessageSquare, Printer, Fingerprint, Building2, Link2, Shield,
   Menu, ChevronLeft, ChevronRight, ChevronDown, X, User, GraduationCap, Barcode,
   Home, Library, Clock, Star, History, Bell, Quote, Compass, BookMarked,
-  ExternalLink, Check, Copy, AlertCircle, RefreshCw, Send, Sparkle
+  ExternalLink, Check, Copy, AlertCircle, RefreshCw, Send, Sparkle, Zap
 } from 'lucide-react';
 import { INSTITUTION, INITIAL_PARTNER_LIBRARIES } from '../data/institutionalSeedData';
 import DigitalBookReader from './DigitalBookReader';
@@ -40,6 +40,7 @@ import OpenLibraryExplorer from './OpenLibraryExplorer';
 import TroveExplorer from './TroveExplorer';
 import InternetArchiveExplorer from './InternetArchiveExplorer';
 import GoogleBooksExplorer from './GoogleBooksExplorer';
+import ApiOverlayDiscovery from './ApiOverlayDiscovery';
 
 export default function StudentPortal({
   user,
@@ -133,13 +134,16 @@ export default function StudentPortal({
           'ai': 'ai_assistant',
           'assistant': 'ai_assistant',
           'google_books': 'library_google_books',
-          'google': 'library_google_books'
+          'google': 'library_google_books',
+          'discover': 'library_discover',
+          'overlay': 'library_discover',
+          'federated': 'library_discover'
         };
 
         const resolved = routeAliasMap[sub] || sub;
         const validTabs = [
           'home',
-          'library_search', 'library_books', 'library_ebooks', 'library_journals', 'library_digital',
+          'library_discover', 'library_search', 'library_books', 'library_ebooks', 'library_journals', 'library_digital',
           'my_borrowed', 'my_reserved', 'my_due_soon', 'my_history', 'my_saved',
           'research_hnd_projects', 'research_papers', 'research_journals', 'research_topics', 'research_references',
           'ai_assistant', 'notifications', 'profile',
@@ -176,15 +180,26 @@ export default function StudentPortal({
 
   const filteredBooks = useMemo(() => {
     return books.filter(b => {
+      if (!b) return false;
       const q = searchQuery.toLowerCase().trim();
-      const matchQuery = !q ||
-        b.title.toLowerCase().includes(q) ||
-        b.author.toLowerCase().includes(q) ||
-        b.isbn.includes(q) ||
-        b.callNumber.toLowerCase().includes(q) ||
-        b.abstract.toLowerCase().includes(q);
+      const titleStr = (b.title || '').toLowerCase();
+      const authorStr = (b.author || '').toLowerCase();
+      const isbnStr = (b.isbn || '').toLowerCase();
+      const callStr = (b.callNumber || b.call_number || '').toLowerCase();
+      const absStr = (b.abstract || '').toLowerCase();
+      const deptStr = (b.department || '').toLowerCase();
+      const courseStr = (b.courseCode || b.course_code || '').toLowerCase();
 
-      const matchSubject = selectedSubject === 'All' || b.subject === selectedSubject;
+      const matchQuery = !q ||
+        titleStr.includes(q) ||
+        authorStr.includes(q) ||
+        isbnStr.includes(q) ||
+        callStr.includes(q) ||
+        absStr.includes(q) ||
+        deptStr.includes(q) ||
+        courseStr.includes(q);
+
+      const matchSubject = selectedSubject === 'All' || b.subject === selectedSubject || b.department === selectedSubject;
       return matchQuery && matchSubject;
     });
   }, [books, searchQuery, selectedSubject]);
@@ -230,6 +245,7 @@ export default function StudentPortal({
     communication: { label: 'Institutional Dispatch', category: 'FACILITIES', icon: MessageSquare },
     helpdesk: { label: 'Ask a Librarian', category: 'FACILITIES', icon: MessageSquare },
     partner_libs: { label: 'Linked Libraries', category: 'FACILITIES', icon: Building2 },
+    library_discover: { label: 'Federated API Overlay & Discover', category: 'LIBRARY', icon: Zap },
     library_google_books: { label: 'Google Books (Recommended)', category: 'LIBRARY', icon: Sparkles },
     library_gutendex: { label: 'Project Gutenberg eBooks', category: 'LIBRARY', icon: BookOpen },
     library_openlibrary: { label: 'Open Library Catalog', category: 'LIBRARY', icon: Globe },
@@ -438,7 +454,8 @@ export default function StudentPortal({
                   {expandedGroups.library && (
                     <div className="pl-4 pr-1.5 pb-1.5 space-y-0.5 border-t border-emerald-900/50">
                       {[
-                        { id: 'library_search', label: 'Search', icon: Search, prefix: '├──' },
+                        { id: 'library_discover', label: 'API Overlay Discover', icon: Zap, prefix: '├──', badgeText: 'LIVE APIS' },
+                        { id: 'library_search', label: 'Catalog Search', icon: Search, prefix: '├──' },
                         { id: 'library_books', label: 'Books', icon: BookOpen, prefix: '├──', badge: physicalBooks.length },
                         { id: 'library_ebooks', label: 'eBooks', icon: BookOpen, prefix: '├──', badge: digitalEbooks.length },
                         { id: 'library_journals', label: 'Journals', icon: Layers, prefix: '├──' },
@@ -770,12 +787,12 @@ export default function StudentPortal({
               onRenewLoan={onRenewLoan}
               onOpenAi={() => setIsAiOpen(true)}
             />
-          ) : activeTab === 'library_search' ? (
+          ) : (activeTab === 'library_discover' || activeTab === 'library_search') ? (
             /* ============================================================== */
-            /* 2. LIBRARY ├── Search                                          */
+            /* 2. LIBRARY ├── API Overlay Federated Discovery                 */
             /* ============================================================== */
             <div className="h-full animate-fadeIn">
-              <OpenLibraryExplorer />
+              <ApiOverlayDiscovery onOpenReader={(b) => setActiveBookForReader(b)} />
             </div>
           ) : activeTab === 'library_books' ? (
             /* ============================================================== */

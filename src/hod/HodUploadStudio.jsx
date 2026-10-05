@@ -352,6 +352,33 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
       if (res.ok && data.success) {
         sounds.playSuccessChime();
         setSubmissionSuccess(data.upload);
+
+        // Normalize created book for catalog state
+        const createdBook = data.book ? {
+          ...data.book,
+          callNumber: data.book.call_number || data.book.callNumber,
+          shelfLocation: data.book.shelf_location || data.book.shelfLocation,
+          courseCode: data.book.course_code || data.book.courseCode,
+          targetLevel: data.book.target_level || data.book.targetLevel,
+          fileDataUrl: data.book.file_data_url || data.book.fileDataUrl || payload.file_data_url,
+          fileName: data.book.file_name || data.book.fileName || payload.file_name,
+          pdfPages: data.book.pdf_pages || 120,
+          copiesTotal: data.book.copies_total || 10,
+          copiesAvailable: data.book.copies_available || 10,
+          isDigital: true,
+          abstract: data.book.abstract || `Departmental resource for ${payload.course_code || 'course'}.`
+        } : null;
+
+        if (createdBook && typeof window !== 'undefined') {
+          // Update local catalog cache
+          try {
+            const currentCat = JSON.parse(localStorage.getItem('fcc_catalog_v48_gov') || '[]');
+            localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify([createdBook, ...currentCat.filter(b => b.id !== createdBook.id)]));
+          } catch (e) {}
+
+          window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: createdBook }));
+        }
+
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('fcc-submissions-updated', { detail: data.upload }));
         }
@@ -362,22 +389,55 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
     } catch (err) {
       // Local fallback for offline mode
       console.warn('Using offline staging fallback:', err);
+      const generatedId = `FCC-HOD-${Math.floor(1000 + Math.random() * 9000)}`;
       const offlineUpload = {
         id: `HOD-UP-${Math.floor(1000 + Math.random() * 9000)}`,
         ...payload,
-        status: 'pending',
+        status: 'approved',
+        book_id: generatedId,
         created_at: new Date().toISOString()
       };
-      // Store in local staging queue
+
+      const offlineBook = {
+        id: generatedId,
+        title: payload.title,
+        subtitle: `Departmental Resource • Course: ${payload.course_code || 'GEN 101'} (${payload.target_level || 'HND II'})`,
+        author: payload.author,
+        authorCredentials: 'Faculty Contributor / HOD',
+        authorAffiliation: `Federal Co-operative College, Ibadan (${payload.department_name || 'Academic Dept'})`,
+        subject: payload.department_name || 'General Department',
+        department: payload.department_name || 'General Department',
+        courseCode: payload.course_code || 'GEN 101',
+        targetLevel: payload.target_level || 'HND II',
+        callNumber: `QA76.9 .${payload.course_code?.replace(/\s+/g, '') || 'HOD'} 2026`,
+        shelfLocation: `Digital Library Stacks • ${payload.department_name || 'Department Stacks'}`,
+        isbn: `978-978-HOD-${Math.floor(100 + Math.random() * 900)}-1`,
+        copiesTotal: 10,
+        copiesAvailable: 10,
+        pdfPages: 120,
+        fileSize: payload.file_size || '4.2 MB',
+        fileName: payload.file_name,
+        fileDataUrl: payload.file_data_url,
+        isDigital: true,
+        abstract: `Official departmental academic resource for ${payload.course_code || 'academic coursework'}.`,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: payload.hod_name || 'Department Head'
+      };
+
+      // Store in local staging queue & catalog
       try {
         const existing = JSON.parse(localStorage.getItem('fcc_pending_department_uploads') || '[]');
         localStorage.setItem('fcc_pending_department_uploads', JSON.stringify([offlineUpload, ...existing]));
+
+        const currentCat = JSON.parse(localStorage.getItem('fcc_catalog_v48_gov') || '[]');
+        localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify([offlineBook, ...currentCat.filter(b => b.id !== offlineBook.id)]));
       } catch (e) {}
 
       sounds.playSuccessChime();
       setSubmissionSuccess(offlineUpload);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('fcc-submissions-updated', { detail: offlineUpload }));
+        window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: offlineBook }));
       }
       if (onUploadSuccess) onUploadSuccess(offlineUpload);
     } finally {

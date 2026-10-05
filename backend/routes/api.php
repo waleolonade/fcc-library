@@ -14,6 +14,16 @@ use App\Http\Controllers\TroveController;
 use App\Http\Controllers\GutenbergController;
 use App\Http\Controllers\InternetArchiveController;
 use App\Http\Controllers\GoogleBooksController;
+use App\Http\Controllers\OverlayController;
+
+// 00. Federated API Overlay (Unified On-Demand Resource Engine)
+Route::prefix('overlay')->group(function () {
+    Route::get('/sources',      [OverlayController::class, 'sources']);
+    Route::post('/ask',         [OverlayController::class, 'ask']);
+    Route::get('/search',       [OverlayController::class, 'search']);
+    Route::get('/detail',       [OverlayController::class, 'detail']);
+    Route::post('/test-source', [OverlayController::class, 'testSource']);
+});
 
 // 0. Trove API Proxy
 Route::get('/trove/search', [TroveController::class, 'search']);

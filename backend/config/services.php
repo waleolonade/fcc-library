@@ -31,4 +31,26 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Resource Overlay (federated API layer)
+    |--------------------------------------------------------------------------
+    |
+    | The overlay fetches resources live from external APIs whenever a student
+    | asks for something. All keys are optional: sources without a key are
+    | either used anonymously (Google Books) or skipped (Trove). When a Gemini
+    | key is set, student requests are planned by Gemini; otherwise the
+    | built-in rule-based planner is used.
+    |
+    */
+    'overlay' => [
+        'contact_email'    => env('OVERLAY_CONTACT_EMAIL', 'librarian@fccibadan.edu.ng'),
+        'cache_minutes'    => (int) env('OVERLAY_CACHE_MINUTES', 15),
+        'timeout'          => (int) env('OVERLAY_TIMEOUT', 9),
+        'google_books_key' => env('GOOGLE_BOOKS_API_KEY'),
+        'trove_key'        => env('TROVE_API_KEY'),
+        'gemini_key'       => env('GEMINI_API_KEY'),
+        'gemini_model'     => env('GEMINI_MODEL', 'gemini-2.0-flash'),
+    ],
+
 ];

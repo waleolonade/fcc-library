@@ -13,6 +13,7 @@ export const SYSTEM_ROUTES = [
   { path: '/hod/login', label: 'HOD Departmental Gateway Login', category: 'Auth', desc: 'Department Head department code and secure PIN authentication' },
 
   // Scholar / Student Portal Views
+  { path: '/scholar/discover', label: 'Federated API Overlay & Discover', category: 'Scholar', desc: 'On-demand live resource fetcher across worldwide scholarly APIs & FCC Stacks' },
   { path: '/scholar/profile', label: 'Student Patron Profile (Module 6)', category: 'Scholar', desc: 'Patron profile with ASCII ID, loans, reservations, fines, and reading velocity' },
   { path: '/scholar/catalog', label: 'Scholar Catalog Explorer', category: 'Scholar', desc: 'Full institutional collection with live stack holdings' },
   { path: '/scholar/dept-resources', label: 'My Department Resources & Syllabi', category: 'Scholar', desc: 'Curriculum texts, past questions, and lecture notes uploaded by HOD' },

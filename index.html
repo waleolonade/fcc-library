@@ -9,6 +9,27 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300&display=swap" rel="stylesheet">
+    <!-- Google Books Embedded Viewer Official API -->
+    <script type="text/javascript" src="https://www.google.com/books/jsapi.js"></script>
+    <script type="text/javascript">
+      window.initGoogleBooksApi = function(cb) {
+        if (window.google && window.google.books) {
+          if (window.google.books.DefaultViewer) {
+            if (cb) cb();
+          } else {
+            window.google.books.load();
+            window.google.books.setOnLoadCallback(function() {
+              if (cb) cb();
+            });
+          }
+        }
+      };
+      try {
+        if (window.google && window.google.books) {
+          window.google.books.load();
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body class="bg-slate-950 text-slate-100 antialiased selection:bg-emerald-500 selection:text-white">
     <div id="root"></div>

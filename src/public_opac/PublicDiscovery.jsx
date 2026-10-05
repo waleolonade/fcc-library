@@ -6,7 +6,7 @@ import {
   Check, Copy, Star, Bookmark, BookCheck, Sliders, ChevronDown,
   ChevronUp, Database, FileText, Newspaper, Radio, Video, Award,
   Volume2, Shield, AlertCircle, RefreshCw, Send, X, Share2, Tag, Scan,
-  BookMarked, Library, Eye, Loader2, AlertTriangle, Download
+  BookMarked, Library, Eye, Loader2, AlertTriangle, Download, Zap
 } from 'lucide-react';
 import { INSTITUTION, INITIAL_PARTNER_LIBRARIES } from '../data/institutionalSeedData';
 import PartnerLibrariesGateway from '../common/PartnerLibrariesGateway';
@@ -19,6 +19,7 @@ import GutendexExplorer from '../student/GutendexExplorer';
 import TroveExplorer from '../student/TroveExplorer';
 import InternetArchiveExplorer from '../student/InternetArchiveExplorer';
 import GoogleBooksExplorer from '../student/GoogleBooksExplorer';
+import ApiOverlayDiscovery from '../student/ApiOverlayDiscovery';
 
 export default function PublicDiscovery({
   books = [],
@@ -263,7 +264,9 @@ export default function PublicDiscovery({
   const handlePerformSearch = (e) => {
     if (e) e.preventDefault();
     sounds.playClick();
-    if (searchTarget === 'google_books') {
+    if (searchTarget === 'overlay') {
+      setActiveTab('overlay');
+    } else if (searchTarget === 'google_books') {
       setActiveTab('google_books');
     } else if (searchTarget === 'openlibrary') {
       setActiveTab('openlibrary');
@@ -302,6 +305,9 @@ export default function PublicDiscovery({
             (b.isbn || '').includes(q) ||
             (b.callNumber || '').toLowerCase().includes(q) ||
             (b.subject || '').toLowerCase().includes(q) ||
+            (b.department || '').toLowerCase().includes(q) ||
+            (b.courseCode || b.course_code || '').toLowerCase().includes(q) ||
+            (b.targetLevel || b.target_level || '').toLowerCase().includes(q) ||
             (b.publisher || '').toLowerCase().includes(q) ||
             (b.abstract || '').toLowerCase().includes(q);
         }
@@ -431,9 +437,10 @@ export default function PublicDiscovery({
           {/* Quick Nav Anchors */}
           <nav className="hidden lg:flex items-center gap-1 font-medium text-xs">
             {[
+              { id: 'overlay', label: 'Federated API Overlay', icon: Zap, isRecommended: true },
               { id: 'home', label: 'Discovery Home', icon: Globe },
               { id: 'catalog', label: `College Stacks (${books.length})`, icon: BookOpen },
-              { id: 'google_books', label: 'Google Books (Recommended)', icon: Sparkles, isRecommended: true },
+              { id: 'google_books', label: 'Google Books', icon: Sparkles },
               { id: 'openlibrary', label: 'Open Library (Live API)', icon: Globe },
               { id: 'gutenberg', label: 'Project Gutenberg (E-Books)', icon: BookMarked },
               { id: 'archive', label: 'Internet Archive (Full PDFs)', icon: Library },
@@ -651,8 +658,9 @@ export default function PublicDiscovery({
                 {/* REPOSITORY SOURCE SELECTOR (No Login Required) */}
                 <div className="flex flex-wrap items-center gap-1.5 pb-1">
                   {[
+                    { id: 'overlay', label: 'Federated API Overlay', icon: Zap, badge: 'Live AI + APIs', isRecommended: true },
                     { id: 'all', label: 'All Stacks & Live APIs', icon: Sparkles, badge: 'Federated' },
-                    { id: 'google_books', label: 'Google Books', icon: Sparkles, badge: 'Recommended', isRecommended: true },
+                    { id: 'google_books', label: 'Google Books', icon: Sparkles, badge: 'Curriculum' },
                     { id: 'stacks', label: `College Stacks (${books.length})`, icon: BookOpen, badge: 'Campus' },
                     { id: 'openlibrary', label: 'Open Library (Live API)', icon: Globe, badge: '30M+ Books' },
                     { id: 'gutenberg', label: 'Project Gutenberg', icon: BookMarked, badge: '70k+ E-Books' },
@@ -668,7 +676,8 @@ export default function PublicDiscovery({
                         onClick={() => {
                           setSearchTarget(src.id);
                           sounds.playClick();
-                          if (src.id === 'google_books') setActiveTab('google_books');
+                          if (src.id === 'overlay') setActiveTab('overlay');
+                          else if (src.id === 'google_books') setActiveTab('google_books');
                           else if (src.id === 'openlibrary') setActiveTab('openlibrary');
                           else if (src.id === 'gutenberg') setActiveTab('gutenberg');
                           else if (src.id === 'archive') setActiveTab('archive');
@@ -1591,15 +1600,22 @@ export default function PublicDiscovery({
                       </div>
 
                       {/* Bottom Status */}
-                      <div className="pt-3 border-t border-emerald-900/60 flex items-center justify-between text-[11px] mt-2">
-                        <span className={`font-bold ${
+                      <div className="pt-3 border-t border-emerald-900/60 flex items-center justify-between text-[11px] mt-2 gap-2">
+                        <span className={`font-bold shrink-0 ${
                           (b.copiesAvailable || 0) > 0 ? 'text-emerald-400' : 'text-rose-400'
                         }`}>
-                          {(b.copiesAvailable || 0) > 0 ? `${b.copiesAvailable} In Stacks` : 'Checked Out'}
+                          {b.isDigital ? '⚡ E-Book / PDF' : ((b.copiesAvailable || 0) > 0 ? `${b.copiesAvailable} In Stacks` : 'Checked Out')}
                         </span>
-                        <span className="text-emerald-400 group-hover:translate-x-1 transition font-bold flex items-center gap-1">
-                          Details <ChevronRight size={12} />
-                        </span>
+                        <div className="flex items-center gap-1.5 ml-auto">
+                          {b.isDigital && (
+                            <span className="px-2 py-0.5 rounded-lg bg-emerald-600/80 hover:bg-emerald-500 text-white font-bold flex items-center gap-1 text-[10px] shadow transition">
+                              <BookOpen size={11} /> Read
+                            </span>
+                          )}
+                          <span className="text-emerald-400 group-hover:translate-x-1 transition font-bold flex items-center gap-1">
+                            Details <ChevronRight size={12} />
+                          </span>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1907,6 +1923,16 @@ export default function PublicDiscovery({
               </div>
             </div>
           </>
+        )}
+
+        {/* VIEW: FEDERATED API OVERLAY & AI TASK ASSISTANT */}
+        {activeTab === 'overlay' && (
+          <div className="h-full mt-4 bg-[#01140d]/80 p-4 sm:p-6 rounded-3xl border border-emerald-500/40 shadow-2xl relative overflow-hidden animate-fadeIn">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10">
+               <ApiOverlayDiscovery />
+            </div>
+          </div>
         )}
 
         {/* VIEW: GOOGLE BOOKS (Recommended Institutional Curriculum & Embedded Viewer) */}
