@@ -15,6 +15,11 @@ use App\Http\Controllers\GutenbergController;
 use App\Http\Controllers\InternetArchiveController;
 use App\Http\Controllers\GoogleBooksController;
 use App\Http\Controllers\OverlayController;
+use App\Http\Controllers\Api\FineController;
+use App\Http\Controllers\Api\ReservationController;
+use App\Http\Controllers\Api\ReviewController;
+use App\Http\Controllers\Api\AuthorController;
+use App\Http\Controllers\Api\RecommendationController;
 
 // 00. Federated API Overlay (Unified On-Demand Resource Engine)
 Route::prefix('overlay')->group(function () {
@@ -162,3 +167,42 @@ Route::get('/communications', [\App\Http\Controllers\CommunicationController::cl
 Route::post('/communications', [\App\Http\Controllers\CommunicationController::class, 'store']);
 Route::post('/communications/{threadId}/reply', [\App\Http\Controllers\CommunicationController::class, 'reply']);
 Route::put('/communications/{id}/status', [\App\Http\Controllers\CommunicationController::class, 'updateStatus']);
+
+// 15. Integrated Library Management System API (Fines, Reservations, Reviews, Authors, Recommendations)
+// Fines & Penalties Management
+Route::prefix('fines')->group(function () {
+    Route::get('/', [FineController::class, 'index']);
+    Route::get('/{id}', [FineController::class, 'show']);
+    Route::post('/calculate/{loanId}', [FineController::class, 'calculateFine']);
+    Route::patch('/{id}/pay', [FineController::class, 'payFine']);
+    Route::post('/{id}/pay', [FineController::class, 'payFine']);
+});
+
+// Book Reservations
+Route::prefix('book-reservations')->group(function () {
+    Route::get('/', [ReservationController::class, 'index']);
+    Route::get('/{id}', [ReservationController::class, 'show']);
+    Route::post('/', [ReservationController::class, 'store']);
+    Route::patch('/{id}', [ReservationController::class, 'update']);
+    Route::delete('/{id}', [ReservationController::class, 'destroy']);
+});
+
+// Book Reviews & Star Ratings
+Route::prefix('books/{bookId}/reviews')->group(function () {
+    Route::get('/', [ReviewController::class, 'index']);
+    Route::post('/', [ReviewController::class, 'store']);
+});
+Route::delete('/reviews/{id}', [ReviewController::class, 'destroy']);
+
+// Authors Authority Directory
+Route::prefix('authors')->group(function () {
+    Route::get('/', [AuthorController::class, 'index']);
+    Route::get('/{id}', [AuthorController::class, 'show']);
+    Route::post('/', [AuthorController::class, 'store']);
+    Route::put('/{id}', [AuthorController::class, 'update']);
+    Route::delete('/{id}', [AuthorController::class, 'destroy']);
+});
+
+// Algorithmic Dynamic Book Recommendations
+Route::get('/recommendations', [RecommendationController::class, 'getRecommendations']);
+

@@ -635,6 +635,128 @@ export const libraryApi = {
   },
 
   // -------------------------------------------------------------
+  // 11a. BOOK RESERVATIONS API (Direct from library-management-system-api)
+  // -------------------------------------------------------------
+  reservations: {
+    async getAll(params = {}) {
+      const query = new URLSearchParams(params).toString();
+      const res = await fetchApi(`/book-reservations${query ? `?${query}` : ''}`);
+      return res || { data: [] };
+    },
+    async create(data) {
+      const res = await fetchApi('/book-reservations', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      if (syncChannel) syncChannel.postMessage({ type: 'RESERVATIONS_UPDATED', timestamp: Date.now() });
+      return res;
+    },
+    async updateStatus(id, status) {
+      const res = await fetchApi(`/book-reservations/${encodeURIComponent(id)}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status })
+      });
+      if (syncChannel) syncChannel.postMessage({ type: 'RESERVATIONS_UPDATED', timestamp: Date.now() });
+      return res;
+    },
+    async cancel(id) {
+      const res = await fetchApi(`/book-reservations/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (syncChannel) syncChannel.postMessage({ type: 'RESERVATIONS_UPDATED', timestamp: Date.now() });
+      return res;
+    }
+  },
+
+  // -------------------------------------------------------------
+  // 11b. FINES & PENALTIES API (Direct from library-management-system-api)
+  // -------------------------------------------------------------
+  fines: {
+    async getAll(params = {}) {
+      const query = new URLSearchParams(params).toString();
+      const res = await fetchApi(`/fines${query ? `?${query}` : ''}`);
+      return res || { data: [] };
+    },
+    async getById(id) {
+      return await fetchApi(`/fines/${encodeURIComponent(id)}`);
+    },
+    async calculateFine(loanId) {
+      const res = await fetchApi(`/fines/calculate/${encodeURIComponent(loanId)}`, { method: 'POST' });
+      if (syncChannel) syncChannel.postMessage({ type: 'FINES_UPDATED', timestamp: Date.now() });
+      return res;
+    },
+    async payFine(id, amount = null) {
+      const res = await fetchApi(`/fines/${encodeURIComponent(id)}/pay`, {
+        method: 'POST',
+        body: JSON.stringify(amount ? { amount } : {})
+      });
+      if (syncChannel) syncChannel.postMessage({ type: 'FINES_UPDATED', timestamp: Date.now() });
+      return res;
+    }
+  },
+
+  // -------------------------------------------------------------
+  // 11c. BOOK REVIEWS & STAR RATINGS API
+  // -------------------------------------------------------------
+  reviews: {
+    async getForBook(bookId) {
+      const res = await fetchApi(`/books/${encodeURIComponent(bookId)}/reviews`);
+      return res || { reviews: [], total_reviews: 0, average_rating: 5.0 };
+    },
+    async submitReview(bookId, reviewData) {
+      const res = await fetchApi(`/books/${encodeURIComponent(bookId)}/reviews`, {
+        method: 'POST',
+        body: JSON.stringify(reviewData)
+      });
+      if (syncChannel) syncChannel.postMessage({ type: 'REVIEWS_UPDATED', timestamp: Date.now() });
+      return res;
+    },
+    async deleteReview(id) {
+      const res = await fetchApi(`/reviews/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (syncChannel) syncChannel.postMessage({ type: 'REVIEWS_UPDATED', timestamp: Date.now() });
+      return res;
+    }
+  },
+
+  // -------------------------------------------------------------
+  // 11d. AUTHORS AUTHORITY DIRECTORY API
+  // -------------------------------------------------------------
+  authors: {
+    async getAll(search = '') {
+      const res = await fetchApi(`/authors${search ? `?search=${encodeURIComponent(search)}` : ''}`);
+      return res || { data: [] };
+    },
+    async getById(id) {
+      return await fetchApi(`/authors/${encodeURIComponent(id)}`);
+    },
+    async create(authorData) {
+      const res = await fetchApi('/authors', {
+        method: 'POST',
+        body: JSON.stringify(authorData)
+      });
+      return res;
+    },
+    async update(id, authorData) {
+      const res = await fetchApi(`/authors/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(authorData)
+      });
+      return res;
+    },
+    async delete(id) {
+      return await fetchApi(`/authors/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    }
+  },
+
+  // -------------------------------------------------------------
+  // 11e. ALGORITHMIC RECOMMENDATIONS API
+  // -------------------------------------------------------------
+  recommendations: {
+    async getForPatron(matric = '') {
+      const res = await fetchApi(`/recommendations${matric ? `?matric=${encodeURIComponent(matric)}` : ''}`);
+      return res || { strategy: 'Standard', data: [] };
+    }
+  },
+
+  // -------------------------------------------------------------
   // 12. DATABASE MANAGEMENT API (brainfeels_library)
   // -------------------------------------------------------------
   database: {

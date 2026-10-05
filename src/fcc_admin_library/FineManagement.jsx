@@ -5,6 +5,7 @@ import {
   TrendingUp, PieChart, FileText, Edit2, XCircle
 } from 'lucide-react';
 import { PATRON_POLICIES } from '../data/institutionalSeedData';
+import { libraryApi } from '../api/libraryApi';
 
 // =========================================================================
 // FINE MANAGEMENT SYSTEM
@@ -235,6 +236,14 @@ export default function FineManagement({
       };
     });
     updateFines(updated.filter(f => !f.id?.startsWith('AUTO-')));
+    
+    // Asynchronously synchronize with backend SQLite fines database
+    if (fineId && !fineId.toString().startsWith('AUTO-')) {
+      libraryApi.fines.payFine(fineId, amount).catch(err => {
+        console.warn('Backend fine payment sync notice:', err);
+      });
+    }
+
     setActionStatus({ type: 'success', message: `Payment of ₦${amount.toLocaleString()} recorded successfully.` });
   };
 
@@ -248,6 +257,13 @@ export default function FineManagement({
       } : f
     );
     updateFines(updated.filter(f => !f.id?.startsWith('AUTO-')));
+
+    if (fineId && !fineId.toString().startsWith('AUTO-')) {
+      libraryApi.fines.payFine(fineId, 0).catch(err => {
+        console.warn('Backend fine waiver sync notice:', err);
+      });
+    }
+
     setActionStatus({ type: 'success', message: 'Fine waived successfully.' });
   };
 
