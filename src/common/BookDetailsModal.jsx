@@ -47,9 +47,8 @@ export default function BookDetailsModal({ book, onClose, onOpenReader, onReserv
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [reviewSuccessMsg, setReviewSuccessMsg] = useState('');
 
-  // Author & Recommendations state
+  // Author state
   const [liveAuthor, setLiveAuthor] = useState(null);
-  const [liveRecommendations, setLiveRecommendations] = useState([]);
   const [isPlacingHold, setIsPlacingHold] = useState(false);
 
   // Patron resolution
@@ -75,13 +74,6 @@ export default function BookDetailsModal({ book, onClose, onOpenReader, onReserv
           }
         }).catch(() => {});
       }
-
-      // Fetch dynamic recommendations
-      libraryApi.recommendations.getForPatron(user?.matric || '').then(res => {
-        if (res && res.data && res.data.length > 0) {
-          setLiveRecommendations(res.data.filter(b => b.id !== book.id).slice(0, 4));
-        }
-      }).catch(() => {});
     }
   }, [book]);
 
@@ -397,8 +389,7 @@ export default function BookDetailsModal({ book, onClose, onOpenReader, onReserv
             { id: 'toc', label: 'Table of Contents' },
             { id: 'reviews', label: `Reviews & Ratings (${reviewsData.average_rating} ★)` },
             { id: 'citations', label: 'Citations & DOI' },
-            { id: 'author', label: 'Author Profile' },
-            { id: 'similar', label: 'More Like This' }
+            { id: 'author', label: 'Author Profile' }
           ].map(tab => (
             <button
               key={tab.id}
@@ -707,27 +698,6 @@ export default function BookDetailsModal({ book, onClose, onOpenReader, onReserv
                   </a>
                 </div>
               )}
-            </div>
-          )}
-
-          {/* TAB 7: SIMILAR RESOURCES / "MORE LIKE THIS" */}
-          {activeTab === 'similar' && (
-            <div className="space-y-2 animate-fadeIn">
-              <span className="font-bold text-white text-xs block mb-2">Recommended Related Works in Collection:</span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {(liveRecommendations.length > 0 ? liveRecommendations : [
-                  { id: 'FCC-B002', title: 'Modern Database Management & Cloud Distributed Systems', author: 'Jeffrey A. Hoffer', callNumber: 'QA 76.9 .D3 H64' },
-                  { id: 'FCC-B003', title: 'Financial Accounting & Cooperative Auditing Standards', author: 'Babatunde R. Adeleke', callNumber: 'HF 5635 .A34 2024' },
-                  { id: 'FCC-B004', title: 'Cocoa Agronomy, Post-Harvest Logistics & Value Chain', author: 'Dr. Funmilayo Alabi', callNumber: 'SB 267 .A43 2023' },
-                  { id: 'FCC-B005', title: 'Micro-Finance Default Predictor with Gradient Boosting', author: 'K. M. Bello & S. Olanrewaju', callNumber: 'HG 178.33 .N6 B45' }
-                ]).map(item => (
-                  <div key={item.id} className="p-3 rounded-xl bg-[#021810] border border-emerald-900/60 hover:border-emerald-500/50 transition">
-                    <div className="text-[10px] font-mono text-emerald-400">{item.callNumber || item.call || 'FCC-STACK'}</div>
-                    <div className="font-bold text-white text-xs truncate mt-0.5">{item.title}</div>
-                    <div className="text-[11px] text-emerald-300/80">{item.author}</div>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
         </div>

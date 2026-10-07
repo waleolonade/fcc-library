@@ -177,7 +177,7 @@ export default function RouteTracerHUD({
                 type="text"
                 value={customJumpInput}
                 onChange={(e) => setCustomJumpInput(e.target.value)}
-                placeholder="Jump to URI (e.g. #/book/FCC-B002)"
+                placeholder="Jump to URI (e.g. #/book/FCC-B001)"
                 className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-[11px] font-mono text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-48 xl:w-60"
               />
               <button

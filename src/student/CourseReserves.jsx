@@ -18,7 +18,7 @@ export default function CourseReserves({ books, onSelectBook }) {
       title: "Distributed Systems, Consensus Protocols & ACID Databases",
       lecturer: "Dr. K. E. Okonjo",
       department: "Computer Science",
-      requiredBookIds: ["FCC-B002", "FCC-B005"],
+      requiredBookIds: ["FCC-B005"],
       recommendedBookIds: []
     },
     {

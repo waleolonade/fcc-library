@@ -40,7 +40,7 @@ export const INITIAL_COURSES = [
     level: "ND II / HND I",
     lecturer: "Dr. K. E. Okonjo",
     syllabus: "Relational modeling, distributed ACID transactions, Raft consensus, query optimization, PostgreSQL replication, NoSQL and vector indexing for AI retrieval.",
-    requiredBookIds: ["FCC-B002", "FCC-B005"],
+    requiredBookIds: ["FCC-B005"],
     recommendedBookIds: ["FCC-B007"],
     pastQuestions: [
       { year: 2025, title: "CSC 301 Second Semester Examination (2025)", file: "csc301_exam_2025.pdf", size: "1.4 MB" },
@@ -62,7 +62,7 @@ export const INITIAL_COURSES = [
     lecturer: "Engr. Dr. T. J. Adeleke",
     syllabus: "Boolean algebra, combinational logic design, synchronous sequential circuits, FPGA HDL modeling, ARM Cortex microcontroller architectures and sensor interfacing.",
     requiredBookIds: ["FCC-B008"],
-    recommendedBookIds: ["FCC-B002"],
+    recommendedBookIds: [],
     pastQuestions: [
       { year: 2025, title: "EEE 305 Semester Examination (2025)", file: "eee305_exam_2025.pdf", size: "1.6 MB" },
       { year: 2024, title: "EEE 305 Mid-Semester Assessment (2024)", file: "eee305_exam_2024.pdf", size: "980 KB" }
@@ -80,7 +80,7 @@ export const INITIAL_COURSES = [
     lecturer: "Prof. S. N. Varma",
     syllabus: "RISC-V ISA design, superscalar pipelining, cache memory hierarchies, virtual memory translation, DMA controllers, and GPU compute units.",
     requiredBookIds: ["FCC-B005", "FCC-B008"],
-    recommendedBookIds: ["FCC-B002"],
+    recommendedBookIds: [],
     pastQuestions: [
       { year: 2025, title: "CPE 311 Main Examination (2025)", file: "cpe311_exam_2025.pdf", size: "1.8 MB" },
       { year: 2024, title: "CPE 311 Main Examination (2024)", file: "cpe311_exam_2024.pdf", size: "1.5 MB" }
@@ -347,47 +347,6 @@ export const INITIAL_BOOKS = [
     ]
   },
   {
-    id: "FCC-B002",
-    title: "Distributed Database Systems & High-Throughput SQL",
-    subtitle: "Consensus Protocols, Multi-Master Replication & Cloud Vector Indices",
-    author: "Dr. K. E. Okonjo & M. Stone",
-    authorCredentials: "Ph.D., Lead Systems Architect & ACM Fellow",
-    authorAffiliation: "Federal Co-operative College & MIT Distributed Lab",
-    coAuthors: "Prof. S. N. Varma",
-    isbn: "978-0-13-449416-6",
-    issn: "",
-    callNumber: "QA76.9.D3 O38 2025",
-    subject: "Computer Science",
-    department: "Computer Science",
-    courseCode: "CSC 301",
-    targetLevel: "ND II / HND I",
-    branch: "Faculty of Science & Computing Library",
-    shelfLocation: "Floor 1 • Aisle 2 • Shelf 05A",
-    copiesTotal: 8,
-    copiesAvailable: 2,
-    isDigital: true,
-    pdfPages: 512,
-    fileSize: "8.8 MB",
-    fileName: "distributed-database-systems.pdf",
-    rating: 4.8,
-    citations: 192,
-    doi: "10.1145/3318464.3389700",
-    publisher: "Prentice Hall International",
-    year: 2025,
-    edition: "3rd Edition",
-    abstract: "Covers consensus protocols, Raft, multi-region replication, transaction isolation levels, and ACID compliance under network partitions with practical Postgres/Cassandra case studies.",
-    chapters: [
-      { title: "Chapter 1: Transaction Processing & Serializability Theory", page: 1 },
-      { title: "Chapter 2: The Raft Consensus Algorithm & Quorum Replications", page: 65 },
-      { title: "Chapter 3: Distributed Query Optimization & Indexing", page: 140 },
-      { title: "Chapter 4: PostgreSQL Multi-Master Architectures & CDC Pipelines", page: 245 },
-      { title: "Chapter 5: Vector Indexing (HNSW) for AI Retrieval", page: 380 }
-    ],
-    reviews: [
-      { user: "Chukwudi Okafor", rating: 5, comment: "Covers both theory and real-world Postgres internals with high clarity." }
-    ]
-  },
-  {
     id: "FCC-B003",
     title: "Macro-prudential Banking Reforms & Risk Hedging",
     subtitle: "Non-Performing Loan Resolution, Basel III Capital Adequacy & Microfinance",
@@ -650,23 +609,6 @@ export const INITIAL_LOANS = [
     shelfLocation: "Floor 2 • Aisle 5 • Shelf 14C"
   },
   {
-    id: "LN-9823",
-    matric: "FCC/CSC/2024/108",
-    studentName: "Chukwudi Okafor",
-    bookId: "FCC-B002",
-    bookTitle: "Distributed Database Systems & High-Throughput SQL",
-    author: "Dr. K. E. Okonjo & M. Stone",
-    callNumber: "QA76.9.D3 O38 2025",
-    barcode: "FCC-CP-00201",
-    borrowDate: "2026-09-12",
-    dueDate: "2026-09-26",
-    status: "Active",
-    fine: 0,
-    renewalsCount: 0,
-    branch: "Faculty of Science & Computing Library",
-    shelfLocation: "Floor 1 • Aisle 2 • Shelf 05A"
-  },
-  {
     id: "LN-9820",
     matric: "FCC/CEM/2024/011",
     studentName: "Ibrahim Adekunle",
@@ -710,8 +652,7 @@ export const INITIAL_READING_LISTS = [
     createdDate: "2026-09-12",
     isPublic: false,
     items: [
-      { bookId: "FCC-B005", notes: "Important RAG pipeline concepts for AI librarian." },
-      { bookId: "FCC-B002", notes: "PostgreSQL distributed query optimization." }
+      { bookId: "FCC-B005", notes: "Important RAG pipeline concepts for AI librarian." }
     ]
   }
 ];
@@ -767,18 +708,6 @@ export const INITIAL_RESERVATIONS = [
     status: "Available", // Waiting, Available, Collected, Expired, Cancelled
     pickupLocation: "Main Campus Library • Circulation Desk Bay 2",
     expiryDate: "2026-09-22"
-  },
-  {
-    id: "RES-2026-02",
-    matric: "FCC/CEM/2024/042",
-    bookId: "FCC-B002",
-    title: "Distributed Database Systems & High-Throughput SQL",
-    author: "Dr. K. E. Okonjo",
-    reservedDate: "2026-09-16",
-    queuePosition: 2,
-    status: "Waiting",
-    pickupLocation: "Faculty of Science & Computing Library",
-    expiryDate: "2026-09-30"
   }
 ];
 
@@ -1230,7 +1159,6 @@ export const SYSTEM_HEALTH_METRICS = {
   ],
   mostBorrowed: [
     { title: "Principles and Practice of Co-operative Economics", borrows: 284, bookId: "FCC-B001" },
-    { title: "Distributed Database Systems & High-Throughput SQL", borrows: 241, bookId: "FCC-B002" },
     { title: "Cocoa Agronomy & Smallholder Value-Chain Mechanics", borrows: 198, bookId: "FCC-B004" },
     { title: "AI in Academic Information Retrieval", borrows: 176, bookId: "FCC-B005" },
     { title: "Advanced Computer Networks & Cloud Infrastructure", borrows: 162, bookId: "FCC-B007" }
@@ -1291,7 +1219,7 @@ export const INITIAL_AUTHORS = [
     orcid: "0000-0002-3416-5598",
     affiliation: "Federal Co-operative College, Ibadan & MIT Distributed Lab",
     researchAreas: ["Distributed Systems", "Database Architecture", "AI Information Retrieval"],
-    publicationIds: ["FCC-B002", "FCC-B005"]
+    publicationIds: ["FCC-B005"]
   },
   {
     id: "AUTH-003",
@@ -1627,24 +1555,6 @@ export const INITIAL_ITEM_COPIES = [
     acquisitionSource: "FCC Ibadan Academic Press",
     price: 4500,
     condition: "Good",
-    status: "Borrowed"
-  },
-  {
-    id: "CPY-B002-001",
-    bookId: "FCC-B002",
-    copyNumber: 1,
-    accessionNumber: "ACC-2024-0201",
-    barcode: "FCC-CP-00201",
-    rfidTag: "RFID-A02-001",
-    callNumber: "QA76.9.D3 O38 2025",
-    branch: "Faculty of Science & Computing Library",
-    section: "Computer Science",
-    shelf: "Shelf 05A",
-    rack: "Rack 1",
-    acquisitionDate: "2025-02-10",
-    acquisitionSource: "Prentice Hall International",
-    price: 8500,
-    condition: "Very Good",
     status: "Borrowed"
   },
   {

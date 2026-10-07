@@ -911,7 +911,6 @@ INSERT OR REPLACE INTO books (id, title, subtitle, author, author_credentials, a
  '[{"title":"Chapter 1: Foundational Frameworks of Raiffeisen & Schulze Credit Unions","page":1},{"title":"Chapter 2: Financial Ratios & Liquidity Stress in Cooperatives","page":48},{"title":"Chapter 3: Risk Hedging & Apex Syndicate Accounting","page":112},{"title":"Chapter 4: Modern Statutory Reserves & Audit Protocols","page":230},{"title":"Chapter 5: Digital Value Chains & Fair-Trade Settlement","page":310}]',
  '[]', 'APA 7th', '2026-09-18T16:07:47.720Z', 'Cataloging Authority'),
 
-('FCC-B002',
  'Distributed Database Systems & High-Throughput SQL',
  'Consensus Protocols, Multi-Master Replication & Cloud Vector Indices',
  'Dr. K. E. Okonjo & M. Stone',
@@ -1037,8 +1036,6 @@ INSERT OR REPLACE INTO copies (id, book_id, branch_id, shelf_id, copy_number, ba
 ('FCC-B001-C1', 'FCC-B001', 'BRANCH-MAIN', 'SHELF-FL1-A1', 1, 'BC-FCCB001-C1', 'RFID-BC-FCCB001-C1', 'ACC-2026-FCCB001-C1', 'Checked Out', 'Good', 15000.00, '2026-08-01'),
 ('FCC-B001-C2', 'FCC-B001', 'BRANCH-MAIN', 'SHELF-FL1-A1', 2, 'BC-FCCB001-C2', 'RFID-BC-FCCB001-C2', 'ACC-2026-FCCB001-C2', 'Available',   'Good', 15000.00, '2026-07-01'),
 ('FCC-B001-C3', 'FCC-B001', 'BRANCH-MAIN', 'SHELF-FL1-A1', 3, 'BC-FCCB001-C3', 'RFID-BC-FCCB001-C3', 'ACC-2026-FCCB001-C3', 'Available',   'Good', 15000.00, '2026-06-01'),
-('FCC-B002-C1', 'FCC-B002', 'BRANCH-MAIN', 'SHELF-FL2-B1', 1, 'BC-FCCB002-C1', 'RFID-BC-FCCB002-C1', 'ACC-2026-FCCB002-C1', 'Checked Out', 'Good', 15000.00, '2026-08-01'),
-('FCC-B002-C2', 'FCC-B002', 'BRANCH-MAIN', 'SHELF-FL2-B1', 2, 'BC-FCCB002-C2', 'RFID-BC-FCCB002-C2', 'ACC-2026-FCCB002-C2', 'Available',   'Good', 15000.00, '2026-07-01'),
 ('FCC-B003-C1', 'FCC-B003', 'BRANCH-MAIN', 'SHELF-FL1-A2', 1, 'BC-FCCB003-C1', 'RFID-BC-FCCB003-C1', 'ACC-2026-FCCB003-C1', 'Available',   'Good', 15000.00, '2026-08-01'),
 ('FCC-B003-C2', 'FCC-B003', 'BRANCH-MAIN', 'SHELF-FL1-A2', 2, 'BC-FCCB003-C2', 'RFID-BC-FCCB003-C2', 'ACC-2026-FCCB003-C2', 'Available',   'Good', 15000.00, '2026-07-01'),
 ('FCC-B003-C3', 'FCC-B003', 'BRANCH-MAIN', 'SHELF-FL1-A2', 3, 'BC-FCCB003-C3', 'RFID-BC-FCCB003-C3', 'ACC-2026-FCCB003-C3', 'Available',   'Good', 15000.00, '2026-06-01'),
@@ -1062,8 +1059,6 @@ INSERT OR REPLACE INTO barcodes (barcode_value, barcode_type, entity_type, entit
 ('BC-FCCB001-C1', 'Code 128', 'copy', 'FCC-B001-C1', 1, 1, '2026-09-10 08:30:00'),
 ('BC-FCCB001-C2', 'Code 128', 'copy', 'FCC-B001-C2', 1, 1, '2026-09-18 10:00:00'),
 ('BC-FCCB001-C3', 'Code 128', 'copy', 'FCC-B001-C3', 1, 1, '2026-09-18 10:00:00'),
-('BC-FCCB002-C1', 'Code 128', 'copy', 'FCC-B002-C1', 1, 1, '2026-09-12 09:00:00'),
-('BC-FCCB002-C2', 'Code 128', 'copy', 'FCC-B002-C2', 1, 1, '2026-09-18 10:00:00'),
 ('BC-FCCB003-C1', 'Code 128', 'copy', 'FCC-B003-C1', 1, 1, '2026-09-18 10:00:00'),
 ('BC-FCCB003-C2', 'Code 128', 'copy', 'FCC-B003-C2', 1, 1, '2026-09-18 10:00:00'),
 ('BC-FCCB003-C3', 'Code 128', 'copy', 'FCC-B003-C3', 1, 1, '2026-09-18 10:00:00'),
@@ -1097,15 +1092,13 @@ INSERT OR REPLACE INTO courses (code, title, department, faculty, level, semeste
 INSERT OR REPLACE INTO loans (id, matric, patron_name, book_id, book_title, author, call_number, branch, borrow_date, due_date, return_date, renewal_count, status, fine_amount, rfid_tag) VALUES
 ('LN-9821', 'FCC/CEM/2024/042', 'Wale Olonade',     'FCC-B001', 'Principles and Practice of Co-operative Economics',        'Prof. A. O. Adebayo',          'HD2963 .A34 2024',   'Main Campus Library (Prof. Hezekiah Complex)', '2026-09-10', '2026-09-24', NULL,         0, 'Active',  0.00, 'FCC-CP-00102'),
 ('LN-9822', 'FCC/CEM/2024/042', 'Wale Olonade',     'FCC-B006', 'Cooperative Law, Governance & Statutory Auditing in Nigeria','Barrister B. A. Olowookere', 'KTL982 .O46 2023',   'Law & Administrative Library',                '2026-09-08', '2026-09-22', NULL,         0, 'Active',  0.00, 'FCC-CP-00601'),
-('LN-9823', 'FCC/CSC/2024/108', 'Chukwudi Okafor',  'FCC-B002', 'Distributed Database Systems & High-Throughput SQL',        'Dr. K. E. Okonjo & M. Stone', 'QA76.9.D3 O38 2025', 'Faculty of Science & Computing Library',      '2026-09-12', '2026-09-26', NULL,         0, 'Active',  0.00, 'FCC-CP-00201'),
 ('LN-9820', 'FCC/CEM/2024/011', 'Ibrahim Adekunle', 'FCC-B004', 'Cocoa Agronomy & Smallholder Value-Chain Mechanics',         'Engr. T. J. Adeleke',         'SB267 .A43 2024',    'Main Campus Library (Prof. Hezekiah Complex)', '2026-08-20', '2026-09-03', NULL,         0, 'Overdue', 300.00,'FCC-CP-00401');
 
 -- -------------------------------------------------------------------------
 -- reservations
 -- -------------------------------------------------------------------------
 INSERT OR REPLACE INTO reservations (id, matric, patron_name, book_id, book_title, call_number, reserved_date, expiry_date, status, pickup_branch, queue_position) VALUES
-('RES-2026-01', 'FCC/CEM/2024/042', 'Scholar', 'FCC-B004', 'Cocoa Agronomy & Smallholder Value-Chain Mechanics',  '', '2026-09-14', '2026-09-22', 'Available', 'Main Campus Library • Circulation Desk Bay 2', 1),
-('RES-2026-02', 'FCC/CEM/2024/042', 'Scholar', 'FCC-B002', 'Distributed Database Systems & High-Throughput SQL', '', '2026-09-16', '2026-09-30', 'Waiting',   'Faculty of Science & Computing Library',         2);
+('RES-2026-01', 'FCC/CEM/2024/042', 'Scholar', 'FCC-B004', 'Cocoa Agronomy & Smallholder Value-Chain Mechanics',  '', '2026-09-14', '2026-09-22', 'Available', 'Main Campus Library • Circulation Desk Bay 2', 1);
 
 -- -------------------------------------------------------------------------
 -- theses
@@ -1196,7 +1189,6 @@ INSERT OR REPLACE INTO reading_lists (id, matric, title, description, is_public,
  '2026-09-18 16:07:48', '2026-09-18 16:07:48'),
 ('RL-002', 'FCC/CEM/2024/042', 'Machine Learning & AI in Commerce',
  'Exploration of vector retrieval algorithms and database architectures.', 0, 2,
- '[{"bookId":"FCC-B005","notes":"Important RAG pipeline concepts for AI librarian."},{"bookId":"FCC-B002","notes":"PostgreSQL distributed query optimization."}]',
  '2026-09-18 16:07:48', '2026-09-18 16:07:48');
 
 -- -------------------------------------------------------------------------
