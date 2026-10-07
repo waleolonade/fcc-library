@@ -816,6 +816,97 @@ export const libraryApi = {
   },
 
   // -------------------------------------------------------------
+  // 11f. BASSEMGHONIEM SIMPLELIB REST API CLIENT
+  // -------------------------------------------------------------
+  simpleLib: {
+    async getBooks(params = {}) {
+      const qs = new URLSearchParams(params).toString();
+      const res = await fetchApi(`/simplelib/books${qs ? `?${qs}` : ''}`);
+      return res || [];
+    },
+    async getBook(id) {
+      return await fetchApi(`/simplelib/books/${encodeURIComponent(id)}`);
+    },
+    async getRecent() {
+      const res = await fetchApi('/simplelib/books/recent');
+      return res || [];
+    },
+    async createBook(book) {
+      return await fetchApi('/simplelib/books', {
+        method: 'POST',
+        body: JSON.stringify(book)
+      });
+    },
+    async updateBook(id, book) {
+      return await fetchApi(`/simplelib/books/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(book)
+      });
+    },
+    async patchBook(id, partial) {
+      return await fetchApi(`/simplelib/books/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(partial)
+      });
+    },
+    async deleteBook(id) {
+      return await fetchApi(`/simplelib/books/${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+      });
+    },
+    async getAuthors(params = {}) {
+      const qs = new URLSearchParams(params).toString();
+      const res = await fetchApi(`/simplelib/authors${qs ? `?${qs}` : ''}`);
+      return res || [];
+    },
+    async createAuthor(author) {
+      return await fetchApi('/simplelib/authors', {
+        method: 'POST',
+        body: JSON.stringify(author)
+      });
+    },
+    async getStats() {
+      return await fetchApi('/simplelib/stats');
+    },
+    async seed() {
+      return await fetchApi('/simplelib/seed', { method: 'POST' });
+    }
+  },
+
+  // -------------------------------------------------------------
+  // 11g. GLOBAL & CUSTOM LIBRARY APIS CONFIGURATION CLIENT
+  // -------------------------------------------------------------
+  libraryApis: {
+    async getAll() {
+      const res = await fetchApi('/library-apis');
+      return res || [];
+    },
+    async create(apiData) {
+      return await fetchApi('/library-apis', {
+        method: 'POST',
+        body: JSON.stringify(apiData)
+      });
+    },
+    async update(id, apiData) {
+      return await fetchApi(`/library-apis/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(apiData)
+      });
+    },
+    async delete(id) {
+      return await fetchApi(`/library-apis/${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+      });
+    },
+    async test(id, query = 'cooperative') {
+      return await fetchApi(`/library-apis/${encodeURIComponent(id)}/test?query=${encodeURIComponent(query)}`);
+    },
+    async search(query, apiId = 'all') {
+      return await fetchApi(`/library-apis/search?query=${encodeURIComponent(query)}&api_id=${encodeURIComponent(apiId)}`);
+    }
+  },
+
+  // -------------------------------------------------------------
   // 12. DATABASE MANAGEMENT API (brainfeels_library)
   // -------------------------------------------------------------
   database: {

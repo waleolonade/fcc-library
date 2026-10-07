@@ -55,6 +55,13 @@ class SourceRegistry
             'preset' => 'API-LMS',
             'description' => 'Real-time Library Management System API authored by Thetechguy44 with full-text search, live copy stacks, hold reservation queue, and peer review metrics.',
         ],
+        'simplelib' => [
+            'label' => 'SimpleLib REST API (BassemGhoniem)',
+            'types' => ['book', 'ebook'],
+            'strengths' => ['owned', 'academic', 'classic', 'free'],
+            'preset' => 'API-SIMPLELIB',
+            'description' => 'RESTful Library Management System API with HATEOAS hypermedia links, genre indexing, 1-5 star ratings, and author entities.',
+        ],
         'google_books' => [
             'label' => 'Google Books',
             'types' => ['book', 'ebook'],
@@ -303,6 +310,10 @@ class SourceRegistry
                 ];
                 return ['url' => 'https://openlibrary.org/search.json', 'query' => $query, 'headers' => $headers];
 
+            case 'simplelib':
+                $query = ['q' => $q];
+                return ['url' => url('/api/simplelib/books'), 'query' => $query, 'headers' => $headers];
+
             case 'gutendex':
                 $query = [];
                 if ($q !== '') {
@@ -504,6 +515,31 @@ class SourceRegistry
         }
 
         return [];
+    }
+
+    private function parseSimplelib(array $data): array
+    {
+        $out = [];
+        $items = isset($data['data']) ? $data['data'] : $data;
+        if (!is_array($items)) return [];
+
+        foreach ($items as $b) {
+            if (!is_array($b) || empty($b['title'])) continue;
+            $id = $b['id'] ?? ($b['_id'] ?? null);
+            $out[] = $this->make('simplelib', (string) $id, [
+                'type' => 'book',
+                'title' => $b['title'],
+                'authors' => !empty($b['author']) ? [$b['author']] : [],
+                'year' => isset($b['year']) ? $this->year($b['year']) : (int) date('Y'),
+                'publisher' => 'SimpleLib Global Press (BassemGhoniem)',
+                'description' => "Genre: " . ($b['genre'] ?? 'Literature') . " | Star Rating: " . ($b['rating'] ?? 5) . "/5.0 | REST HATEOAS",
+                'subjects' => !empty($b['genre']) ? [$b['genre']] : ['Literature'],
+                'coverUrl' => $b['cover_url'] ?? null,
+                'url' => "/api/simplelib/books/{$id}",
+                'access' => 'full',
+            ]);
+        }
+        return $out;
     }
 
     private function parseGoogleBooks(array $data): array

@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\AuthorController;
 use App\Http\Controllers\Api\RecommendationController;
 use App\Http\Controllers\Api\LmsApiController;
+use App\Http\Controllers\Api\SimpleLibApiController;
 
 // 00. Thetechguy44 Library Management System API Gateway
 Route::get('/books',      [LmsApiController::class, 'index']);
@@ -226,4 +227,34 @@ Route::prefix('authors')->group(function () {
 
 // Algorithmic Dynamic Book Recommendations
 Route::get('/recommendations', [RecommendationController::class, 'getRecommendations']);
+
+// 16. BassemGhoniem SimpleLib REST API Gateway
+Route::prefix('simplelib')->group(function () {
+    // Books endpoints with HATEOAS & full CRUD
+    Route::get('/books', [SimpleLibApiController::class, 'index']);
+    Route::post('/books', [SimpleLibApiController::class, 'store']);
+    Route::delete('/books', [SimpleLibApiController::class, 'destroyAll']);
+    Route::get('/books/recent', [SimpleLibApiController::class, 'recent']);
+    Route::get('/books/{id}', [SimpleLibApiController::class, 'show']);
+    Route::put('/books/{id}', [SimpleLibApiController::class, 'update']);
+    Route::patch('/books/{id}', [SimpleLibApiController::class, 'patch']);
+    Route::delete('/books/{id}', [SimpleLibApiController::class, 'destroy']);
+
+    // Authors endpoints
+    Route::get('/authors', [SimpleLibApiController::class, 'authorsIndex']);
+    Route::post('/authors', [SimpleLibApiController::class, 'authorStore']);
+    Route::get('/authors/{id}', [SimpleLibApiController::class, 'authorShow']);
+    Route::put('/authors/{id}', [SimpleLibApiController::class, 'authorUpdate']);
+    Route::patch('/authors/{id}', [SimpleLibApiController::class, 'authorPatch']);
+    Route::delete('/authors/{id}', [SimpleLibApiController::class, 'authorDestroy']);
+
+    // System Telemetry & Seeder
+    Route::get('/stats', [SimpleLibApiController::class, 'stats']);
+    Route::post('/seed', [SimpleLibApiController::class, 'seed']);
+
+    // Passport/JWT User Simulation
+    Route::post('/users/register', [SimpleLibApiController::class, 'register']);
+    Route::post('/users/login', [SimpleLibApiController::class, 'login']);
+    Route::get('/users', [SimpleLibApiController::class, 'users']);
+});
 

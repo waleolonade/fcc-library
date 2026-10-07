@@ -26,6 +26,7 @@ import InstitutionalIntegrationsHub from './InstitutionalIntegrationsHub';
 import ConfigurableLibrarySettings from './ConfigurableLibrarySettings';
 import InstitutionalCommunicationHub from '../common/InstitutionalCommunicationHub';
 import DepartmentManagement from './DepartmentManagement';
+import ApiConfigurationManager from './ApiConfigurationManager';
 import { analyzeUploadedPdf } from '../utils/pdfDeepAnalyzer';
 import PdfAnalysisInspector from '../common/PdfAnalysisInspector';
 import { departmentService } from '../services/departmentService';
@@ -53,6 +54,8 @@ const ADMIN_TAB_SLUG_MAP = {
   'audit': 'audit',
   'apis': 'apis',
   'library-apis': 'apis',
+  'api-configuration': 'apis',
+  'api-settings': 'apis',
   'barcode-scanner': 'barcode_scanner',
   'barcode_scanner': 'barcode_scanner',
   'hod-submissions': 'hod_submissions',
@@ -2244,236 +2247,16 @@ export default function FccAdminLibrary({
         )}
 
         {/* -------------------------------------------------------------
-            TAB: WORLD LIBRARY APIS & CUSTOM CONNECTOR ENGINE
+            TAB: WORLD LIBRARY APIS & ADVANCED CONFIGURATION MANAGER
         ------------------------------------------------------------- */}
-        {activeTab === 'apis' && (
-          <div className="space-y-6 animate-fadeIn">
-            {/* Top Hub Bar */}
-            <div className="rounded-2xl bg-slate-900/90 border border-slate-800 p-5 shadow-lg space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30">
-                      <Globe size={20} />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-bold text-white">World Library APIs & Custom External Connectors</h3>
-                      <p className="text-xs text-slate-400">
-                        Integrated global repositories (Open Library, Google Books, Crossref, Gutenberg) with custom API ingestion
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2.5">
-                  <button
-                    onClick={() => setShowAddApiModal(true)}
-                    id="admin-add-new-api-btn"
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-indigo-950 transition hover:scale-105 active:scale-95"
-                  >
-                    <Plus size={15} />
-                    <span>Add New Library API</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Interactive Global Federated Search Bar */}
-              <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
-                <div className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <Search size={14} className="text-indigo-400" />
-                  <span>Federated Global Library Search & Ingest Sandbox</span>
-                </div>
-
-                <form onSubmit={performFederatedSearch} className="flex flex-wrap sm:flex-nowrap gap-2">
-                  <div className="relative flex-1">
-                    <Search size={16} className="absolute left-3.5 top-3 text-slate-500" />
-                    <input
-                      type="text"
-                      value={activeApiSearchTerm}
-                      onChange={e => setActiveApiSearchTerm(e.target.value)}
-                      placeholder="Search across all connected world library APIs (e.g. cooperative economics, artificial intelligence)..."
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-
-                  <select
-                    value={selectedApiForSearch}
-                    onChange={e => setSelectedApiForSearch(e.target.value)}
-                    className="px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-indigo-500 font-medium"
-                  >
-                    <option value="all">🌍 All Connected World APIs</option>
-                    {libraryApis.map(a => (
-                      <option key={a.id} value={a.id}>{a.name}</option>
-                    ))}
-                  </select>
-
-                  <button
-                    type="submit"
-                    disabled={isSearchingApis}
-                    className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold whitespace-nowrap shadow-md shadow-indigo-900/40 transition flex items-center gap-1.5"
-                  >
-                    <Globe size={14} className={isSearchingApis ? 'animate-spin' : ''} />
-                    <span>{isSearchingApis ? 'Harvesting...' : 'Query World APIs'}</span>
-                  </button>
-                </form>
-
-                {/* Federated Search Results Grid */}
-                {apiSearchResults.length > 0 && (
-                  <div className="pt-3 border-t border-slate-800/80 space-y-3">
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span>Harvested <strong className="text-emerald-400 font-mono">{apiSearchResults.length}</strong> titles from global library providers:</span>
-                      <button onClick={() => setApiSearchResults([])} className="text-slate-500 hover:text-slate-300">Clear</button>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto pr-1">
-                      {apiSearchResults.map((item, idx) => (
-                        <div key={idx} className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-indigo-500/50 transition flex flex-col justify-between space-y-3">
-                          <div className="space-y-2">
-                            <div className="flex items-start gap-3">
-                              {item.coverUrl ? (
-                                <img src={item.coverUrl} alt="Cover" className="w-12 h-16 object-cover rounded shadow-md border border-slate-700 flex-shrink-0" />
-                              ) : (
-                                <div className="w-12 h-16 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-500 flex-shrink-0 font-mono text-[10px]">
-                                  PDF
-                                </div>
-                              )}
-                              <div className="min-w-0">
-                                <div className="font-bold text-xs text-white line-clamp-2 leading-snug">{item.title}</div>
-                                <div className="text-[11px] text-slate-400 truncate mt-0.5">{item.author}</div>
-                                <div className="text-[10px] text-indigo-400 font-mono mt-1">{item.year} • {item.format || 'Monograph'}</div>
-                              </div>
-                            </div>
-                            {item.abstract && (
-                              <p className="text-[10px] text-slate-400 line-clamp-2">{item.abstract}</p>
-                            )}
-                          </div>
-
-                          <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300 truncate max-w-[120px]">
-                              {item.sourceApi}
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                              {item.externalUrl && (
-                                <a
-                                  href={item.externalUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
-                                  title="View on External Provider"
-                                >
-                                  <ExternalLink size={13} />
-                                </a>
-                              )}
-                              <button
-                                onClick={() => handleIngestApiBook(item)}
-                                className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 font-semibold border border-emerald-500/30 flex items-center gap-1 transition"
-                                title="Ingest this book into FCC Central Catalog"
-                              >
-                                <Plus size={12} />
-                                <span>1-Click Ingest</span>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Configured Library APIs List */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Database size={16} className="text-indigo-400" />
-                  <span>Configured Global Library APIs ({libraryApis.length})</span>
-                </h4>
-                <span className="text-xs text-slate-400">All APIs actively integrated with Laravel 11 backend</span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {libraryApis.map(api => {
-                  const testRes = apiTestResults[api.id];
-                  const testing = isTestingApi[api.id];
-
-                  return (
-                    <div key={api.id} className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3 hover:border-slate-700 transition flex flex-col justify-between">
-                      <div className="space-y-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="font-bold text-xs text-white">{api.name}</div>
-                            <div className="text-[11px] text-slate-400 mt-0.5">{api.provider}</div>
-                          </div>
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${
-                            api.is_preset ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                          }`}>
-                            {api.is_preset ? 'Preset' : 'Custom'}
-                          </span>
-                        </div>
-
-                        <div className="p-2 rounded-lg bg-slate-950 font-mono text-[10px] text-slate-400 break-all select-all border border-slate-800/80">
-                          {api.endpoint_template}
-                        </div>
-
-                        <p className="text-[11px] text-slate-400 line-clamp-2">{api.description}</p>
-                      </div>
-
-                      <div className="space-y-2 pt-2 border-t border-slate-800/80">
-                        {/* Live Test Status Feedback */}
-                        {testRes && (
-                          <div className={`p-2 rounded-lg text-[10px] font-mono flex items-center justify-between ${
-                            testRes.status === 'Online'
-                              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
-                              : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'
-                          }`}>
-                            <span>● {testRes.status} ({testRes.latencyMs}ms)</span>
-                            {testRes.itemsDiscovered !== undefined && (
-                              <span>{testRes.itemsDiscovered} items</span>
-                            )}
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between gap-2">
-                          <button
-                            onClick={() => testApiConnection(api.id)}
-                            disabled={testing}
-                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition flex items-center gap-1.5"
-                          >
-                            <Zap size={13} className={testing ? 'animate-spin text-amber-400' : 'text-emerald-400'} />
-                            <span>{testing ? 'Testing...' : 'Ping Test'}</span>
-                          </button>
-
-                          <div className="flex items-center gap-1.5">
-                            {api.docs_url && (
-                              <a
-                                href={api.docs_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white"
-                                title="View API Docs"
-                              >
-                                <ExternalLink size={13} />
-                              </a>
-                            )}
-                            {!api.is_preset && (
-                              <button
-                                onClick={() => handleDeleteApi(api.id)}
-                                className="p-1.5 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20"
-                                title="Delete Custom API"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+        {(activeTab === 'apis' || activeTab === 'library-apis' || activeTab === 'api-configuration') && (
+          <ApiConfigurationManager
+            apis={libraryApis}
+            setApis={setLibraryApis}
+            onIngestBook={handleIngestApiBook}
+            soundEnabled={soundEnabled}
+            sounds={sounds}
+          />
         )}
 
         {/* TAB 13: AUTOMATED ISBN & BARCODE CATALOGING SCANNER */}
