@@ -366,6 +366,8 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
   const [quickUploadCustomLevel, setQuickUploadCustomLevel] = useState('');
   const [courseCustomLevel, setCourseCustomLevel] = useState('');
   const [isSubmittingQuickUpload, setIsSubmittingQuickUpload] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [isDraggingCover, setIsDraggingCover] = useState(false);
   const quickFileInputRef = useRef(null);
   const quickCoverInputRef = useRef(null);
 
@@ -608,6 +610,39 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
         cover_name: file.name
       }));
       sounds.playSuccessChime();
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Attach or Update Cover Artwork on an already uploaded item
+  const handleAttachCoverToUpload = async (uploadId, file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file (PNG, JPG, JPEG, WEBP).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const coverBase64 = e.target.result;
+      try {
+        const res = await fetch(`/api/department-uploads/${uploadId}/update`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cover_image: coverBase64 })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setUploads(prev => prev.map(u => u.id === uploadId ? { ...u, cover_image: coverBase64, coverImage: coverBase64 } : u));
+          sounds.playSuccessChime();
+          setSuccessMsg('✓ Book Front Cover Artwork attached and updated successfully in database!');
+          setTimeout(() => setSuccessMsg(''), 5000);
+        } else {
+          alert(data?.message || 'Failed to update cover artwork in database.');
+        }
+      } catch (err) {
+        console.error('Failed to attach cover:', err);
+        alert('Error connecting to backend server to save cover.');
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -1257,8 +1292,22 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* 1. Main PDF / Monograph Document */}
                     <div
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingFile(true); }}
+                      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingFile(false); }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setIsDraggingFile(false);
+                        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                          handleQuickFileSelected(e.dataTransfer.files[0]);
+                        }
+                      }}
                       onClick={() => quickFileInputRef.current?.click()}
-                      className="p-5 rounded-2xl border-2 border-dashed border-teal-500/30 hover:border-teal-500/60 bg-slate-950/60 text-center cursor-pointer transition group flex flex-col items-center justify-center min-h-[140px]"
+                      className={`p-5 rounded-2xl border-2 border-dashed text-center cursor-pointer transition group flex flex-col items-center justify-center min-h-[150px] relative ${
+                        isDraggingFile
+                          ? 'border-teal-400 bg-teal-950/40 ring-2 ring-teal-500/50'
+                          : 'border-teal-500/30 hover:border-teal-500/60 bg-slate-950/60'
+                      }`}
                     >
                       <input
                         type="file"
@@ -1267,19 +1316,43 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                         accept=".pdf,.epub,.docx,.txt"
                         className="hidden"
                       />
-                      <Upload size={28} className="text-teal-400 group-hover:scale-110 transition shrink-0" />
-                      <div className="mt-2 text-xs font-bold text-white">
+                      <div className="p-3 rounded-2xl bg-teal-950/80 text-teal-400 border border-teal-800/80 group-hover:scale-110 transition shrink-0">
+                        <Upload size={24} />
+                      </div>
+                      <div className="mt-2.5 text-xs font-bold text-white">
                         {quickUploadForm.file_name ? (
-                          <span className="text-teal-300">File: {quickUploadForm.file_name}</span>
+                          <div className="space-y-0.5">
+                            <span className="text-teal-300 flex items-center justify-center gap-1">
+                              <CheckCircle size={13} className="text-teal-400" />
+                              <span>{quickUploadForm.file_name}</span>
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono block">Document Attached Ready for Upload</span>
+                          </div>
                         ) : (
-                          <span>Click to Upload PDF / E-Book Document</span>
+                          <span>Click or Drag & Drop PDF / Manuscript</span>
                         )}
                       </div>
-                      <p className="text-[11px] text-slate-500 mt-1">PDF, EPUB, DOCX (Up to 50 MB)</p>
+                      <p className="text-[11px] text-slate-400 mt-1">PDF, EPUB, DOCX (Up to 50 MB)</p>
                     </div>
 
                     {/* 2. Cover Image Artwork Box */}
-                    <div className="p-4 rounded-2xl border-2 border-dashed border-emerald-500/30 hover:border-emerald-500/60 bg-slate-950/60 transition group relative">
+                    <div
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingCover(true); }}
+                      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingCover(false); }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setIsDraggingCover(false);
+                        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                          handleQuickCoverSelected(e.dataTransfer.files[0]);
+                        }
+                      }}
+                      className={`p-4 rounded-2xl border-2 border-dashed transition group relative min-h-[150px] flex items-center justify-center ${
+                        isDraggingCover
+                          ? 'border-emerald-400 bg-emerald-950/40 ring-2 ring-emerald-500/50'
+                          : 'border-emerald-500/30 hover:border-emerald-500/60 bg-slate-950/60'
+                      }`}
+                    >
                       <input
                         type="file"
                         ref={quickCoverInputRef}
@@ -1288,31 +1361,42 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                         className="hidden"
                       />
                       {quickUploadForm.cover_image ? (
-                        <div className="flex items-center gap-3">
-                          <div className="w-16 h-22 sm:w-20 sm:h-24 rounded-xl overflow-hidden border border-emerald-500/40 shadow-lg shrink-0 bg-slate-900">
+                        <div className="flex items-center gap-4 w-full p-1">
+                          {/* Book Ratio Cover Mockup */}
+                          <div className="w-20 h-28 sm:w-24 sm:h-32 rounded-xl overflow-hidden border-2 border-emerald-500/60 shadow-2xl shrink-0 bg-slate-900 relative">
                             <img
                               src={quickUploadForm.cover_image}
-                              alt="Cover Preview"
+                              alt="Front Cover Preview"
                               className="w-full h-full object-cover"
                             />
+                            {/* Spine overlay */}
+                            <div className="absolute top-0 bottom-0 left-0 w-2 bg-gradient-to-r from-black/70 to-transparent pointer-events-none" />
+                            {/* Sheen */}
+                            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none" />
                           </div>
-                          <div className="flex-1 min-w-0 space-y-1.5 text-left">
-                            <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-400">
-                              <CheckCircle size={13} /> Cover Artwork Attached
+
+                          <div className="flex-1 min-w-0 space-y-2 text-left">
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+                              <CheckCircle size={15} />
+                              <span>Front Cover Artwork Attached</span>
                             </div>
                             <p className="text-xs text-white truncate font-medium">
-                              {quickUploadForm.cover_name || 'Cover Artwork'}
+                              {quickUploadForm.cover_name || 'Front Cover Picture'}
                             </p>
-                            <div className="flex items-center gap-2 pt-1">
+                            <p className="text-[10px] text-slate-400 font-mono">
+                              ✓ Synchronizes to OPAC, Student Catalog, and Reader
+                            </p>
+                            <div className="flex items-center gap-2 pt-0.5">
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   quickCoverInputRef.current?.click();
                                 }}
-                                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold transition"
+                                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition flex items-center gap-1"
                               >
-                                Replace
+                                <RefreshCw size={11} />
+                                <span>Replace</span>
                               </button>
                               <button
                                 type="button"
@@ -1320,7 +1404,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                                   e.stopPropagation();
                                   setQuickUploadForm(prev => ({ ...prev, cover_image: '', cover_name: '' }));
                                 }}
-                                className="px-2.5 py-1 rounded-lg bg-rose-950/40 hover:bg-rose-900 text-rose-300 text-[11px] font-semibold transition"
+                                className="px-3 py-1.5 rounded-lg bg-rose-950/50 hover:bg-rose-900 text-rose-300 text-xs font-semibold transition border border-rose-800/60"
                               >
                                 Remove
                               </button>
@@ -1330,14 +1414,19 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                       ) : (
                         <div
                           onClick={() => quickCoverInputRef.current?.click()}
-                          className="h-full flex flex-col items-center justify-center text-center cursor-pointer min-h-[120px]"
+                          className="w-full h-full flex flex-col items-center justify-center text-center cursor-pointer py-2"
                         >
-                          <Image size={28} className="text-emerald-400 group-hover:scale-110 transition shrink-0" />
-                          <div className="mt-2 text-xs font-bold text-white">
-                            Upload Front Cover Artwork
+                          <div className="p-3 rounded-2xl bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 group-hover:scale-110 transition shrink-0">
+                            <Image size={24} />
                           </div>
-                          <p className="text-[11px] text-slate-500 mt-1">
-                            PNG, JPG, WEBP (Optional • Stored in Database)
+                          <div className="mt-2.5 text-xs font-bold text-white flex items-center gap-1.5">
+                            <span>Upload Front Cover Artwork</span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-normal">
+                              Recommended
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 mt-1">
+                            PNG, JPG, WEBP (Drag & drop or click to browse)
                           </p>
                         </div>
                       )}
@@ -1511,6 +1600,156 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                   <div className="text-2xl font-black text-white">{reservesList.length}</div>
                   <div className="text-[11px] text-emerald-400 font-mono">2-Hour Reading Desk</div>
                 </div>
+              </div>
+
+              {/* Department Books & Materials with Cover Artworks Gallery */}
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3.5">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-2xl bg-emerald-950 text-emerald-400 border border-emerald-800">
+                      <Image size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-white flex items-center gap-2">
+                        <span>Department Books & Cover Artworks</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-teal-950 text-teal-300 border border-teal-800">
+                          {uploads.length} Resources
+                        </span>
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Front cover artwork presentation of curriculum textbooks & materials for {currentDept.name}.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleTabSwitch('submissions')}
+                      className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition flex items-center gap-1.5"
+                    >
+                      <Layers size={13} />
+                      <span>View All in Pipeline</span>
+                    </button>
+                    <button
+                      onClick={fetchDepartmentUploads}
+                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                      title="Refresh uploads from database"
+                    >
+                      <RefreshCw size={13} className={isLoadingUploads ? 'animate-spin text-teal-400' : ''} />
+                    </button>
+                  </div>
+                </div>
+
+                {uploads.length === 0 ? (
+                  <div className="p-8 text-center bg-slate-950/60 rounded-2xl border border-dashed border-slate-800 space-y-2">
+                    <BookOpen size={28} className="mx-auto text-slate-600" />
+                    <h4 className="text-sm font-bold text-slate-300">No Department Books Uploaded Yet</h4>
+                    <p className="text-xs text-slate-500">
+                      Use the Quick Upload form above to attach a PDF document and upload a Front Cover Artwork.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {uploads.slice(0, 8).map((up, idx) => {
+                      const isApproved = up.status === 'approved';
+                      const isRejected = up.status === 'rejected';
+
+                      return (
+                        <div
+                          key={up.id || idx}
+                          className="bg-slate-950 rounded-2xl border border-slate-800/90 p-3.5 flex flex-col justify-between space-y-3 hover:border-teal-500/50 hover:shadow-xl transition group relative overflow-hidden"
+                        >
+                          {/* Front Cover Artwork Presentation */}
+                          <div className="w-full h-44 rounded-xl overflow-hidden relative shadow-lg shadow-black/80 border border-slate-800 bg-slate-900 group-hover:border-teal-500/60 transition">
+                            {up.cover_image ? (
+                              <img
+                                src={up.cover_image}
+                                alt={up.title}
+                                className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                              />
+                            ) : (
+                              <div className="w-full h-full p-3 flex flex-col justify-between text-left relative overflow-hidden bg-gradient-to-br from-teal-950 via-slate-900 to-black">
+                                <div className="space-y-1 relative z-10">
+                                  <span className="text-[7.5px] font-mono text-teal-400 font-bold uppercase tracking-wider block">
+                                    FCC • {currentDept.code}
+                                  </span>
+                                  <div className="h-0.5 w-4 bg-teal-400 rounded-full" />
+                                  <h4 className="text-[10px] font-bold text-white line-clamp-3 leading-snug font-serif">
+                                    {up.title}
+                                  </h4>
+                                </div>
+                                <div className="relative z-10 text-[8px] text-slate-400 font-mono truncate">
+                                  {up.author}
+                                </div>
+                              </div>
+                            )}
+                            {/* Spine shadow */}
+                            <div className="absolute top-0 bottom-0 left-0 w-2.5 bg-gradient-to-r from-black/70 to-transparent pointer-events-none" />
+                            {/* Sheen */}
+                            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none" />
+                            {/* Level Badge in top corner */}
+                            <div className="absolute top-2 right-2 z-10">
+                              <span className="px-2 py-0.5 rounded-md text-[9px] font-bold font-mono bg-black/80 backdrop-blur-sm text-teal-300 border border-teal-500/40 shadow">
+                                {up.course_code || currentDept.code}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Details */}
+                          <div className="space-y-1.5 flex-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                isApproved
+                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                  : isRejected
+                                  ? 'bg-rose-950 text-rose-300 border border-rose-800'
+                                  : 'bg-amber-950 text-amber-300 border border-amber-800 animate-pulse'
+                              }`}>
+                                {isApproved ? '✓ Published in Catalog' : (isRejected ? '✕ Declined' : '● Pending Review')}
+                              </span>
+                              <span className="text-[9px] font-mono text-slate-400">
+                                {up.target_level || 'HND II'}
+                              </span>
+                            </div>
+
+                            <h4 className="text-xs font-bold text-white line-clamp-2 leading-snug group-hover:text-teal-300 transition">
+                              {up.title}
+                            </h4>
+                            <p className="text-[11px] text-slate-400 truncate">
+                              By {up.author}
+                            </p>
+                          </div>
+
+                          {/* Cover Actions Footer */}
+                          <div className="pt-2 border-t border-slate-900 flex items-center justify-between gap-1 text-[11px]">
+                            <label className="cursor-pointer px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-teal-300 text-[10px] font-semibold transition border border-teal-500/30 hover:border-teal-400 flex items-center gap-1">
+                              <Image size={11} />
+                              <span>{up.cover_image ? 'Update Cover' : 'Attach Cover'}</span>
+                              <input
+                                type="file"
+                                accept="image/*,.png,.jpg,.jpeg,.webp"
+                                className="hidden"
+                                onChange={(e) => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    handleAttachCoverToUpload(up.id, e.target.files[0]);
+                                  }
+                                }}
+                              />
+                            </label>
+
+                            <button
+                              onClick={() => handleTabSwitch('submissions')}
+                              className="text-[10px] text-slate-400 hover:text-white transition flex items-center gap-0.5"
+                            >
+                              <span>Details</span>
+                              <ChevronRight size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Quick Navigation Panels */}
@@ -1830,11 +2069,49 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                           </span>
                         </div>
 
-                        <div>
-                          <h4 className="text-base font-bold text-white">{up.title}</h4>
-                          <p className="text-xs text-slate-400 mt-0.5">
-                            By {up.author || currentDept.hod_name || currentDept.hod} • {up.file_size || 'Document File'} • {up.file_name}
-                          </p>
+                        <div className="flex flex-col sm:flex-row items-start gap-4 pt-1">
+                          {/* Front Cover Artwork Thumbnail */}
+                          <div className="w-16 sm:w-20 h-24 sm:h-28 rounded-xl overflow-hidden shrink-0 relative shadow-lg shadow-black/60 border border-slate-700/80 bg-slate-950 self-center sm:self-start">
+                            {up.cover_image ? (
+                              <img
+                                src={up.cover_image}
+                                alt={up.title}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full p-2 flex flex-col justify-between text-left relative overflow-hidden bg-gradient-to-br from-teal-950 via-slate-900 to-black">
+                                <span className="text-[7px] font-mono text-teal-400 font-bold uppercase truncate">FCC • {currentDept.code}</span>
+                                <span className="text-[8.5px] font-bold text-white line-clamp-3 leading-tight font-serif">{up.title}</span>
+                                <span className="text-[7px] text-slate-400 font-mono truncate">{up.course_code || 'GEN'}</span>
+                              </div>
+                            )}
+                            <div className="absolute top-0 bottom-0 left-0 w-2 bg-gradient-to-r from-black/70 to-transparent pointer-events-none" />
+                            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none" />
+                          </div>
+
+                          <div className="flex-1 min-w-0 space-y-1.5 w-full">
+                            <h4 className="text-base font-bold text-white leading-snug">{up.title}</h4>
+                            <p className="text-xs text-slate-400">
+                              By {up.author || currentDept.hod_name || currentDept.hod} • {up.file_size || 'Document File'} • {up.file_name}
+                            </p>
+
+                            <div className="flex items-center gap-2 pt-1">
+                              <label className="cursor-pointer px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-slate-800 text-teal-300 text-[10px] font-semibold transition border border-teal-500/30 hover:border-teal-400 flex items-center gap-1.5">
+                                <Image size={11} />
+                                <span>{up.cover_image ? 'Change Front Cover Artwork' : 'Attach Front Cover Artwork'}</span>
+                                <input
+                                  type="file"
+                                  accept="image/*,.png,.jpg,.jpeg,.webp"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    if (e.target.files && e.target.files[0]) {
+                                      handleAttachCoverToUpload(up.id, e.target.files[0]);
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          </div>
                         </div>
 
                         {/* If Declined: Display Decline Reason Banner */}

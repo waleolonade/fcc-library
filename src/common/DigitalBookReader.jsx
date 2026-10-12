@@ -112,6 +112,8 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
           uploadedBy: full.uploaded_by || full.uploadedBy || candidate.uploadedBy,
           fileDataUrl: full.file_data_url || full.fileDataUrl || candidate.fileDataUrl || '',
           fileName: full.file_name || full.fileName || candidate.fileName,
+          cover_image: full.cover_image || full.coverImage || candidate.cover_image || candidate.coverImage || '',
+          coverImage: full.cover_image || full.coverImage || candidate.cover_image || candidate.coverImage || '',
           hasBinaryPdf: Boolean(full.file_data_url || full.fileDataUrl || (full.id && full.id === 'FCC-HOD-8201') || candidate.hasBinaryPdf),
           isDigital: true,
           pdfPages: full.pdf_pages || full.pdfPages || candidate.pdfPages || 120
@@ -285,8 +287,23 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
             title={sidebarOpen ? "Hide Left Sidebar" : "Show Left Sidebar"}
           >
             {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-            <span className="text-[11px] font-semibold">{sidebarOpen ? 'Hide Sidebar' : 'Show Sidebar'}</span>
           </button>
+
+          {/* Book Cover Artwork Thumbnail */}
+          {(currentBook.cover_image || currentBook.coverImage) ? (
+            <div className="w-8 h-11 rounded-lg overflow-hidden shrink-0 border border-emerald-500/40 shadow bg-slate-950 hidden sm:block">
+              <img
+                src={currentBook.cover_image || currentBook.coverImage}
+                alt="Book Cover"
+                className="w-full h-full object-cover"
+              />
+            </div>
+          ) : (
+            <div className="w-8 h-11 rounded-lg overflow-hidden shrink-0 border border-emerald-500/30 shadow bg-emerald-950/80 p-1 flex flex-col justify-between hidden sm:flex">
+              <span className="text-[6px] text-emerald-400 font-mono font-bold">FCC</span>
+              <span className="text-[7.5px] text-white font-serif font-bold text-center leading-none">📖</span>
+            </div>
+          )}
 
           <div>
             <div className="text-xs sm:text-sm font-bold text-white flex flex-wrap items-center gap-2">

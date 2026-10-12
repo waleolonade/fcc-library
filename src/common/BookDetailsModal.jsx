@@ -251,26 +251,39 @@ export default function BookDetailsModal({ book, onClose, onOpenReader, onReserv
         <div className="flex flex-col md:flex-row gap-6 items-start pb-6 border-b border-emerald-800/50">
           
           {/* BOOK COVER CANVAS */}
-          <div className="w-full sm:w-44 h-64 rounded-2xl bg-gradient-to-br from-[#063f2b] via-[#04281c] to-[#02150e] border-2 border-emerald-600/40 p-3 flex flex-col justify-between shrink-0 shadow-2xl shadow-emerald-950 font-serif relative overflow-hidden group">
-            <div className="absolute inset-0 bg-[radial-gradient(#10b98115_1px,transparent_1px)] bg-[size:12px_12px] pointer-events-none" />
-            
-            <div className="relative z-10">
-              <div className="text-[10px] font-mono font-bold tracking-widest text-emerald-400/80 uppercase">
-                {book.department || 'FEDERAL COOPERATIVE COLLEGE'}
-              </div>
-              <div className="h-0.5 w-8 bg-emerald-500 my-1.5" />
-              <h3 className="text-xs font-bold text-white line-clamp-3 leading-snug">
-                {book.title}
-              </h3>
-            </div>
+          <div className="w-full sm:w-48 h-64 sm:h-72 rounded-2xl bg-gradient-to-br from-[#063f2b] via-[#04281c] to-[#02150e] border-2 border-emerald-600/40 shrink-0 shadow-2xl shadow-emerald-950 font-serif relative overflow-hidden group">
+            {book.cover_image || book.coverImage ? (
+              <img
+                src={book.cover_image || book.coverImage}
+                alt={book.title}
+                className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+              />
+            ) : (
+              <div className="p-3 h-full flex flex-col justify-between relative z-10">
+                <div className="absolute inset-0 bg-[radial-gradient(#10b98115_1px,transparent_1px)] bg-[size:12px_12px] pointer-events-none" />
+                <div className="relative z-10">
+                  <div className="text-[10px] font-mono font-bold tracking-widest text-emerald-400/80 uppercase">
+                    {book.department || 'FEDERAL COOPERATIVE COLLEGE'}
+                  </div>
+                  <div className="h-0.5 w-8 bg-emerald-500 my-1.5" />
+                  <h3 className="text-xs font-bold text-white line-clamp-3 leading-snug">
+                    {book.title}
+                  </h3>
+                </div>
 
-            <div className="relative z-10 text-[10px] font-mono space-y-1">
-              <div className="text-emerald-300 font-sans truncate">{book.author}</div>
-              <div className="text-emerald-400/70 border-t border-emerald-700/40 pt-1 flex justify-between items-center">
-                <span>{book.year || 2024}</span>
-                <span className="text-amber-400">★★★★★</span>
+                <div className="relative z-10 text-[10px] font-mono space-y-1">
+                  <div className="text-emerald-300 font-sans truncate">{book.author}</div>
+                  <div className="text-emerald-400/70 border-t border-emerald-700/40 pt-1 flex justify-between items-center">
+                    <span>{book.year || 2024}</span>
+                    <span className="text-amber-400">★★★★★</span>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
+            {/* Book spine line overlay */}
+            <div className="absolute top-0 bottom-0 left-0 w-3 bg-gradient-to-r from-black/70 to-transparent pointer-events-none" />
+            {/* Glossy lighting sheen */}
+            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none" />
           </div>
 
           {/* MAIN INFO & ACTION BUTTONS */}

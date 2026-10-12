@@ -51,6 +51,8 @@ class CatalogController extends Controller
             // Keep index list lightweight (<50KB total) so catalog loads instantly across all devices
             $data['file_data_url'] = '';
             $data['fileDataUrl'] = '';
+            $data['cover_image'] = $book->cover_image ?? null;
+            $data['coverImage'] = $book->cover_image ?? null;
             return $data;
         });
 

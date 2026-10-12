@@ -435,7 +435,9 @@ export default function SmartCatalogSearch({
         shelfLocation: item.assigned_shelf || item.shelf_location || (isProject ? 'Postgraduate & Project Repository' : (isJournal ? 'Serials & Periodicals Section' : 'Floor 2 / Open Stacks')),
         uploaded_by_hod_id: item.uploaded_by_hod_id || `HOD-${normalizeDeptCode(item.department_name)}`,
         hod_name: item.hod_name,
-        status: 'approved'
+        status: 'approved',
+        cover_image: item.cover_image || item.coverImage || '',
+        coverImage: item.cover_image || item.coverImage || ''
       };
     });
 
@@ -462,7 +464,9 @@ export default function SmartCatalogSearch({
       branch: 'Main Campus Library (Prof. Hezekiah Complex)',
       shelfLocation: 'Postgraduate Archive & Repository',
       uploaded_by_hod_id: `HOD-${normalizeDeptCode(t.department)}`,
-      status: 'approved'
+      status: 'approved',
+      cover_image: t.cover_image || t.coverImage || '',
+      coverImage: t.cover_image || t.coverImage || ''
     }));
 
     // 3. Central books strictly from backend database
@@ -1241,47 +1245,88 @@ export default function SmartCatalogSearch({
                     </div>
                   </div>
 
-                  {/* Title & Creator */}
-                  <div>
-                    <h3 className="text-base font-bold text-white group-hover:text-white transition leading-snug">
-                      {book.title}
-                    </h3>
+                  {/* Body with Front Cover Artwork & Details */}
+                  <div className="flex flex-col sm:flex-row gap-4 items-start pt-1">
+                    {/* FRONT COVER ARTWORK CANVAS */}
+                    <div className="w-24 sm:w-28 h-36 sm:h-40 rounded-xl overflow-hidden shrink-0 relative shadow-xl shadow-black/60 border border-slate-700/80 bg-slate-950 group-hover:border-teal-500/60 transition group self-center sm:self-start">
+                      {book.cover_image || book.coverImage ? (
+                        <img
+                          src={book.cover_image || book.coverImage}
+                          alt={`Cover of ${book.title}`}
+                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                        />
+                      ) : (
+                        <div
+                          className="w-full h-full p-2.5 flex flex-col justify-between text-left relative overflow-hidden"
+                          style={{
+                            background: `linear-gradient(145deg, ${currentStudentDept.accentHex}40 0%, #032317 60%, #01140e 100%)`
+                          }}
+                        >
+                          <div className="space-y-1 relative z-10">
+                            <div className="text-[7.5px] font-mono font-bold tracking-wider uppercase text-emerald-400/90 truncate">
+                              FCC • {book.department || currentStudentDept.code}
+                            </div>
+                            <div className="h-0.5 w-4 bg-teal-400 rounded-full" />
+                            <h4 className="text-[9.5px] font-bold text-white line-clamp-3 leading-snug font-serif">
+                              {book.title}
+                            </h4>
+                          </div>
+                          <div className="relative z-10 text-[7.5px] text-slate-300 font-mono truncate">
+                            {book.author}
+                          </div>
+                        </div>
+                      )}
+                      {/* Book spine line overlay */}
+                      <div className="absolute top-0 bottom-0 left-0 w-2.5 bg-gradient-to-r from-black/70 to-transparent pointer-events-none" />
+                      {/* Glossy lighting sheen */}
+                      <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none" />
+                    </div>
 
-                    {isProject ? (
-                      <div className="text-xs text-slate-300 mt-1 space-y-0.5">
-                        <p><strong className="text-slate-400">Researcher:</strong> {book.author}</p>
-                        {book.supervisor && (
-                          <p className="text-[11px] text-slate-400"><strong className="text-slate-500">Supervisor:</strong> {book.supervisor}</p>
+                    {/* DETAILS CONTAINER */}
+                    <div className="flex-1 min-w-0 space-y-2 w-full">
+                      {/* Title & Creator */}
+                      <div>
+                        <h3 className="text-base font-bold text-white group-hover:text-white transition leading-snug">
+                          {book.title}
+                        </h3>
+
+                        {isProject ? (
+                          <div className="text-xs text-slate-300 mt-1 space-y-0.5">
+                            <p><strong className="text-slate-400">Researcher:</strong> {book.author}</p>
+                            {book.supervisor && (
+                              <p className="text-[11px] text-slate-400"><strong className="text-slate-500">Supervisor:</strong> {book.supervisor}</p>
+                            )}
+                            <p className="text-[11px] font-mono" style={{ color: currentStudentDept.accentHex }}>
+                              Dept. of {currentStudentDept.name} • Class of {book.year}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-slate-400 mt-1 space-y-0.5">
+                            <p>
+                              By <strong className="text-slate-200">{book.author}</strong> {book.publisher && `• ${book.publisher}`} ({book.year})
+                            </p>
+                            {book.hod_name && (
+                              <p className="text-[11px] font-mono text-emerald-400">
+                                Approved HOD Upload • {book.hod_name}
+                              </p>
+                            )}
+                          </div>
                         )}
-                        <p className="text-[11px] font-mono" style={{ color: currentStudentDept.accentHex }}>
-                          Dept. of {currentStudentDept.name} • Class of {book.year}
-                        </p>
                       </div>
-                    ) : (
-                      <div className="text-xs text-slate-400 mt-1 space-y-0.5">
-                        <p>
-                          By <strong className="text-slate-200">{book.author}</strong> {book.publisher && `• ${book.publisher}`} ({book.year})
-                        </p>
-                        {book.hod_name && (
-                          <p className="text-[11px] font-mono text-emerald-400">
-                            Approved HOD Upload • {book.hod_name}
-                          </p>
-                        )}
+
+                      {/* Abstract / Summary */}
+                      <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed">
+                        {book.abstract || book.description || 'Departmental academic resource approved by Federal Co-operative College Ibadan.'}
+                      </p>
+
+                      {/* Location Info */}
+                      <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono bg-slate-950/70 p-2 rounded-xl border border-slate-800">
+                        <MapPin size={13} style={{ color: currentStudentDept.accentHex }} className="shrink-0" />
+                        <span className="truncate">
+                          {book.shelfLocation || 'Department Stacks'} • {book.branch?.split('(')[0] || 'Main Campus Library'}
+                        </span>
                       </div>
-                    )}
-                  </div>
-
-                  {/* Abstract / Summary */}
-                  <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed">
-                    {book.abstract || book.description || 'Departmental academic resource approved by Federal Co-operative College Ibadan.'}
-                  </p>
-
-                  {/* Location Info */}
-                  <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono bg-slate-950/70 p-2 rounded-xl border border-slate-800">
-                    <MapPin size={13} style={{ color: currentStudentDept.accentHex }} className="shrink-0" />
-                    <span className="truncate">
-                      {book.shelfLocation || 'Department Stacks'} • {book.branch?.split('(')[0] || 'Main Campus Library'}
-                    </span>
+                    </div>
                   </div>
                 </div>
 

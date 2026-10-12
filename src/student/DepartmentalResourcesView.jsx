@@ -159,7 +159,7 @@ export default function DepartmentalResourcesView({ user, onOpenReader }) {
               key={item.id}
               className="p-5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col justify-between space-y-4 shadow-xl hover:border-teal-500/50 transition group"
             >
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-bold bg-teal-950 text-teal-300 border border-teal-800">
                     {item.course_code || 'COURSE'} • {item.target_level || 'HND II'}
@@ -169,22 +169,56 @@ export default function DepartmentalResourcesView({ user, onOpenReader }) {
                   </span>
                 </div>
 
-                <h3 className="text-base font-bold text-white group-hover:text-teal-300 transition">
-                  {item.title}
-                </h3>
-
-                <p className="text-xs text-slate-400">
-                  By {item.author} • {item.department_name}
-                </p>
-
-                {item.assigned_call_number && (
-                  <div className="flex items-center gap-1.5 pt-1 text-[11px] font-mono text-slate-300">
-                    <Tag size={12} className="text-teal-400" />
-                    <span>Call No: <strong className="text-emerald-300">{item.assigned_call_number}</strong></span>
-                    <span>•</span>
-                    <span className="text-slate-400">{item.assigned_shelf}</span>
+                <div className="flex flex-col sm:flex-row gap-3.5 items-start">
+                  {/* FRONT COVER ARTWORK CANVAS */}
+                  <div className="w-20 sm:w-24 h-28 sm:h-32 rounded-xl overflow-hidden shrink-0 relative shadow-xl shadow-black/60 border border-slate-700/80 bg-slate-950 group-hover:border-teal-500/60 transition self-center sm:self-start">
+                    {item.cover_image || item.coverImage ? (
+                      <img
+                        src={item.cover_image || item.coverImage}
+                        alt={`Cover of ${item.title}`}
+                        className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full p-2 flex flex-col justify-between text-left relative overflow-hidden bg-gradient-to-br from-teal-950 via-slate-900 to-black">
+                        <div className="space-y-1 relative z-10">
+                          <div className="text-[7px] font-mono font-bold tracking-wider uppercase text-teal-400 truncate">
+                            FCC • {item.department_name || 'DEPT'}
+                          </div>
+                          <div className="h-0.5 w-3 bg-teal-400 rounded-full" />
+                          <h4 className="text-[8.5px] font-bold text-white line-clamp-3 leading-snug font-serif">
+                            {item.title}
+                          </h4>
+                        </div>
+                        <div className="relative z-10 text-[7px] text-slate-300 font-mono truncate">
+                          {item.author}
+                        </div>
+                      </div>
+                    )}
+                    {/* Spine overlay */}
+                    <div className="absolute top-0 bottom-0 left-0 w-2 bg-gradient-to-r from-black/70 to-transparent pointer-events-none" />
+                    {/* Sheen */}
+                    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none" />
                   </div>
-                )}
+
+                  <div className="flex-1 min-w-0 space-y-1.5 w-full">
+                    <h3 className="text-base font-bold text-white group-hover:text-teal-300 transition leading-snug">
+                      {item.title}
+                    </h3>
+
+                    <p className="text-xs text-slate-400">
+                      By {item.author} • {item.department_name}
+                    </p>
+
+                    {item.assigned_call_number && (
+                      <div className="flex items-center gap-1.5 pt-1 text-[11px] font-mono text-slate-300">
+                        <Tag size={12} className="text-teal-400" />
+                        <span>Call No: <strong className="text-emerald-300">{item.assigned_call_number}</strong></span>
+                        <span>•</span>
+                        <span className="text-slate-400 truncate">{item.assigned_shelf}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-2">
@@ -220,6 +254,8 @@ export default function DepartmentalResourcesView({ user, onOpenReader }) {
                           shelfLocation: item.assigned_shelf || 'Digital Library Stacks',
                           fileDataUrl: item.file_data_url || item.fileDataUrl || '',
                           pdfUrl: item.file_data_url || item.fileDataUrl || '',
+                          cover_image: item.cover_image || item.coverImage || '',
+                          coverImage: item.cover_image || item.coverImage || '',
                           fileName: item.file_name || `${item.title}.pdf`,
                           abstract: item.abstract || 'Approved Departmental Curriculum Resource.',
                           isDigital: true,

@@ -580,6 +580,8 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
         fileSize: data?.book?.file_size || up.file_size || '4.2 MB',
         fileName: data?.book?.file_name || up.file_name || 'curriculum_monograph.pdf',
         fileDataUrl: data?.book?.file_data_url || up.file_data_url || '',
+        cover_image: data?.book?.cover_image || up.cover_image || up.coverImage || '',
+        coverImage: data?.book?.cover_image || up.cover_image || up.coverImage || '',
         isDigital: true,
         format: cat === 'project' ? 'Thesis / Dissertation' : (cat === 'journal' ? 'Journal Article' : 'E-Book'),
         resource_type: cat === 'project' ? 'Student Project' : (cat === 'journal' ? 'Journal' : 'Book'),
@@ -1078,42 +1080,62 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
                       isPending ? 'bg-slate-900 border-amber-500/30 hover:border-amber-500/60' : 'bg-slate-900/80 border-slate-800'
                     }`}
                   >
-                    <div className="space-y-2 max-w-3xl">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {/* Status Badge */}
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                          isApproved
-                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                            : isRejected
-                            ? 'bg-rose-950 text-rose-300 border border-rose-800'
-                            : 'bg-amber-950 text-amber-300 border border-amber-800 animate-pulse'
-                        }`}>
-                          {isApproved ? '✓ Approved & Published' : (isRejected ? '✕ Declined' : '● Pending Review')}
-                        </span>
-
-                        {/* Category Badge */}
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                          cat === 'project'
-                            ? 'bg-purple-950 text-purple-300 border border-purple-800'
-                            : (cat === 'journal' ? 'bg-indigo-950 text-indigo-300 border border-indigo-800' : 'bg-teal-950 text-teal-300 border border-teal-800')
-                        }`}>
-                          {cat === 'project' ? '🎓 Student Project' : (cat === 'journal' ? '📰 Academic Journal' : '📚 Book / Monograph')}
-                        </span>
-
-                        <span className="text-[10px] font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
-                          {up.id}
-                        </span>
-
-                        <span className="text-[10px] font-bold text-indigo-400 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800">
-                          {up.department_name} ({up.course_code})
-                        </span>
-
-                        <span className="text-[10px] text-slate-400">
-                          HOD: <strong className="text-slate-200">{up.hod_name || 'Department Faculty'}</strong>
-                        </span>
+                    <div className="flex flex-col sm:flex-row items-start gap-4 max-w-4xl">
+                      {/* FRONT COVER ARTWORK THUMBNAIL */}
+                      <div className="w-16 sm:w-20 h-24 sm:h-28 rounded-xl overflow-hidden shrink-0 relative shadow-lg shadow-black/60 border border-slate-700/80 bg-slate-950 self-center sm:self-start">
+                        {up.cover_image ? (
+                          <img
+                            src={up.cover_image}
+                            alt={up.title}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full p-2 flex flex-col justify-between text-left relative overflow-hidden bg-gradient-to-br from-indigo-950 via-slate-900 to-black">
+                            <span className="text-[7px] font-mono text-indigo-400 font-bold uppercase truncate">FCC • {up.department_name}</span>
+                            <span className="text-[8.5px] font-bold text-white line-clamp-3 leading-tight font-serif">{up.title}</span>
+                            <span className="text-[7px] text-slate-400 font-mono truncate">{up.course_code || 'GEN'}</span>
+                          </div>
+                        )}
+                        <div className="absolute top-0 bottom-0 left-0 w-2 bg-gradient-to-r from-black/70 to-transparent pointer-events-none" />
+                        <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none" />
                       </div>
 
-                      <h3 className="text-base font-bold text-white">{up.title}</h3>
+                      <div className="space-y-2 flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* Status Badge */}
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                            isApproved
+                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                              : isRejected
+                              ? 'bg-rose-950 text-rose-300 border border-rose-800'
+                              : 'bg-amber-950 text-amber-300 border border-amber-800 animate-pulse'
+                          }`}>
+                            {isApproved ? '✓ Approved & Published' : (isRejected ? '✕ Declined' : '● Pending Review')}
+                          </span>
+
+                          {/* Category Badge */}
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                            cat === 'project'
+                              ? 'bg-purple-950 text-purple-300 border border-purple-800'
+                              : (cat === 'journal' ? 'bg-indigo-950 text-indigo-300 border border-indigo-800' : 'bg-teal-950 text-teal-300 border border-teal-800')
+                          }`}>
+                            {cat === 'project' ? '🎓 Student Project' : (cat === 'journal' ? '📰 Academic Journal' : '📚 Book / Monograph')}
+                          </span>
+
+                          <span className="text-[10px] font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                            {up.id}
+                          </span>
+
+                          <span className="text-[10px] font-bold text-indigo-400 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800">
+                            {up.department_name} ({up.course_code})
+                          </span>
+
+                          <span className="text-[10px] text-slate-400">
+                            HOD: <strong className="text-slate-200">{up.hod_name || 'Department Faculty'}</strong>
+                          </span>
+                        </div>
+
+                        <h3 className="text-base font-bold text-white">{up.title}</h3>
 
                       {/* Specialized Context Info by Category */}
                       {cat === 'project' ? (
@@ -1179,6 +1201,7 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
                         </div>
                       )}
                     </div>
+                  </div>
 
                     <div className="shrink-0 flex items-center gap-2">
                       <button
