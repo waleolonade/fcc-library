@@ -5,7 +5,7 @@ import {
   Award, ShieldCheck, Globe, MessageSquare, Printer, Fingerprint, Building2, Link2, Shield,
   Menu, ChevronLeft, ChevronRight, ChevronDown, X, User, GraduationCap, Barcode,
   Home, Library, Clock, Star, History, Bell, Quote, Compass, BookMarked,
-  ExternalLink, Check, Copy, AlertCircle, RefreshCw, Send, Sparkle, Zap
+  ExternalLink, Check, Copy, AlertCircle, RefreshCw, Send, Sparkle, Zap, Database
 } from 'lucide-react';
 import { INSTITUTION, INITIAL_PARTNER_LIBRARIES } from '../data/institutionalSeedData';
 import DigitalBookReader from './DigitalBookReader';
@@ -42,6 +42,7 @@ import InternetArchiveExplorer from './InternetArchiveExplorer';
 import GoogleBooksExplorer from './GoogleBooksExplorer';
 import ApiOverlayDiscovery from './ApiOverlayDiscovery';
 import LmsApiExplorer from './LmsApiExplorer';
+import SmartCatalogSearch from './SmartCatalogSearch';
 
 export default function StudentPortal({
   user,
@@ -70,6 +71,7 @@ export default function StudentPortal({
   const [activeBookForReader, setActiveBookForReader] = useState(null);
   const [activeBookDetails, setActiveBookDetails] = useState(null);
   const [isAiOpen, setIsAiOpen] = useState(false);
+  const [initialAiPrompt, setInitialAiPrompt] = useState('');
   const [showIdPrintModal, setShowIdPrintModal] = useState(false);
   const [showBiometrics, setShowBiometrics] = useState(false);
 
@@ -113,7 +115,9 @@ export default function StudentPortal({
           'search': 'library_search',
           'books': 'library_books',
           'ebooks': 'library_ebooks',
-          'journals': 'library_journals',
+          'journals': 'research_journals',
+          'research_journals': 'research_journals',
+          'trove_journals': 'library_journals',
           'dept_resources': 'library_digital',
           'digital': 'library_digital',
           'loans': 'my_borrowed',
@@ -134,6 +138,9 @@ export default function StudentPortal({
           'citations': 'research_references',
           'ai': 'ai_assistant',
           'assistant': 'ai_assistant',
+          'course_reserves': 'course_reserves',
+          'curriculum': 'course_reserves',
+          'syllabus': 'course_reserves',
           'google_books': 'library_google_books',
           'google': 'library_google_books',
           'discover': 'library_discover',
@@ -145,6 +152,7 @@ export default function StudentPortal({
         const validTabs = [
           'home',
           'library_discover', 'library_search', 'library_books', 'library_ebooks', 'library_journals', 'library_digital',
+          'course_reserves',
           'my_borrowed', 'my_reserved', 'my_due_soon', 'my_history', 'my_saved',
           'research_hnd_projects', 'research_papers', 'research_journals', 'research_topics', 'research_references',
           'ai_assistant', 'notifications', 'profile',
@@ -157,8 +165,11 @@ export default function StudentPortal({
         }
 
         if (sub === 'reader') {
-          const { queryParams } = parseCurrentRoute();
-          const target = books.find(b => b.id === queryParams?.bookId) || books[0];
+          const { params, queryParams } = parseCurrentRoute();
+          const targetId = params?.bookId || queryParams?.bookId;
+          const target = targetId
+            ? books.find(b => b.id?.toLowerCase() === targetId?.toLowerCase())
+            : (books.find(b => b.file_data_url || b.fileDataUrl || (b.file_name && b.file_name.toLowerCase().endsWith('.pdf'))) || books[0]);
           if (target) {
             setActiveBookForReader(target);
           }
@@ -705,6 +716,7 @@ export default function StudentPortal({
                 {expandedGroups.campusTools && (
                   <div className="pt-1 space-y-0.5 animate-fadeIn">
                     {[
+                      { id: 'course_reserves', label: 'Course Reading Lists', icon: BookOpen },
                       { id: 'kiosk', label: 'Self-Service Station', icon: QrCode },
                       { id: 'rooms', label: 'Study Rooms', icon: DoorOpen },
                       { id: 'clearance', label: 'Graduation Clearance', icon: Award },
@@ -790,7 +802,25 @@ export default function StudentPortal({
               onRenewLoan={onRenewLoan}
               onOpenAi={() => setIsAiOpen(true)}
             />
-          ) : (activeTab === 'library_discover' || activeTab === 'library_search') ? (
+          ) : activeTab === 'library_search' ? (
+            /* ============================================================== */
+            /* 2. LIBRARY ├── Institutional Catalog Search (User Friendly)     */
+            /* ============================================================== */
+            <div className="h-full animate-fadeIn">
+              <SmartCatalogSearch
+                books={books}
+                theses={[]}
+                user={user}
+                onSelectBook={(b) => setActiveBookDetails(b)}
+                onOpenReader={(b) => setActiveBookForReader(b)}
+                onOpenAi={(prompt) => {
+                  setInitialAiPrompt(typeof prompt === 'string' ? prompt : '');
+                  setIsAiOpen(true);
+                }}
+                onRequestAcquisition={() => handleTabSwitch('helpdesk')}
+              />
+            </div>
+          ) : activeTab === 'library_discover' ? (
             /* ============================================================== */
             /* 2. LIBRARY ├── API Overlay Federated Discovery                 */
             /* ============================================================== */
@@ -1061,6 +1091,13 @@ export default function StudentPortal({
               books={books}
               patrons={[user]}
             />
+          ) : activeTab === 'course_reserves' ? (
+            <CourseReserves
+              books={books}
+              onSelectBook={(b) => {
+                setActiveBookDetails(b);
+              }}
+            />
           ) : activeTab === 'clearance' ? (
             <GraduationClearance user={user} loans={loans} />
           ) : activeTab === 'rooms' ? (
@@ -1100,7 +1137,11 @@ export default function StudentPortal({
         <AiLibrarianModal
           books={books}
           user={user}
-          onClose={() => setIsAiOpen(false)}
+          initialPrompt={initialAiPrompt}
+          onClose={() => {
+            setIsAiOpen(false);
+            setInitialAiPrompt('');
+          }}
           onSelectBook={(b) => { setActiveBookDetails(b); }}
         />
       )}

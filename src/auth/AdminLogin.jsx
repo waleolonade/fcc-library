@@ -22,30 +22,37 @@ export default function AdminLogin({ onLogin }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleAdminAuth = (e) => {
+  const handleAdminAuth = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    setTimeout(() => {
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: adminEmail.trim(),
+          password: adminPass.trim(),
+          login_mode: 'admin'
+        })
+      });
+
+      const data = await res.json();
       setLoading(false);
-      // Valid credentials check
-      if (adminPass !== '9999' && adminPass !== 'admin' && adminPass !== 'fcc2026') {
-        setError('Invalid Administrative Security Passkey. (Demo Key: 9999)');
+
+      if (!res.ok || !data.success) {
+        setError(data.error || 'Access Denied: Invalid Administrative Security Passkey.');
         return;
       }
 
-      onLogin({
-        role: 'admin',
-        matric: 'FCC/STAFF/001',
-        name: "Dr. Mrs. A. Balogun",
-        email: adminEmail,
-        title: "Chief College Librarian & System Architect",
-        dept: "Library Directorate",
-        permissions: ["SUPER_ADMIN", "CIRC_OVERRIDE", "MARC_EXPORT", "KBART_SYNC", "ACQ_APPROVE", "API_MANAGEMENT"]
-      });
+      localStorage.setItem('fcc_admin_session', JSON.stringify(data.user));
+      onLogin(data.user);
       navigateTo('/admin/overview');
-    }, 400);
+    } catch (err) {
+      setLoading(false);
+      setError('Unable to connect to administrative authentication gateway.');
+    }
   };
 
   return (

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
+if (!class_exists('App\Models\Patron')) {
 class Patron extends Model
 {
     protected $table = 'patrons';
@@ -48,3 +49,5 @@ class Patron extends Model
     public function getResearchInterestsAttribute() { return $this->attributes['research_interests'] ?? null; }
     public function getProfileCompletionAttribute() { return (int) ($this->attributes['profile_completion'] ?? 95); }
 }
+}
+

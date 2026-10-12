@@ -4,7 +4,7 @@ import {
   Send, Sparkles, Building2, Layers, ShieldCheck, Tag, Copy,
   Check, ArrowRight, Eye, RefreshCw, FileUp, Hash, Library,
   DollarSign, Barcode, Search, AlertTriangle, HelpCircle, Lock,
-  Globe, Shield, BookCheck, Bookmark, ChevronRight
+  Globe, Shield, BookCheck, Bookmark, ChevronRight, Image
 } from 'lucide-react';
 import { INSTITUTION } from '../data/institutionalSeedData';
 import { navigateTo, copyToClipboardWithFeedback } from '../utils/router';
@@ -15,6 +15,10 @@ import PdfAnalysisInspector from '../common/PdfAnalysisInspector';
 export default function HodUploadStudio({ user, onUploadSuccess }) {
   // Mode: 'digital' (Handout, Past Exam, Thesis) vs 'physical' (Acquisition Request for Stacks)
   const [ingestionMode, setIngestionMode] = useState('digital');
+
+  // Academic Upload Category: 'book' | 'journal' | 'project'
+  const [uploadCategory, setUploadCategory] = useState('book');
+  const [showInStudioPreviewModal, setShowInStudioPreviewModal] = useState(false);
 
   // PDF Deep Analysis States
   const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
@@ -31,13 +35,29 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
     course_code: user?.department_code === 'CSC' ? 'CSC 312' : (user?.department_code === 'BNF' ? 'BNF 211' : 'CEM 411'),
     target_level: 'HND II',
     semester: 'First Semester',
-    resource_type: 'Lecture Handout',
-    access_scope: 'Restricted to Department Students Only',
+    resource_type: 'Book',
+    access_scope: 'Public Institution-Wide',
     file_name: '',
     file_size: '',
     file_data_url: '',
+    cover_image: '',
+    cover_name: '',
     abstract: '',
     keywords: '',
+    // Student Project specific fields
+    student_names: '',
+    student_matric: '',
+    supervisor_name: user?.name || 'Departmental Academic Supervisor',
+    academic_session: '2024/2025',
+    degree_type: 'Higher National Diploma (HND II) Dissertation',
+    problem_statement: '',
+    methodology: '',
+    // Journal specific fields
+    journal_name: '',
+    volume_issue: 'Vol. 18, Issue 2',
+    issn: '0794-8212',
+    doi: '',
+    publication_year: new Date().getFullYear(),
     // Physical Acquisition specific
     isbn: '',
     publisher: '',
@@ -47,6 +67,7 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
   });
 
   // Drag and drop state
+  const [customTargetLevel, setCustomTargetLevel] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLookingUpIsbn, setIsLookingUpIsbn] = useState(false);
@@ -54,6 +75,7 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
   const [submissionSuccess, setSubmissionSuccess] = useState(null);
   const [watermarkProtection, setWatermarkProtection] = useState(true);
   const fileInputRef = useRef(null);
+  const coverInputRef = useRef(null);
 
   // Department Courses Presets
   const departmentCourseMap = {
@@ -65,6 +87,18 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
   };
 
   const currentCourses = departmentCourseMap[user?.department_code || 'CEM'] || ['GEN 101', 'GEN 201'];
+
+  useEffect(() => {
+    if (user) {
+      setFormData(prev => ({
+        ...prev,
+        department_id: user.department_id || prev.department_id,
+        department_name: user.department_name || prev.department_name,
+        author: user.name || prev.author,
+        course_code: departmentCourseMap[user.department_code]?.[3] || departmentCourseMap[user.department_code]?.[0] || prev.course_code
+      }));
+    }
+  }, [user]);
 
   // Handle Drag & Drop
   const handleDragOver = (e) => {
@@ -82,6 +116,24 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       handleFileSelected(e.dataTransfer.files[0]);
     }
+  };
+
+  const handleCoverFileSelected = (file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please upload an image file (PNG, JPG, JPEG, WEBP).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setFormData(prev => ({
+        ...prev,
+        cover_image: e.target.result,
+        cover_name: file.name
+      }));
+      sounds.playSuccessChime();
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleFileInputChange = (e) => {
@@ -180,7 +232,75 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
   const applyPreset = (type) => {
     sounds.playClick();
     const dept = user?.department_code || 'CEM';
-    if (type === 'past_questions') {
+    const deptName = user?.department_name || 'Co-operative Economics & Management';
+
+    if (type === 'book') {
+      setUploadCategory('book');
+      setIngestionMode('digital');
+      setFormData(prev => ({
+        ...prev,
+        title: `${dept} 311: Principles and Operations of Agricultural Cooperatives`,
+        author: user?.name || 'Dr. Mrs. F. A. Babalola & Faculty Editorial Board',
+        course_code: dept === 'CSC' ? 'CSC 301' : `${dept} 311`,
+        target_level: 'HND I',
+        semester: 'First Semester',
+        resource_type: 'Book',
+        access_scope: 'Public Institution-Wide',
+        publisher: `FCC Department of ${dept} Academic Press`,
+        isbn: '978-978-482-102-5',
+        file_name: `${dept.toLowerCase()}311_cooperative_principles.pdf`,
+        file_size: '6.4 MB',
+        abstract: 'Comprehensive departmental textbook covering legal frameworks, auditing structures, credit administration, and syllabus case studies.',
+        keywords: 'cooperative principles, management, textbook, syllabus'
+      }));
+    } else if (type === 'journal') {
+      setUploadCategory('journal');
+      setIngestionMode('digital');
+      setFormData(prev => ({
+        ...prev,
+        title: 'Empirical Econometrics of Micro-Credit Disbursement and Rural Farm Output in Western Nigeria',
+        author: `${user?.name || 'Dr. Mrs. F. A. Babalola'}, Prof. A. O. Adeleke, Dr. K. M. Bello`,
+        journal_name: `Nigerian Journal of ${deptName} & Rural Development (NJCERD)`,
+        volume_issue: 'Vol. 18, Issue 2',
+        issn: '0794-8212',
+        publication_year: 2025,
+        doi: '10.5897/FCC.JRN.2025.101',
+        course_code: `${dept} 411`,
+        target_level: 'HND II',
+        semester: 'First Semester',
+        resource_type: 'Journal',
+        access_scope: 'Public Institution-Wide',
+        file_name: `njcerd_vol18_babalola_microcredit.pdf`,
+        file_size: '3.8 MB',
+        abstract: 'Peer-reviewed empirical study investigating the elasticity of farm yields relative to timely micro-credit distribution across 140 cooperative societies.',
+        keywords: 'peer-reviewed, journal, econometrics, farm output, microfinance'
+      }));
+    } else if (type === 'project' || type === 'thesis') {
+      setUploadCategory('project');
+      setIngestionMode('digital');
+      setFormData(prev => ({
+        ...prev,
+        title: 'Appraisal of Micro-Credit Repayment Velocity and Capital Adequacy in Farmers Multi-Purpose Cooperatives',
+        author: 'Adeyemi, Samuel T. & Ogundipe, Blessing (HND Candidates)',
+        student_names: 'Adeyemi, Samuel Taiwo & Ogundipe, Blessing O.',
+        student_matric: `FCC/${dept}/2024/042, FCC/${dept}/2024/048`,
+        supervisor_name: user?.name || 'Prof. A. O. Adebayo',
+        academic_session: '2024/2025',
+        degree_type: 'Higher National Diploma (HND II) Dissertation',
+        course_code: `${dept} 420`,
+        target_level: 'HND II',
+        semester: 'Second Semester',
+        resource_type: 'Student Project',
+        access_scope: 'Public Institution-Wide',
+        file_name: `adeyemi_ogundipe_${dept.toLowerCase()}_capstone_2024.pdf`,
+        file_size: '8.4 MB',
+        problem_statement: 'High default rates and informal collateral waivers threaten the solvency of grassroots multipurpose cooperative societies.',
+        methodology: 'Multi-stage stratified sampling of 120 member-farmers across 4 local government areas. Multiple linear regression and ANOVA using SPSS.',
+        abstract: 'Empirical survey analyzing credit repayment rates, liquidity ratios, and capital adequacy across 45 agrarian cooperatives in Oyo State. Highlights policy recommendations for risk hedging.',
+        keywords: 'capstone project, student thesis, microcredit, empirical methodology'
+      }));
+    } else if (type === 'past_questions') {
+      setUploadCategory('book');
       setIngestionMode('digital');
       setFormData(prev => ({
         ...prev,
@@ -189,65 +309,12 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
         course_code: dept === 'CSC' ? 'CSC 312' : `${dept} 411`,
         target_level: 'HND II',
         semester: 'First Semester',
-        resource_type: 'Past Exam Questions',
-        access_scope: 'Restricted to Department Students Only',
+        resource_type: 'Book',
+        access_scope: 'Public Institution-Wide',
         file_name: `${dept.toLowerCase()}411_past_questions_compendium.pdf`,
         file_size: '4.8 MB',
         abstract: 'Comprehensive past examination papers and detailed question breakdowns covering 5 consecutive academic sessions for student revision.',
         keywords: 'past questions, econometrics, examinations, HND II, revisions'
-      }));
-    } else if (type === 'handout') {
-      setIngestionMode('digital');
-      setFormData(prev => ({
-        ...prev,
-        title: `${dept} 311: Cooperative Enterprise Accounting & Financial Auditing Lecture Manual`,
-        author: user?.name || 'Dr. Mrs. F. A. Babalola',
-        course_code: dept === 'CSC' ? 'CSC 301' : `${dept} 311`,
-        target_level: 'HND I',
-        semester: 'First Semester',
-        resource_type: 'Lecture Handout',
-        access_scope: 'Restricted to Department Students Only',
-        file_name: `${dept.toLowerCase()}311_lecture_handout_complete.pdf`,
-        file_size: '6.2 MB',
-        abstract: 'Official lecture notes, course syllabus alignment, weekly tutorial sheets, and case study assignments for the semester.',
-        keywords: 'lecture notes, auditing, financial statements, syllabus'
-      }));
-    } else if (type === 'thesis') {
-      setIngestionMode('digital');
-      setFormData(prev => ({
-        ...prev,
-        title: 'Appraisal of Micro-Credit Disbursement Efficiency in Farmers Multi-Purpose Cooperatives',
-        author: 'Adeyemi, Samuel T. & Ogundipe, Blessing (HND Candidates)',
-        course_code: `${dept} 420`,
-        target_level: 'HND II',
-        semester: 'Second Semester',
-        resource_type: 'Capstone Project / Dissertation',
-        access_scope: 'Public Institution-Wide',
-        file_name: 'adeyemi_ogundipe_capstone_2024.pdf',
-        file_size: '8.4 MB',
-        abstract: 'Empirical survey assessing credit repayment rates, liquidity ratios, and capital adequacy across 45 agrarian cooperatives in Oyo State.',
-        keywords: 'microcredit, cooperative management, capstone, thesis'
-      }));
-    } else if (type === 'physical') {
-      setIngestionMode('physical');
-      setFormData(prev => ({
-        ...prev,
-        title: 'Modern Principles of Agricultural Cooperative Banking and Risk Hedging',
-        author: 'Prof. Adebayo O. Adeleke & Dr. K. M. Bello',
-        course_code: `${dept} 315`,
-        target_level: 'HND I',
-        semester: 'First Semester',
-        resource_type: 'Physical Book Acquisition Request',
-        access_scope: 'Public Institution-Wide',
-        file_name: 'acquisition_order_req.pdf',
-        file_size: 'Physical Hardcover Book',
-        isbn: '978-0198826729',
-        publisher: 'Oxford Academic Press / West Africa Reprints',
-        requested_copies: 10,
-        estimated_cost: '35000',
-        vendor_suggestion: 'University Booksellers Nigeria / TETFUND Stack Procurement',
-        abstract: 'Essential reference text recommended for the revised NBTE cooperative curriculum. 10 hardcopy volumes requested for Stack 2 reserve shelf.',
-        keywords: 'physical book, acquisition, textbook, curriculum text'
       }));
     }
   };
@@ -304,7 +371,7 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
     }
   };
 
-  // Form Submission to Laravel 11 Backend
+  // Form Submission to Laravel 11 Backend & Staging Queue
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.title.trim() || !formData.author.trim()) {
@@ -314,30 +381,54 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
 
     setIsSubmitting(true);
 
+    const effectiveLevel = formData.target_level === 'Other'
+      ? (customTargetLevel.trim() || 'Other')
+      : formData.target_level;
+
+    const chosenResourceType = uploadCategory === 'project'
+      ? 'Student Project'
+      : (uploadCategory === 'journal' ? 'Journal' : (formData.resource_type || 'Book'));
+
+    const effectiveAuthor = uploadCategory === 'project' && formData.student_names.trim()
+      ? formData.student_names.trim()
+      : formData.author.trim();
+
     const payload = {
-      title: formData.title,
-      author: formData.author,
+      title: formData.title.trim(),
+      author: effectiveAuthor,
       department_id: user?.department_id || formData.department_id,
       department_name: user?.department_name || formData.department_name,
       uploaded_by_hod_id: user?.matric || 'HOD-STAFF',
       hod_name: user?.name || 'Department Head',
-      course_code: formData.course_code,
-      target_level: formData.target_level,
+      course_code: formData.course_code || 'GEN 101',
+      target_level: effectiveLevel,
       semester: formData.semester,
-      resource_type: formData.resource_type,
+      resource_type: chosenResourceType,
       file_name: formData.file_name || `${formData.title.toLowerCase().replace(/[^a-z0-9]/g, '-')}.pdf`,
-      file_data_url: formData.file_data_url,
-      access_scope: formData.access_scope,
+      file_data_url: formData.file_data_url || '',
+      cover_image: formData.cover_image || '',
+      access_scope: formData.access_scope || 'Public Institution-Wide',
+      status: 'pending',
       review_notes: JSON.stringify({
+        uploadCategory,
         abstract: formData.abstract,
         keywords: formData.keywords,
-        watermark: watermarkProtection,
-        ingestion_mode: ingestionMode,
+        student_names: formData.student_names,
+        student_matric: formData.student_matric,
+        supervisor_name: formData.supervisor_name,
+        academic_session: formData.academic_session,
+        degree_type: formData.degree_type,
+        problem_statement: formData.problem_statement,
+        methodology: formData.methodology,
+        journal_name: formData.journal_name,
+        volume_issue: formData.volume_issue,
+        issn: formData.issn,
+        doi: formData.doi,
+        publication_year: formData.publication_year,
         isbn: formData.isbn,
         publisher: formData.publisher,
-        estimated_cost: formData.estimated_cost,
-        requested_copies: formData.requested_copies,
-        vendor_suggestion: formData.vendor_suggestion
+        watermark: watermarkProtection,
+        ingestion_mode: ingestionMode
       })
     };
 
@@ -353,31 +444,12 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
         sounds.playSuccessChime();
         setSubmissionSuccess(data.upload);
 
-        // Normalize created book for catalog state
-        const createdBook = data.book ? {
-          ...data.book,
-          callNumber: data.book.call_number || data.book.callNumber,
-          shelfLocation: data.book.shelf_location || data.book.shelfLocation,
-          courseCode: data.book.course_code || data.book.courseCode,
-          targetLevel: data.book.target_level || data.book.targetLevel,
-          fileDataUrl: data.book.file_data_url || data.book.fileDataUrl || payload.file_data_url,
-          fileName: data.book.file_name || data.book.fileName || payload.file_name,
-          pdfPages: data.book.pdf_pages || 120,
-          copiesTotal: data.book.copies_total || 10,
-          copiesAvailable: data.book.copies_available || 10,
-          isDigital: true,
-          abstract: data.book.abstract || `Departmental resource for ${payload.course_code || 'course'}.`
-        } : null;
-
-        if (createdBook && typeof window !== 'undefined') {
-          // Update local catalog cache
-          try {
-            const currentCat = JSON.parse(localStorage.getItem('fcc_catalog_v48_gov') || '[]');
-            localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify([createdBook, ...currentCat.filter(b => b.id !== createdBook.id)]));
-          } catch (e) {}
-
-          window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: createdBook }));
-        }
+        // Save into local submissions cache as PENDING
+        try {
+          const existing = JSON.parse(localStorage.getItem('fcc_pending_department_uploads') || '[]');
+          const updatedQueue = [data.upload, ...existing.filter(u => u.id !== data.upload.id)];
+          localStorage.setItem('fcc_pending_department_uploads', JSON.stringify(updatedQueue));
+        } catch (e) {}
 
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('fcc-submissions-updated', { detail: data.upload }));
@@ -389,55 +461,23 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
     } catch (err) {
       // Local fallback for offline mode
       console.warn('Using offline staging fallback:', err);
-      const generatedId = `FCC-HOD-${Math.floor(1000 + Math.random() * 9000)}`;
       const offlineUpload = {
         id: `HOD-UP-${Math.floor(1000 + Math.random() * 9000)}`,
         ...payload,
-        status: 'approved',
-        book_id: generatedId,
+        status: 'pending',
+        book_id: null,
         created_at: new Date().toISOString()
       };
 
-      const offlineBook = {
-        id: generatedId,
-        title: payload.title,
-        subtitle: `Departmental Resource • Course: ${payload.course_code || 'GEN 101'} (${payload.target_level || 'HND II'})`,
-        author: payload.author,
-        authorCredentials: 'Faculty Contributor / HOD',
-        authorAffiliation: `Federal Co-operative College, Ibadan (${payload.department_name || 'Academic Dept'})`,
-        subject: payload.department_name || 'General Department',
-        department: payload.department_name || 'General Department',
-        courseCode: payload.course_code || 'GEN 101',
-        targetLevel: payload.target_level || 'HND II',
-        callNumber: `QA76.9 .${payload.course_code?.replace(/\s+/g, '') || 'HOD'} 2026`,
-        shelfLocation: `Digital Library Stacks • ${payload.department_name || 'Department Stacks'}`,
-        isbn: `978-978-HOD-${Math.floor(100 + Math.random() * 900)}-1`,
-        copiesTotal: 10,
-        copiesAvailable: 10,
-        pdfPages: 120,
-        fileSize: payload.file_size || '4.2 MB',
-        fileName: payload.file_name,
-        fileDataUrl: payload.file_data_url,
-        isDigital: true,
-        abstract: `Official departmental academic resource for ${payload.course_code || 'academic coursework'}.`,
-        uploadedAt: new Date().toISOString(),
-        uploadedBy: payload.hod_name || 'Department Head'
-      };
-
-      // Store in local staging queue & catalog
       try {
         const existing = JSON.parse(localStorage.getItem('fcc_pending_department_uploads') || '[]');
         localStorage.setItem('fcc_pending_department_uploads', JSON.stringify([offlineUpload, ...existing]));
-
-        const currentCat = JSON.parse(localStorage.getItem('fcc_catalog_v48_gov') || '[]');
-        localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify([offlineBook, ...currentCat.filter(b => b.id !== offlineBook.id)]));
       } catch (e) {}
 
       sounds.playSuccessChime();
       setSubmissionSuccess(offlineUpload);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('fcc-submissions-updated', { detail: offlineUpload }));
-        window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: offlineBook }));
       }
       if (onUploadSuccess) onUploadSuccess(offlineUpload);
     } finally {
@@ -606,33 +646,36 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
           <div className="flex items-center gap-2">
             <Sparkles size={16} className="text-amber-400 shrink-0" />
             <span className="font-bold text-white">Instant Academic Templates:</span>
-            <span className="text-slate-400 hidden lg:inline">One-click populate realistic departmental data for fast testing:</span>
+            <span className="text-slate-400 hidden lg:inline">One-click populate realistic departmental uploads:</span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <button
-              id="btn-preset-past-exam"
+              id="btn-preset-book"
               type="button"
-              onClick={() => applyPreset('past_questions')}
-              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-teal-950/80 border border-slate-800 hover:border-teal-700 text-teal-300 text-xs font-medium transition"
+              onClick={() => applyPreset('book')}
+              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-teal-950/80 border border-slate-800 hover:border-teal-700 text-teal-300 text-xs font-medium transition flex items-center gap-1.5"
             >
-              Past Exam Compendium
+              <BookOpen size={13} />
+              <span>📚 Academic Book</span>
             </button>
             <button
-              id="btn-preset-handout"
+              id="btn-preset-journal"
               type="button"
-              onClick={() => applyPreset('handout')}
-              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-indigo-950/80 border border-slate-800 hover:border-indigo-700 text-indigo-300 text-xs font-medium transition"
+              onClick={() => applyPreset('journal')}
+              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-indigo-950/80 border border-slate-800 hover:border-indigo-700 text-indigo-300 text-xs font-medium transition flex items-center gap-1.5"
             >
-              Lecture Handout Manual
+              <Layers size={13} />
+              <span>📰 Academic Journal</span>
             </button>
             <button
               id="btn-preset-thesis"
               type="button"
               onClick={() => applyPreset('thesis')}
-              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-purple-950/80 border border-slate-800 hover:border-purple-700 text-purple-300 text-xs font-medium transition"
+              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-purple-950/80 border border-slate-800 hover:border-purple-700 text-purple-300 text-xs font-medium transition flex items-center gap-1.5"
             >
-              HND Capstone Thesis
+              <Bookmark size={13} />
+              <span>🎓 Student Capstone Project</span>
             </button>
             <button
               id="btn-preset-physical-book"
@@ -640,7 +683,7 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
               onClick={() => applyPreset('physical')}
               className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-emerald-950/80 border border-slate-800 hover:border-emerald-700 text-emerald-300 text-xs font-medium transition"
             >
-              Physical Book Acquisition
+              Physical Stack Request
             </button>
           </div>
         </div>
@@ -661,7 +704,7 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
                   type="button"
                   onClick={() => {
                     setIngestionMode('digital');
-                    setFormData(prev => ({ ...prev, resource_type: 'Lecture Handout' }));
+                    setFormData(prev => ({ ...prev, resource_type: uploadCategory === 'project' ? 'Student Project' : (uploadCategory === 'journal' ? 'Journal' : 'Book') }));
                   }}
                   className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
                     ingestionMode === 'digital'
@@ -695,71 +738,362 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
               </span>
             </div>
 
+            {/* RESOURCE CATEGORY SELECTION: BOOKS vs JOURNALS vs STUDENT PROJECTS */}
+            <div className="space-y-2 p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Layers size={13} className="text-teal-400" />
+                  <span>Resource Classification Category *</span>
+                </span>
+                <span className="text-[10px] text-teal-400 font-mono">Routing to Review Pipeline</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUploadCategory('book');
+                    setFormData(prev => ({ ...prev, resource_type: 'Book' }));
+                    sounds.playClick();
+                  }}
+                  className={`p-3 rounded-xl border text-center transition flex flex-col items-center gap-1 ${
+                    uploadCategory === 'book'
+                      ? 'bg-teal-950/80 border-teal-500 text-teal-200 shadow-lg shadow-teal-950/40 ring-1 ring-teal-500/50'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                  }`}
+                >
+                  <BookOpen size={18} className={uploadCategory === 'book' ? 'text-teal-400' : 'text-slate-500'} />
+                  <span className="font-bold text-xs">📚 Book / Monograph</span>
+                  <span className="text-[9.5px] text-slate-400">Curriculum Textbook</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUploadCategory('journal');
+                    setFormData(prev => ({ ...prev, resource_type: 'Journal' }));
+                    sounds.playClick();
+                  }}
+                  className={`p-3 rounded-xl border text-center transition flex flex-col items-center gap-1 ${
+                    uploadCategory === 'journal'
+                      ? 'bg-indigo-950/80 border-indigo-500 text-indigo-200 shadow-lg shadow-indigo-950/40 ring-1 ring-indigo-500/50'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                  }`}
+                >
+                  <FileText size={18} className={uploadCategory === 'journal' ? 'text-indigo-400' : 'text-slate-500'} />
+                  <span className="font-bold text-xs">📰 Academic Journal</span>
+                  <span className="text-[9.5px] text-slate-400">Peer-Reviewed Article</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUploadCategory('project');
+                    setFormData(prev => ({ ...prev, resource_type: 'Student Project' }));
+                    sounds.playClick();
+                  }}
+                  className={`p-3 rounded-xl border text-center transition flex flex-col items-center gap-1 ${
+                    uploadCategory === 'project'
+                      ? 'bg-purple-950/80 border-purple-500 text-purple-200 shadow-lg shadow-purple-950/40 ring-1 ring-purple-500/50'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                  }`}
+                >
+                  <Bookmark size={18} className={uploadCategory === 'project' ? 'text-purple-400' : 'text-slate-500'} />
+                  <span className="font-bold text-xs">🎓 Student Project</span>
+                  <span className="text-[9.5px] text-slate-400">HND/ND Dissertations</span>
+                </button>
+              </div>
+            </div>
+
             <form onSubmit={handleSubmit} className="space-y-5 text-xs">
               
-              {/* TITLE & AUTHOR */}
-              <div className="space-y-4">
-                <div>
-                  <label className="block font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
-                    <span>{ingestionMode === 'digital' ? 'Document / Book Title *' : 'Book Title for Physical Acquisition *'}</span>
-                    <span className="text-[10px] text-teal-400 font-mono">Standard Academic Format</span>
-                  </label>
-                  <input
-                    id="input-resource-title"
-                    type="text"
-                    required
-                    value={formData.title}
-                    onChange={e => setFormData({ ...formData, title: e.target.value })}
-                    placeholder={ingestionMode === 'digital' ? "e.g. Quantitative Econometrics Past Examination Compendium" : "e.g. Modern Cooperative Banking Operations"}
-                    className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-teal-500 font-medium transition"
-                  />
-                </div>
+              {/* CATEGORY SPECIFIC FIELDS: STUDENT PROJECT */}
+              {uploadCategory === 'project' && (
+                <div className="p-4 rounded-2xl bg-purple-950/20 border border-purple-800/50 space-y-4">
+                  <div className="flex items-center justify-between border-b border-purple-800/40 pb-2">
+                    <span className="font-bold text-purple-300 flex items-center gap-1.5 text-xs">
+                      <Bookmark size={14} />
+                      <span>Student Dissertation & Research Dossier</span>
+                    </span>
+                    <span className="text-[10px] text-purple-400 font-mono">Will be indexed in Scholar Research Hub</span>
+                  </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block font-semibold text-slate-300 mb-1.5">
-                      Author(s) / Originating Faculty *
+                    <label className="block font-semibold text-slate-300 mb-1">
+                      Dissertation / Project Title *
                     </label>
                     <input
-                      id="input-resource-author"
                       type="text"
                       required
-                      value={formData.author}
-                      onChange={e => setFormData({ ...formData, author: e.target.value })}
-                      placeholder="e.g. Dr. Mrs. F. A. Babalola / HOD Board"
-                      className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-teal-500 font-medium transition"
+                      value={formData.title}
+                      onChange={e => setFormData({ ...formData, title: e.target.value })}
+                      placeholder="e.g. Appraisal of Micro-Credit Repayment Velocity and Capital Adequacy in Farmers Cooperatives"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-300 mb-1">
+                        Student Researcher Name(s) *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.student_names}
+                        onChange={e => setFormData({ ...formData, student_names: e.target.value, author: e.target.value })}
+                        placeholder="e.g. Adeyemi, Samuel Taiwo & Ogundipe, Blessing"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-300 mb-1">
+                        Matriculation Number(s) *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.student_matric}
+                        onChange={e => setFormData({ ...formData, student_matric: e.target.value })}
+                        placeholder="e.g. FCC/CEM/2024/042, FCC/CEM/2024/048"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-300 mb-1">
+                        Project Supervisor *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.supervisor_name}
+                        onChange={e => setFormData({ ...formData, supervisor_name: e.target.value })}
+                        placeholder="e.g. Prof. A. O. Adebayo"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-300 mb-1">
+                        Academic Session
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.academic_session}
+                        onChange={e => setFormData({ ...formData, academic_session: e.target.value })}
+                        placeholder="2024/2025"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-300 mb-1">
+                        Degree / Qualification
+                      </label>
+                      <select
+                        value={formData.degree_type}
+                        onChange={e => setFormData({ ...formData, degree_type: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-purple-500"
+                      >
+                        <option>Higher National Diploma (HND II) Dissertation</option>
+                        <option>National Diploma (ND II) Capstone Project</option>
+                        <option>Postgraduate Diploma (PGD) Thesis</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1">
+                      Research Problem Statement
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={formData.problem_statement}
+                      onChange={e => setFormData({ ...formData, problem_statement: e.target.value })}
+                      placeholder="Explain the background problem, liquidity bottleneck, or operational gap addressed by the student..."
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-purple-500 text-xs"
                     />
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-slate-300 mb-1.5">
-                      Resource Classification Category
+                    <label className="block font-semibold text-slate-300 mb-1">
+                      Research Methodology & Sampling Design
                     </label>
-                    <select
-                      value={formData.resource_type}
-                      onChange={e => setFormData({ ...formData, resource_type: e.target.value })}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-teal-500 font-medium transition"
-                    >
-                      {ingestionMode === 'digital' ? (
-                        <>
-                          <option>Lecture Handout</option>
-                          <option>Past Exam Questions</option>
-                          <option>Capstone Project / Dissertation</option>
-                          <option>Research Monograph</option>
-                          <option>Departmental Journal Article</option>
-                          <option>Laboratory / Practical Manual</option>
-                        </>
-                      ) : (
-                        <>
-                          <option>Physical Book Acquisition Request</option>
-                          <option>Hardcover Reference Textbook</option>
-                          <option>Syllabus Prescribed Reading Copy</option>
-                        </>
-                      )}
-                    </select>
+                    <textarea
+                      rows={2}
+                      value={formData.methodology}
+                      onChange={e => setFormData({ ...formData, methodology: e.target.value })}
+                      placeholder="e.g. Stratified random sampling of 120 respondents across 4 LGAs. Multiple linear regression via SPSS..."
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-purple-500 text-xs"
+                    />
                   </div>
                 </div>
-              </div>
+              )}
+
+              {/* CATEGORY SPECIFIC FIELDS: ACADEMIC JOURNAL */}
+              {uploadCategory === 'journal' && (
+                <div className="p-4 rounded-2xl bg-indigo-950/20 border border-indigo-800/50 space-y-4">
+                  <div className="flex items-center justify-between border-b border-indigo-800/40 pb-2">
+                    <span className="font-bold text-indigo-300 flex items-center gap-1.5 text-xs">
+                      <FileText size={14} />
+                      <span>Peer-Reviewed Academic Journal Metadata</span>
+                    </span>
+                    <span className="text-[10px] text-indigo-400 font-mono">Indexed in AJOL & Google Scholar</span>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1">
+                      Journal Article Title *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.title}
+                      onChange={e => setFormData({ ...formData, title: e.target.value })}
+                      placeholder="e.g. Empirical Econometrics of Micro-Credit Disbursement and Rural Farm Output"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-300 mb-1">
+                        Author(s) / Lead Researchers *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.author}
+                        onChange={e => setFormData({ ...formData, author: e.target.value })}
+                        placeholder="e.g. Dr. Mrs. F. A. Babalola, Prof. A. O. Adeleke"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-300 mb-1">
+                        Academic Journal Name *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.journal_name}
+                        onChange={e => setFormData({ ...formData, journal_name: e.target.value })}
+                        placeholder="e.g. Nigerian Journal of Co-operative Economics & Rural Development"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-300 mb-1">
+                        Volume & Issue
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.volume_issue}
+                        onChange={e => setFormData({ ...formData, volume_issue: e.target.value })}
+                        placeholder="Vol. 18, Issue 2"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-300 mb-1">
+                        ISSN
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.issn}
+                        onChange={e => setFormData({ ...formData, issn: e.target.value })}
+                        placeholder="0794-8212"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-300 mb-1">
+                        Publication Year
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.publication_year}
+                        onChange={e => setFormData({ ...formData, publication_year: parseInt(e.target.value) || new Date().getFullYear() })}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-300 mb-1">
+                        DOI (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.doi}
+                        onChange={e => setFormData({ ...formData, doi: e.target.value })}
+                        placeholder="10.5897/FCC..."
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* CATEGORY SPECIFIC FIELDS: BOOK / MONOGRAPH */}
+              {uploadCategory === 'book' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
+                      <span>{ingestionMode === 'digital' ? 'Document / Book Title *' : 'Book Title for Physical Acquisition *'}</span>
+                      <span className="text-[10px] text-teal-400 font-mono">Standard Academic Format</span>
+                    </label>
+                    <input
+                      id="input-resource-title"
+                      type="text"
+                      required
+                      value={formData.title}
+                      onChange={e => setFormData({ ...formData, title: e.target.value })}
+                      placeholder={ingestionMode === 'digital' ? "e.g. Principles and Operations of Agricultural Cooperatives" : "e.g. Modern Cooperative Banking Operations"}
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-teal-500 font-medium transition"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-semibold text-slate-300 mb-1.5">
+                        Author(s) / Originating Faculty *
+                      </label>
+                      <input
+                        id="input-resource-author"
+                        type="text"
+                        required
+                        value={formData.author}
+                        onChange={e => setFormData({ ...formData, author: e.target.value })}
+                        placeholder="e.g. Dr. Mrs. F. A. Babalola / HOD Board"
+                        className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-teal-500 font-medium transition"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-300 mb-1.5">
+                        Publisher / University Press
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.publisher}
+                        onChange={e => setFormData({ ...formData, publisher: e.target.value })}
+                        placeholder="e.g. FCC Department of CEM Academic Press"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-teal-500 font-medium transition"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* COURSE CODE & QUICK CHIPS */}
               <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800/80 space-y-3">
@@ -803,12 +1137,24 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
                       onChange={e => setFormData({ ...formData, target_level: e.target.value })}
                       className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white focus:outline-none focus:border-teal-500 font-medium"
                     >
-                      <option>HND II</option>
-                      <option>HND I</option>
-                      <option>ND II</option>
-                      <option>ND I</option>
-                      <option>Postgraduate Diploma</option>
+                      <option value="HND II">HND II</option>
+                      <option value="HND I">HND I</option>
+                      <option value="ND II">ND II</option>
+                      <option value="ND I">ND I</option>
+                      <option value="GNS">GNS (General Studies)</option>
+                      <option value="Postgraduate Diploma">Postgraduate Diploma</option>
+                      <option value="Other">Other</option>
                     </select>
+                    {formData.target_level === 'Other' && (
+                      <input
+                        type="text"
+                        placeholder="Specify custom level..."
+                        value={customTargetLevel}
+                        onChange={e => setCustomTargetLevel(e.target.value)}
+                        className="mt-2 w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-teal-500/50 text-white text-xs placeholder-slate-500 focus:outline-none focus:border-teal-400"
+                        required
+                      />
+                    )}
                   </div>
 
                   <div>
@@ -875,7 +1221,7 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
                     </div>
 
                     {formData.file_name ? (
-                      <div>
+                      <div className="space-y-2">
                         <div className="text-sm font-bold text-white flex items-center justify-center gap-1.5">
                           <CheckCircle size={15} className="text-emerald-400" />
                           <span>{formData.file_name}</span>
@@ -883,18 +1229,95 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
                         <p className="text-[11px] text-teal-400 font-mono mt-0.5">
                           {formData.file_size || 'Ready for Staging Pipeline'}
                         </p>
-                        <span className="text-[10px] text-slate-500 underline mt-1 inline-block">
-                          Click to select a different file
-                        </span>
+                        <div className="flex items-center justify-center gap-3 pt-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowInStudioPreviewModal(true);
+                              sounds.playClick();
+                            }}
+                            className="px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow flex items-center gap-1.5 transition"
+                          >
+                            <Eye size={13} />
+                            <span>Preview Document</span>
+                          </button>
+                          <span className="text-[10px] text-slate-500 underline inline-block">
+                            Change file
+                          </span>
+                        </div>
                       </div>
                     ) : (
                       <div>
                         <p className="text-xs font-bold text-slate-200">
-                          Click to browse or drag & drop lecture PDF / EPUB
+                          Click to browse or drag & drop lecture PDF / EPUB / Dissertation
                         </p>
                         <p className="text-[11px] text-slate-500 mt-0.5">
                           PDF, EPUB, DOCX, ZIP (Max 50MB) • Automatically scanned for viruses & integrity
                         </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Book Cover Artwork Drop Zone & Live Preview */}
+                  <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <Image size={14} className="text-teal-400" />
+                        <span>Book / Monograph Cover Artwork (Optional)</span>
+                      </span>
+                      {formData.cover_image && (
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, cover_image: '', cover_name: '' }))}
+                          className="text-[10px] text-rose-400 hover:text-rose-300 font-bold transition"
+                        >
+                          Remove Cover
+                        </button>
+                      )}
+                    </div>
+
+                    <input
+                      ref={coverInputRef}
+                      type="file"
+                      accept="image/*,.png,.jpg,.jpeg,.webp"
+                      onChange={(e) => e.target.files && handleCoverFileSelected(e.target.files[0])}
+                      className="hidden"
+                    />
+
+                    {formData.cover_image ? (
+                      <div className="p-3 rounded-2xl bg-slate-900 border border-teal-500/40 flex items-center gap-3 shadow-lg">
+                        <div className="w-14 h-20 rounded-xl overflow-hidden border border-teal-500/40 shadow-md shrink-0 bg-slate-950">
+                          <img
+                            src={formData.cover_image}
+                            alt="Cover Preview"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0 space-y-1 text-left">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/40">
+                            <CheckCircle size={11} /> Cover Attached
+                          </span>
+                          <div className="text-xs font-medium text-white truncate">
+                            {formData.cover_name || 'Front Cover Image'}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => coverInputRef.current?.click()}
+                            className="text-[11px] text-teal-400 hover:text-teal-300 font-semibold transition"
+                          >
+                            Change Cover Image
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        onClick={() => coverInputRef.current?.click()}
+                        className="border-2 border-dashed border-slate-700 hover:border-teal-500 rounded-2xl p-4 text-center transition cursor-pointer bg-slate-900/60 group"
+                      >
+                        <Image size={24} className="mx-auto text-teal-400 mb-1.5 group-hover:scale-110 transition shrink-0" />
+                        <div className="text-xs font-semibold text-white">Upload Front Cover Artwork</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">PNG, JPG, WEBP • Saves to Database</div>
                       </div>
                     )}
                   </div>
@@ -1131,9 +1554,98 @@ export default function HodUploadStudio({ user, onUploadSuccess }) {
                 <ul className="text-[11px] text-slate-400 space-y-1 pl-4 list-disc">
                   <li>Chief Librarian receives alert in <code className="text-indigo-300 font-mono">#/admin/hod-submissions</code>.</li>
                   <li>Cataloger validates syllabus alignment and assigns official <strong className="text-slate-200">Call Number</strong> (e.g. <code className="text-teal-300">CEM.411/BAB/2026</code>) and physical shelf.</li>
-                  <li>Published item automatically routes to your student departmental shelf (<code className="text-emerald-300 font-mono">#/scholar/dept-resources</code>).</li>
+                  <li>Approved resources instantly appear across Central OPAC and student terminals.</li>
                 </ul>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DOCUMENT PREVIEW MODAL */}
+      {showInStudioPreviewModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-slate-900 border border-teal-500/50 rounded-3xl p-6 sm:p-7 max-w-4xl w-full shadow-2xl space-y-4 animate-scaleUp max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3 shrink-0">
+              <div className="flex items-center gap-2.5 text-teal-400">
+                <Eye size={20} />
+                <div>
+                  <h3 className="text-base font-bold text-white">Document Preview Before Staging</h3>
+                  <p className="text-[11px] text-slate-400 font-mono">{formData.file_name || 'Document File'} • {formData.file_size || 'Unknown Size'}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowInStudioPreviewModal(false)}
+                className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {formData.file_data_url ? (
+                <div className="rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 min-h-[400px]">
+                  <iframe
+                    src={formData.file_data_url}
+                    title="Document Preview"
+                    className="w-full h-[55vh] border-0"
+                  />
+                </div>
+              ) : (
+                <div className="p-8 text-center rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                  <FileText size={40} className="mx-auto text-teal-400" />
+                  <h4 className="text-sm font-bold text-white">Document Stream Ready</h4>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto">
+                    The document "{formData.file_name}" is attached and will be transmitted to the Central Staging Queue.
+                  </p>
+                </div>
+              )}
+
+              {/* Resource Metadata Overview */}
+              <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 text-xs space-y-2">
+                <div className="flex justify-between border-b border-slate-900 pb-1.5">
+                  <span className="text-slate-400">Classification:</span>
+                  <span className="font-bold text-teal-300 uppercase">{uploadCategory === 'project' ? 'Student Capstone Project' : (uploadCategory === 'journal' ? 'Academic Journal' : 'Book / Monograph')}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-900 pb-1.5">
+                  <span className="text-slate-400">Title:</span>
+                  <span className="font-bold text-white max-w-md text-right">{formData.title || 'Untitled'}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-900 pb-1.5">
+                  <span className="text-slate-400">Author / Researchers:</span>
+                  <span className="text-slate-200">{formData.author || 'Department Faculty'}</span>
+                </div>
+                {uploadCategory === 'project' && (
+                  <>
+                    <div className="flex justify-between border-b border-slate-900 pb-1.5">
+                      <span className="text-slate-400">Student Matric No:</span>
+                      <span className="text-purple-300 font-mono">{formData.student_matric || 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-900 pb-1.5">
+                      <span className="text-slate-400">Supervisor:</span>
+                      <span className="text-slate-200">{formData.supervisor_name || 'N/A'}</span>
+                    </div>
+                  </>
+                )}
+                {uploadCategory === 'journal' && (
+                  <div className="flex justify-between border-b border-slate-900 pb-1.5">
+                    <span className="text-slate-400">Journal:</span>
+                    <span className="text-indigo-300">{formData.journal_name || 'N/A'} ({formData.volume_issue})</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-800 flex items-center justify-between shrink-0">
+              <span className="text-xs text-slate-400">Verify all pages and metadata before dispatching</span>
+              <button
+                type="button"
+                onClick={() => setShowInStudioPreviewModal(false)}
+                className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs transition shadow-lg shadow-teal-950"
+              >
+                Close Preview
+              </button>
             </div>
           </div>
         </div>

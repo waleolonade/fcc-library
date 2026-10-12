@@ -4,7 +4,7 @@ import {
   RefreshCw, X, Plus, ArrowRight, Clock, Fingerprint, Hash,
   ChevronDown, Filter, Download, Printer, XCircle, Shield
 } from 'lucide-react';
-import { PATRON_POLICIES, INITIAL_PATRONS } from '../data/institutionalSeedData';
+import { PATRON_POLICIES } from '../data/institutionalSeedData';
 
 // =========================================================================
 // LIBRARY BORROWING SYSTEM
@@ -34,7 +34,7 @@ export default function LibraryBorrowingSystem({
   loans = [],
   setLoans,
   reservations = [],
-  patrons = INITIAL_PATRONS,
+  patrons = [],
   user,
 }) {
   const [activeTab, setActiveTab] = useState('issue'); // 'issue' | 'return' | 'renew' | 'history'
@@ -107,7 +107,7 @@ export default function LibraryBorrowingSystem({
     // Block if overdue beyond allowed period
     const daysOverdue = Math.ceil((new Date() - new Date(loan.dueDate)) / 86400000);
     if (daysOverdue > MAX_RENEWAL_DAYS_OVERDUE) {
-      issues.push(`Overdue by ${daysOverdue} days — exceeds the ${MAX_RENEWAL_DAYS_OVERDUE}-day renewal grace period.`);
+      issues.push(`Overdue by ${daysOverdue} days - exceeds the ${MAX_RENEWAL_DAYS_OVERDUE}-day renewal grace period.`);
     }
     // Block if patron has restrictions
     const patron = patrons.find(p => p.matric === loan.matric);

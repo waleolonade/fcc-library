@@ -1,13 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Download, FileText, Search, CheckCircle, Sparkles, Filter, ExternalLink, X, Upload } from 'lucide-react';
-import { INITIAL_THESES, INSTITUTION } from '../data/institutionalSeedData';
+import { INSTITUTION } from '../data/institutionalSeedData';
 
 export default function ThesesArchive() {
-  const [theses, setTheses] = useState(INITIAL_THESES);
+  const [theses, setTheses] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [degreeFilter, setDegreeFilter] = useState('All');
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/theses')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (Array.isArray(data)) setTheses(data);
+      })
+      .catch(() => {});
+  }, []);
 
   // Form State
   const [title, setTitle] = useState('');
@@ -22,13 +31,13 @@ export default function ThesesArchive() {
     const q = searchQuery.toLowerCase();
     const matchQuery = t.title.toLowerCase().includes(q) ||
                        t.author.toLowerCase().includes(q) ||
-                       t.advisor.toLowerCase().includes(q) ||
-                       t.abstract.toLowerCase().includes(q);
+                       t.advisor?.toLowerCase().includes(q) ||
+                       t.abstract?.toLowerCase().includes(q);
     const matchDegree = degreeFilter === 'All' || t.degree === degreeFilter;
     return matchQuery && matchDegree;
   });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const newThesis = {
       id: `TH-2026-${Math.floor(100 + Math.random() * 900)}`,
@@ -46,7 +55,15 @@ export default function ThesesArchive() {
       abstract
     };
 
-    setTheses([newThesis, ...theses]);
+    try {
+      await fetch('/api/theses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newThesis)
+      });
+    } catch (err) {}
+
+    setTheses(prev => [newThesis, ...prev]);
     setSubmitSuccess(true);
     setTimeout(() => {
       setSubmitSuccess(false);

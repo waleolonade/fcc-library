@@ -26,91 +26,37 @@ use Illuminate\Support\Str;
 class SimpleLibApiController extends Controller
 {
     /**
-     * Initial seed books from BassemGhoniem/simpleLibAPI booksjson.js
-     */
-    private array $seedBooks = [
-        [
-            'title' => 'War and Peace',
-            'genre' => 'Historical Fiction',
-            'author' => 'Lev Nikolayevich Tolstoy',
-            'rating' => 5.0,
-            'cover_url' => 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=300&auto=format&fit=crop&q=80',
-        ],
-        [
-            'title' => 'Les Misérables',
-            'genre' => 'Historical Fiction',
-            'author' => 'Victor Hugo',
-            'rating' => 5.0,
-            'cover_url' => 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=300&auto=format&fit=crop&q=80',
-        ],
-        [
-            'title' => 'The Time Machine',
-            'genre' => 'Science Fiction',
-            'author' => 'H. G. Wells',
-            'rating' => 4.5,
-            'cover_url' => 'https://images.unsplash.com/photo-1532012164546-f432f2e3777f?w=300&auto=format&fit=crop&q=80',
-        ],
-        [
-            'title' => 'A Journey into the Center of the Earth',
-            'genre' => 'Science Fiction',
-            'author' => 'Jules Verne',
-            'rating' => 4.8,
-            'cover_url' => 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=300&auto=format&fit=crop&q=80',
-        ],
-        [
-            'title' => 'The Dark World',
-            'genre' => 'Fantasy',
-            'author' => 'Henry Kuttner',
-            'rating' => 4.0,
-            'cover_url' => 'https://images.unsplash.com/photo-1516979187457-637abb4f9353?w=300&auto=format&fit=crop&q=80',
-        ],
-        [
-            'title' => 'The Wind in the Willows',
-            'genre' => 'Fantasy',
-            'author' => 'Kenneth Grahame',
-            'rating' => 4.9,
-            'cover_url' => 'https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=300&auto=format&fit=crop&q=80',
-        ],
-        [
-            'title' => 'Life On The Mississippi',
-            'genre' => 'History',
-            'author' => 'Mark Twain',
-            'rating' => 4.3,
-            'cover_url' => 'https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=300&auto=format&fit=crop&q=80',
-        ],
-        [
-            'title' => 'Childhood',
-            'genre' => 'Biography',
-            'author' => 'Lev Nikolayevich Tolstoy',
-            'rating' => 4.2,
-            'cover_url' => 'https://images.unsplash.com/photo-1476275466078-4007374efbbe?w=300&auto=format&fit=crop&q=80',
-        ],
-    ];
-
-    private array $seedAuthors = [
-        ['name' => 'Lev Nikolayevich Tolstoy', 'nationality' => 'Russian', 'rating' => 5.0],
-        ['name' => 'Victor Hugo', 'nationality' => 'French', 'rating' => 5.0],
-        ['name' => 'H. G. Wells', 'nationality' => 'British', 'rating' => 4.5],
-        ['name' => 'Jules Verne', 'nationality' => 'French', 'rating' => 4.8],
-        ['name' => 'Henry Kuttner', 'nationality' => 'American', 'rating' => 4.0],
-        ['name' => 'Kenneth Grahame', 'nationality' => 'Scottish', 'rating' => 4.9],
-        ['name' => 'Mark Twain', 'nationality' => 'American', 'rating' => 4.6],
-    ];
-
-    /**
-     * Auto seed if database is empty
+     * Auto sync from the institutional books database if empty
      */
     private function autoSeedIfEmpty(): void
     {
         if (SimpleLibBook::count() === 0) {
-            foreach ($this->seedBooks as $b) {
-                SimpleLibBook::firstOrCreate(['title' => $b['title']], $b);
+            $books = \App\Models\Book::all();
+            foreach ($books as $b) {
+                SimpleLibBook::updateOrCreate(
+                    ['title' => $b->title],
+                    [
+                        'author' => $b->author ?? 'FCC Faculty',
+                        'genre' => $b->subject ?? $b->department ?? 'Institutional',
+                        'rating' => (float) ($b->rating ?? 4.8),
+                        'cover_url' => $b->cover_url ?? $b->coverUrl ?? null,
+                    ]
+                );
             }
         }
 
         if (SimpleLibAuthor::count() === 0) {
-            foreach ($this->seedAuthors as $a) {
-                SimpleLibAuthor::firstOrCreate(['name' => $a['name']], $a);
+            $authors = \App\Models\Book::select('author')->distinct()->pluck('author');
+            foreach ($authors as $name) {
+                if ($name) {
+                    SimpleLibAuthor::updateOrCreate(
+                        ['name' => $name],
+                        [
+                            'nationality' => 'Institutional Faculty',
+                            'rating' => 4.9,
+                        ]
+                    );
+                }
             }
         }
     }
@@ -454,17 +400,35 @@ class SimpleLibApiController extends Controller
      */
     public function seed()
     {
-        foreach ($this->seedBooks as $b) {
-            SimpleLibBook::updateOrCreate(['title' => $b['title']], $b);
+        $books = \App\Models\Book::all();
+        foreach ($books as $b) {
+            SimpleLibBook::updateOrCreate(
+                ['title' => $b->title],
+                [
+                    'author' => $b->author ?? 'FCC Faculty',
+                    'genre' => $b->subject ?? $b->department ?? 'Institutional',
+                    'rating' => (float) ($b->rating ?? 4.8),
+                    'cover_url' => $b->cover_url ?? $b->coverUrl ?? null,
+                ]
+            );
         }
 
-        foreach ($this->seedAuthors as $a) {
-            SimpleLibAuthor::updateOrCreate(['name' => $a['name']], $a);
+        $authors = \App\Models\Book::select('author')->distinct()->pluck('author');
+        foreach ($authors as $name) {
+            if ($name) {
+                SimpleLibAuthor::updateOrCreate(
+                    ['name' => $name],
+                    [
+                        'nationality' => 'Institutional Faculty',
+                        'rating' => 4.9,
+                    ]
+                );
+            }
         }
 
         return response()->json([
             'success' => true,
-            'message' => 'SimpleLib database seeded successfully with booksjson.js dataset.',
+            'message' => 'SimpleLib database synced directly from institutional database catalog.',
             'books_count' => SimpleLibBook::count(),
             'authors_count' => SimpleLibAuthor::count(),
         ]);

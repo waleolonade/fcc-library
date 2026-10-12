@@ -1,3 +1,5 @@
+import { installStorageGuard } from '../utils/safeStorage';
+installStorageGuard();
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import FccAdminLibrary from '../fcc_admin_library/FccAdminLibrary.jsx';

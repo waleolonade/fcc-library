@@ -416,7 +416,7 @@ class TaskPlanner
         if ($theses) $parts[] = "{$theses} projects/theses";
 
         $msg = "I searched {$ok} sources live and found {$total} resources";
-        $msg .= $parts ? ' — ' . implode(', ', $parts) . '.' : '.';
+        $msg .= $parts ? '-' . implode(', ', $parts) . '.' : '.';
 
         $top = $results[0];
         $msg .= ' Top match: "' . $top['title'] . '"';

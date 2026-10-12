@@ -21,7 +21,7 @@ export function generateAndDownloadThesisPdf(thesis) {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>${title} — Federal Co-operative College, Ibadan</title>
+  <title>${title} - Federal Co-operative College, Ibadan</title>
   <style>
     @page { size: A4; margin: 25mm 20mm 25mm 20mm; }
     body { font-family: 'Times New Roman', Times, serif; color: #111827; line-height: 1.8; font-size: 12pt; background: #fff; margin: 0; padding: 40px; }
@@ -49,7 +49,7 @@ export function generateAndDownloadThesisPdf(thesis) {
   <div class="btn-bar">
     <button onclick="window.print()">🖨️ Print / Save as PDF</button>
   </div>
-  <div class="watermark">FEDERAL CO-OPERATIVE COLLEGE IBADAN — INSTITUTIONAL REPOSITORY</div>
+  <div class="watermark">FEDERAL CO-OPERATIVE COLLEGE IBADAN - INSTITUTIONAL REPOSITORY</div>
 
   <div class="header">
     <div class="seal">Federal Co-operative College, Ibadan</div>

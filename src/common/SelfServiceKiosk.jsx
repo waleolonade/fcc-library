@@ -278,7 +278,7 @@ export default function SelfServiceKiosk({
       bookTitle: matchedLoanForReturn.bookTitle,
       returnedAt: today.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
       fineStatus: matchedLoanForReturn.calculatedFine > 0 ? `₦${matchedLoanForReturn.calculatedFine}.00 Overdue Fine Added to Account` : 'Zero Fines • Returned On Time',
-      reshelvingBin: 'Bin 3 — Floor 2 West Stacks (Cooperative Economics)',
+      reshelvingBin: 'Bin 3 - Floor 2 West Stacks (Cooperative Economics)',
       rfidStatus: 'Tag Reactivated (Security Gate Active)'
     });
 
@@ -312,7 +312,7 @@ export default function SelfServiceKiosk({
               </span>
             </h1>
             <p className="text-[11px] text-emerald-400">
-              Module 8 — Automated Touchscreen Self-Checkout & Book Return Portal
+              Module 8 - Automated Touchscreen Self-Checkout & Book Return Portal
             </p>
           </div>
         </div>
@@ -722,7 +722,7 @@ export default function SelfServiceKiosk({
                       type="text"
                       value={returnBarcodeInput}
                       onChange={e => setReturnBarcodeInput(e.target.value)}
-                      placeholder="e.g. FCC-BC-09281 or FCC-B001"
+                      placeholder="e.g. FCC-BC-09281 or Accession No"
                       className="flex-1 px-4 py-3 rounded-2xl bg-[#021810] border border-emerald-800 text-white font-mono text-sm focus:outline-none focus:border-emerald-500 placeholder:text-emerald-700"
                     />
                     <button

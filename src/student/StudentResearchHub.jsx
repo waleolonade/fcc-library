@@ -23,7 +23,7 @@ const HND_PROJECT_TOPICS = [
     ],
     methodology: 'Descriptive survey research design using structured questionnaires across 120 registered cooperative farmers in 4 local government areas. Regression analysis via SPSS.',
     shelfReferences: [
-      { callNumber: 'HD2963 .A34 2026', title: 'Principles and Practice of Co-operative Economics (Prof. Adebayo)' },
+      { callNumber: 'HD2963 .FCC 2026', title: 'Cooperative Econometrics & Rural Development Monograph' },
       { callNumber: 'HG2051.N6 O48 2025', title: 'Micro-Credit Administration in Developing Agrarian Economies' }
     ]
   },
@@ -256,29 +256,106 @@ export default function StudentResearchHub({
   const [copiedId, setCopiedId] = useState(null);
   const [savedTopics, setSavedTopics] = useState([]);
   const [approvedHodDissertations, setApprovedHodDissertations] = useState([]);
+  const [approvedHodJournals, setApprovedHodJournals] = useState([]);
 
-  // Fetch approved HOD capstone/dissertation submissions
-  const loadApprovedDissertations = () => {
+  // Fetch approved HOD capstone/dissertation submissions & journals
+  const loadApprovedUploads = async () => {
+    let apiApproved = [];
     try {
+      const res = await fetch('/api/department-uploads?status=approved');
+      if (res.ok) {
+        const data = await res.json();
+        apiApproved = Array.isArray(data) ? data : [];
+      }
+    } catch (e) {
+      // Backend fallback
+    }
+
+    try {
+      const isDemo = (s) => {
+        if (!s) return false;
+        const id = String(s.id || '');
+        if (['HOD-UP-001', 'HOD-UP-002', 'HOD-UP-003', 'HOD-UP-004', 'FCC-HOD-CSC-001', 'FCC-HOD-CSC-PRJ', 'FCC-HOD-CSC-JRN'].includes(id)) return true;
+        const callNum = String(s.callNumber || s.call_number || s.assigned_call_number || '');
+        if (['QA76.9 .O46 2024', 'TH-CSC-2024-001', 'JRN-CSC-VOL14'].includes(callNum)) return true;
+        const t = (s.title || '').toLowerCase();
+        return t.includes('cooperative econometrics past examination') ||
+               t.includes('distributed multi-cloud systems') ||
+               t.includes('autonomous multi-agent citation resolution') ||
+               t.includes('west african journal of applied computer science') ||
+               t.includes('soil nitrogen dynamics & cocoa harvest') ||
+               t.includes('modern micro-credit lending & syndicate') ||
+               t.includes('vector indexing lab handout');
+      };
+
       const localSubs = JSON.parse(localStorage.getItem('fcc_hod_submissions_v48') || '[]');
       const pendingQueue = JSON.parse(localStorage.getItem('fcc_pending_department_uploads') || '[]');
-      const allApproved = [...localSubs, ...pendingQueue].filter(s =>
-        s.status === 'approved' &&
-        (String(s.resource_type || '').toLowerCase().includes('project') ||
-         String(s.resource_type || '').toLowerCase().includes('dissertation') ||
-         String(s.resource_type || '').toLowerCase().includes('capstone') ||
-         String(s.resource_type || '').toLowerCase().includes('thesis') ||
-         String(s.resource_type || '').toLowerCase().includes('research'))
-      );
-      setApprovedHodDissertations(allApproved);
+      const catalog = JSON.parse(localStorage.getItem('fcc_catalog_v48_gov') || '[]');
+
+      const allMerged = [...apiApproved, ...localSubs, ...pendingQueue].filter(s => !isDemo(s) && s.status === 'approved');
+      const seen = new Set();
+      const uniqueApproved = [];
+      for (const item of allMerged) {
+        const key = String(item.id || item.title);
+        if (!seen.has(key)) {
+          seen.add(key);
+          uniqueApproved.push(item);
+        }
+      }
+
+      // Add from local catalog if marked approved
+      for (const b of catalog) {
+        const key = String(b.id || b.title);
+        if (!seen.has(key)) {
+          if (b.category === 'Student Project' || String(b.id || '').startsWith('TH-') || String(b.resourceType || '').toLowerCase().includes('project')) {
+            seen.add(key);
+            uniqueApproved.push({
+              ...b,
+              status: 'approved',
+              category: 'Student Project',
+              department_name: b.department || b.subject,
+              target_level: b.targetLevel || 'HND II',
+              file_data_url: b.fileDataUrl,
+              assigned_call_number: b.callNumber
+            });
+          } else if (b.category === 'Journal' || Boolean(b.issn) || String(b.resourceType || '').toLowerCase().includes('journal')) {
+            seen.add(key);
+            uniqueApproved.push({
+              ...b,
+              status: 'approved',
+              category: 'Journal',
+              department_name: b.department || b.subject,
+              file_data_url: b.fileDataUrl,
+              assigned_call_number: b.callNumber
+            });
+          }
+        }
+      }
+
+      // Partition into projects and journals
+      const projects = uniqueApproved.filter(s => {
+        const cat = (s.category || '').toLowerCase();
+        const res = (s.resource_type || s.resourceType || '').toLowerCase();
+        return cat.includes('project') || res.includes('project') || res.includes('dissertation') || res.includes('capstone') || res.includes('thesis') || String(s.id || '').startsWith('TH-');
+      });
+
+      const journals = uniqueApproved.filter(s => {
+        const cat = (s.category || '').toLowerCase();
+        const res = (s.resource_type || s.resourceType || '').toLowerCase();
+        return cat.includes('journal') || res.includes('journal') || res.includes('periodical') || res.includes('serial') || Boolean(s.issn);
+      });
+
+      setApprovedHodDissertations(projects);
+      setApprovedHodJournals(journals);
     } catch (e) {
       setApprovedHodDissertations([]);
+      setApprovedHodJournals([]);
     }
   };
 
   useEffect(() => {
-    loadApprovedDissertations();
-    const handleSync = () => loadApprovedDissertations();
+    loadApprovedUploads();
+    const handleSync = () => loadApprovedUploads();
     window.addEventListener('fcc-submissions-updated', handleSync);
     window.addEventListener('fcc-catalog-updated', handleSync);
     return () => {
@@ -318,20 +395,36 @@ export default function StudentResearchHub({
 
     // Convert approved HOD uploads to thesis format
     approvedHodDissertations.forEach((ah, i) => {
+      let parsedNotes = {};
+      if (typeof ah.review_notes === 'string' && ah.review_notes.startsWith('{')) {
+        try { parsedNotes = JSON.parse(ah.review_notes); } catch {}
+      }
+
+      const studentName = ah.student_names || ah.studentNames || parsedNotes.studentNames || ah.author || 'FCC Final Year Scholar';
+      const matric = ah.student_matric || ah.studentMatric || parsedNotes.studentMatric || ah.uploaded_by_hod_id || 'FCC/STUDENT';
+      const supervisor = ah.supervisor || parsedNotes.supervisor || ah.hod_name || 'Department Academic Board';
+      const problemStatement = ah.problem_statement || ah.problemStatement || parsedNotes.problemStatement || '';
+      const methodology = ah.methodology || parsedNotes.methodology || '';
+
       rawTheses.unshift({
         id: ah.id || `HOD-TH-${i + 1}`,
         title: ah.title,
-        author: ah.author,
-        matric: ah.uploaded_by_hod_id || 'FCC/HOD/APPROVED',
+        author: studentName,
+        studentNames: studentName,
+        matric: matric,
+        studentMatric: matric,
         department: ah.department_name || 'Academic Department',
-        supervisor: ah.hod_name || 'Department Academic Board',
+        supervisor: supervisor,
         degree: `${ah.target_level || 'HND II'} Academic Capstone`,
-        year: 2026,
+        year: ah.year || 2026,
         abstract: ah.abstract || 'Approved Departmental Capstone Research Dissertation.',
+        problemStatement: problemStatement,
+        methodology: methodology,
         doi: `10.5897/FCC.HOD.2026.${ah.id}`,
         callNumber: ah.assigned_call_number || `ETD-${ah.course_code || 'CEM'}-2026`,
         downloads: 215,
         fileDataUrl: ah.file_data_url || '',
+        fileName: ah.file_name || 'project.pdf',
         isApproved: true
       });
     });
@@ -341,17 +434,22 @@ export default function StudentResearchHub({
     return baseList.map((t, idx) => ({
       id: t.id || `TH-${idx + 101}`,
       title: t.title || 'Institutional Research Dissertation',
-      author: t.studentName || t.author || 'FCC Final Year Scholar',
-      matric: t.matric || 'FCC/CEM/2024/042',
+      author: t.studentNames || t.studentName || t.author || 'FCC Final Year Scholar',
+      studentNames: t.studentNames || t.studentName || t.author || 'FCC Final Year Scholar',
+      matric: t.studentMatric || t.matric || 'FCC/CEM/2024/042',
+      studentMatric: t.studentMatric || t.matric || 'FCC/CEM/2024/042',
       department: t.department || 'Co-operative Economics & Management',
       supervisor: t.supervisor || t.advisor || 'Prof. A. O. Adebayo',
       degree: t.degree || 'Higher National Diploma (HND II) Dissertation',
       year: t.year || 2025,
       abstract: t.abstract || 'Empirical research archived in Federal Co-operative College Institutional Repository.',
+      problemStatement: t.problemStatement || '',
+      methodology: t.methodology || '',
       doi: t.doi || `10.5897/FCC.ETD.${t.year || 2025}.${idx + 101}`,
       callNumber: t.callNumber || `ETD-${t.department_code || 'CEM'}-${t.year || 2025}-${idx + 1}`,
       downloads: t.downloads || 184 + (idx * 23),
       fileDataUrl: t.fileDataUrl || '',
+      fileName: t.fileName || 'project.pdf',
       isApproved: true
     }));
   }, [theses, approvedHodDissertations]);
@@ -362,13 +460,71 @@ export default function StudentResearchHub({
       const matchQ = !q ||
         t.title.toLowerCase().includes(q) ||
         t.author.toLowerCase().includes(q) ||
+        (t.studentNames || '').toLowerCase().includes(q) ||
+        (t.matric || '').toLowerCase().includes(q) ||
         t.department.toLowerCase().includes(q) ||
         t.supervisor.toLowerCase().includes(q) ||
+        (t.problemStatement || '').toLowerCase().includes(q) ||
+        (t.methodology || '').toLowerCase().includes(q) ||
         t.abstract.toLowerCase().includes(q);
       const matchDept = selectedDeptFilter === 'All' || t.department.includes(selectedDeptFilter);
       return matchQ && matchDept;
     });
   }, [normalizedTheses, searchQuery, selectedDeptFilter]);
+
+  // Normalize journals combining approved HOD journals and institutional serials
+  const normalizedJournals = useMemo(() => {
+    const list = [];
+    approvedHodJournals.forEach((j, i) => {
+      let parsedNotes = {};
+      if (typeof j.review_notes === 'string' && j.review_notes.startsWith('{')) {
+        try { parsedNotes = JSON.parse(j.review_notes); } catch {}
+      }
+      list.push({
+        id: j.id || `HOD-JRN-${i + 1}`,
+        title: j.title,
+        journalName: j.journal_name || j.journalName || parsedNotes.journalName || j.publisher || 'FCC Academic Journal',
+        issn: j.issn || parsedNotes.issn || '0794-5590',
+        volume: j.volume || parsedNotes.volume || 'Vol. 18',
+        issue: j.issue || parsedNotes.issue || 'No. 2',
+        year: j.year || parsedNotes.publicationYear || 2026,
+        latestIssue: `${j.volume || parsedNotes.volume || 'Vol. 18'}, ${j.issue || parsedNotes.issue || 'Issue 2'} (${j.year || parsedNotes.publicationYear || 2026})`,
+        publisher: j.publisher || parsedNotes.publisher || `FCC Department of ${j.department_name || 'Academic Studies'} Press`,
+        indexedIn: 'FCC Institutional Repository, Open Access',
+        scope: j.abstract || 'Peer-reviewed academic research published through departmental board approval.',
+        author: j.author || 'Department Faculty Contributor',
+        fileDataUrl: j.file_data_url || '',
+        fileName: j.file_name || 'journal_article.pdf',
+        articlesCount: 1,
+        isApproved: true,
+        isHodUpload: true
+      });
+    });
+
+    SCHOLARLY_JOURNALS.forEach(sj => {
+      list.push({
+        ...sj,
+        journalName: sj.title,
+        isHodUpload: false
+      });
+    });
+
+    return list;
+  }, [approvedHodJournals]);
+
+  const filteredJournals = useMemo(() => {
+    return normalizedJournals.filter(j => {
+      const q = searchQuery.toLowerCase().trim();
+      const matchQ = !q ||
+        j.title.toLowerCase().includes(q) ||
+        (j.journalName || '').toLowerCase().includes(q) ||
+        (j.issn || '').toLowerCase().includes(q) ||
+        (j.author || '').toLowerCase().includes(q) ||
+        (j.scope || '').toLowerCase().includes(q);
+      const matchDept = selectedDeptFilter === 'All' || (j.publisher || '').includes(selectedDeptFilter) || (j.scope || '').includes(selectedDeptFilter);
+      return matchQ && matchDept;
+    });
+  }, [normalizedJournals, searchQuery, selectedDeptFilter]);
 
   const filteredPapers = useMemo(() => {
     return OPENALEX_SEED_RESEARCH.filter(p => {
@@ -547,7 +703,7 @@ export default function StudentResearchHub({
               <option value="All">All Academic Departments</option>
               {departments.map(dept => (
                 <option key={dept.code} value={dept.name}>
-                  {dept.code} — {dept.name}
+                  {dept.code} - {dept.name}
                 </option>
               ))}
             </select>
@@ -559,7 +715,7 @@ export default function StudentResearchHub({
       {subTab === 'hnd_projects' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-            <span>Showing <strong className="text-white">{filteredTheses.length}</strong> verified HND Capstone Dissertations</span>
+            <span>Showing <strong className="text-white">{filteredTheses.length}</strong> verified HND Capstone Dissertations & Projects</span>
             <span className="font-mono text-emerald-400">Institutional OAI-PMH Compliant</span>
           </div>
 
@@ -569,7 +725,7 @@ export default function StudentResearchHub({
                 key={th.id}
                 className="p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition-all flex flex-col justify-between group shadow-lg space-y-3"
               >
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   <div className="flex items-center justify-between gap-2">
                     <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
                       {th.callNumber}
@@ -581,18 +737,44 @@ export default function StudentResearchHub({
                     {th.title}
                   </h3>
 
-                  <div className="text-xs text-slate-400">
-                    <span>By <strong className="text-slate-200">{th.author}</strong></span>
-                    <span className="mx-1">•</span>
-                    <span>Advisor: <strong className="text-slate-300">{th.supervisor}</strong></span>
+                  <div className="text-xs text-slate-300 space-y-1 bg-slate-950/70 p-2.5 rounded-xl border border-slate-800">
+                    <div>
+                      <span className="text-slate-400">Student Researcher(s): </span>
+                      <strong className="text-emerald-300">{th.studentNames || th.author}</strong>
+                      {th.matric && <span className="font-mono text-[10px] text-slate-400 ml-1.5">({th.matric})</span>}
+                    </div>
+                    {th.supervisor && (
+                      <div>
+                        <span className="text-slate-400">Project Supervisor: </span>
+                        <strong className="text-slate-200">{th.supervisor}</strong>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-slate-400">Department: </span>
+                      <span className="text-slate-300">{th.department}</span>
+                    </div>
                   </div>
 
-                  <p className="text-xs text-slate-300 line-clamp-3 leading-relaxed">
+                  {th.problemStatement && (
+                    <div className="p-2.5 rounded-xl bg-amber-950/30 border border-amber-800/40 text-[11px] text-amber-200/90 leading-relaxed">
+                      <span className="font-bold text-amber-300 block mb-0.5">Problem Statement:</span>
+                      {th.problemStatement}
+                    </div>
+                  )}
+
+                  {th.methodology && (
+                    <div className="p-2.5 rounded-xl bg-sky-950/30 border border-sky-800/40 text-[11px] text-sky-200/90 leading-relaxed">
+                      <span className="font-bold text-sky-300 block mb-0.5">Research Methodology:</span>
+                      {th.methodology}
+                    </div>
+                  )}
+
+                  <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed">
                     {th.abstract}
                   </p>
                 </div>
 
-                <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2 text-xs">
+                <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2 text-xs mt-2">
                   <span className="text-[11px] font-mono text-slate-400 truncate max-w-[150px]">
                     DOI: {th.doi}
                   </span>
@@ -613,7 +795,7 @@ export default function StudentResearchHub({
                             id: th.id || `TH-${Date.now()}`,
                             title: th.title,
                             subtitle: `${th.degree || 'HND II Dissertation'} • Dept: ${th.department}`,
-                            author: th.author,
+                            author: th.studentNames || th.author,
                             authorCredentials: `${th.degree || 'HND II Scholar'} (Advisor: ${th.supervisor})`,
                             authorAffiliation: `Federal Co-operative College, Ibadan (${th.department})`,
                             callNumber: th.callNumber || `ETD-FCC-${th.year || 2026}`,
@@ -622,7 +804,7 @@ export default function StudentResearchHub({
                             pdfPages: th.pages || 148,
                             fileDataUrl: th.fileDataUrl || '',
                             pdfUrl: th.fileDataUrl || '',
-                            fileName: `${th.title.slice(0, 30).replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
+                            fileName: th.fileName || `${th.title.slice(0, 30).replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
                             abstract: th.abstract,
                             doi: th.doi
                           });
@@ -631,7 +813,7 @@ export default function StudentResearchHub({
                       className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow flex items-center gap-1.5 transition"
                     >
                       <BookOpen size={13} />
-                      <span>Read Dissertation</span>
+                      <span>Read Full Project (PDF)</span>
                     </button>
                   </div>
                 </div>
@@ -701,50 +883,91 @@ export default function StudentResearchHub({
       {/* 6. SUB-TAB 3: JOURNALS & PERIODICALS */}
       {subTab === 'journals' && (
         <div className="space-y-4">
-          <div className="text-xs text-slate-400 px-1">
-            Institutional & Consortia Indexed Academic Journals
+          <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+            <span>Showing <strong className="text-white">{filteredJournals.length}</strong> Peer-Reviewed & Departmental Academic Journals</span>
+            <span className="font-mono text-teal-400">Institutional & Consortia Indexed</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {SCHOLARLY_JOURNALS.map(j => (
+            {filteredJournals.map(j => (
               <div
                 key={j.id}
-                className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 shadow-lg"
+                className="p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-teal-500/50 transition-all space-y-3 shadow-lg flex flex-col justify-between"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-teal-950 text-teal-300 border border-teal-800">
-                    ISSN: {j.issn}
-                  </span>
-                  <span className="text-[11px] font-mono text-emerald-400 font-bold">{j.latestIssue}</span>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-teal-950 text-teal-300 border border-teal-800">
+                      ISSN: {j.issn}
+                    </span>
+                    <span className="text-[11px] font-mono text-emerald-400 font-bold">{j.latestIssue}</span>
+                  </div>
+
+                  <h4 className="text-base font-bold text-white leading-snug">
+                    {j.title}
+                  </h4>
+
+                  {j.isHodUpload && (
+                    <div className="text-xs text-teal-300">
+                      <span>Published in <strong className="text-teal-200">{j.journalName}</strong></span>
+                      <span className="mx-1">•</span>
+                      <span>By <strong className="text-white">{j.author}</strong></span>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-slate-400 leading-relaxed line-clamp-3">
+                    {j.scope}
+                  </p>
+
+                  <div className="text-xs text-slate-300 bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
+                    <div><strong>Publisher:</strong> {j.publisher}</div>
+                    <div className="text-[11px] text-slate-400">Indexed in: {j.indexedIn}</div>
+                  </div>
                 </div>
 
-                <h4 className="text-base font-bold text-white leading-snug">
-                  {j.title}
-                </h4>
-
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  {j.scope}
-                </p>
-
-                <div className="text-xs text-slate-300 bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
-                  <div><strong>Publisher:</strong> {j.publisher}</div>
-                  <div className="text-[11px] text-slate-400">Indexed in: {j.indexedIn}</div>
-                </div>
-
-                <div className="pt-2 flex items-center justify-between text-xs">
+                <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs mt-2">
                   <span className="text-[11px] text-emerald-400 font-mono">
-                    {j.articlesCount} Peer-Reviewed Articles
+                    {j.isHodUpload ? 'Official Departmental Issue' : `${j.articlesCount} Peer-Reviewed Articles`}
                   </span>
-                  <button
-                    onClick={() => {
-                      sounds.playClick();
-                      alert(`Accessing ${j.title} volume archive via Federal Institutional Repository proxy.`);
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow flex items-center gap-1.5 transition"
-                  >
-                    <span>Browse Issues</span>
-                    <ArrowRight size={13} />
-                  </button>
+                  {j.isHodUpload ? (
+                    <button
+                      onClick={() => {
+                        sounds.playClick();
+                        if (onOpenReader) {
+                          onOpenReader({
+                            id: j.id,
+                            title: j.title,
+                            subtitle: `${j.journalName} • ${j.latestIssue}`,
+                            author: j.author,
+                            authorCredentials: 'Peer-Reviewed Academic Author / HOD Contributor',
+                            authorAffiliation: j.publisher,
+                            callNumber: `ISSN: ${j.issn}`,
+                            shelfLocation: 'Institutional Serials & Periodicals Archive',
+                            isDigital: true,
+                            pdfPages: 45,
+                            fileDataUrl: j.fileDataUrl || '',
+                            pdfUrl: j.fileDataUrl || '',
+                            fileName: j.fileName || 'journal_article.pdf',
+                            abstract: j.scope
+                          });
+                        }
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow flex items-center gap-1.5 transition"
+                    >
+                      <BookOpen size={13} />
+                      <span>Read Journal (PDF)</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        sounds.playClick();
+                        alert(`Accessing ${j.title} volume archive via Federal Institutional Repository proxy.`);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-teal-950 hover:bg-teal-900 text-teal-300 border border-teal-700 font-bold text-xs shadow flex items-center gap-1.5 transition"
+                    >
+                      <span>Browse Issues</span>
+                      <ArrowRight size={13} />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -842,7 +1065,7 @@ export default function StudentResearchHub({
                       {top.shelfReferences.map((ref, idx) => (
                         <div key={idx} className="flex items-center gap-2 text-slate-300 text-[11px]">
                           <span className="font-mono text-emerald-400 font-bold">{ref.callNumber}</span>
-                          <span>— {ref.title}</span>
+                          <span>- {ref.title}</span>
                         </div>
                       ))}
                     </div>

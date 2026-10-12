@@ -442,7 +442,7 @@ export default function StudentResearchCenter({
               <div className="text-xs font-bold text-white">Attach Defense Document (PDF Format)</div>
               <p className="text-[11px] text-slate-500">Maximum file size: 25 MB • Must include cover page and signed approval sheet</p>
               <span className="inline-block text-[11px] px-3 py-1 rounded-full bg-slate-800 text-emerald-400 font-mono">
-                draft_defense_copy.pdf (4.8 MB) — Verified
+                draft_defense_copy.pdf (4.8 MB) - Verified
               </span>
             </div>
 

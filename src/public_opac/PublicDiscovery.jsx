@@ -54,6 +54,9 @@ export default function PublicDiscovery({
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
+  // Resource Category Filter: 'All' | 'Book' | 'Journal' | 'Student Project'
+  const [resourceCategory, setResourceCategory] = useState('All');
+
   // Ask a Librarian Modal State
   const [showAskLibrarianModal, setShowAskLibrarianModal] = useState(false);
   const [askForm, setAskForm] = useState({ name: '', matricOrEmail: '', department: 'CEM', question: '' });
@@ -285,24 +288,40 @@ export default function PublicDiscovery({
     }
   };
 
-  // Filtered Books with Multi-Field and Advanced Facets
+  // Filtered Books with Multi-Field, Category, and Advanced Facets
   const filteredBooks = useMemo(() => {
     return books.filter(b => {
+      const isProject = b.category === 'Student Project' || b.materialType === 'Thesis' || b.materialType === 'Dissertation' || (b.id && String(b.id).startsWith('TH-')) || (b.resourceType && String(b.resourceType).toLowerCase().includes('project'));
+      const isJournal = b.category === 'Journal' || b.materialType === 'Journal' || Boolean(b.issn) || (b.resourceType && String(b.resourceType).toLowerCase().includes('journal'));
+      const isBook = !isProject && !isJournal;
+
+      // Category filter
+      if (resourceCategory === 'Book' && !isBook) return false;
+      if (resourceCategory === 'Journal' && !isJournal) return false;
+      if (resourceCategory === 'Student Project' && !isProject) return false;
+
       // 1. Text & Search Field Match
       const q = searchQuery.toLowerCase().trim();
       let matchQuery = true;
       if (q) {
         if (searchField === 'title') matchQuery = b.title.toLowerCase().includes(q);
-        else if (searchField === 'author') matchQuery = b.author.toLowerCase().includes(q);
-        else if (searchField === 'isbn') matchQuery = (b.isbn || '').toLowerCase().includes(q);
+        else if (searchField === 'author') matchQuery = b.author.toLowerCase().includes(q) || (b.studentNames || b.student_names || '').toLowerCase().includes(q);
+        else if (searchField === 'isbn') matchQuery = (b.isbn || '').toLowerCase().includes(q) || (b.issn || '').toLowerCase().includes(q);
         else if (searchField === 'subject') matchQuery = (b.subject || '').toLowerCase().includes(q);
         else if (searchField === 'call') matchQuery = (b.callNumber || '').toLowerCase().includes(q);
-        else if (searchField === 'publisher') matchQuery = (b.publisher || '').toLowerCase().includes(q);
+        else if (searchField === 'publisher') matchQuery = (b.publisher || '').toLowerCase().includes(q) || (b.journalName || b.journal_name || '').toLowerCase().includes(q);
         else {
           // All fields
           matchQuery = b.title.toLowerCase().includes(q) ||
             b.author.toLowerCase().includes(q) ||
+            (b.studentNames || b.student_names || '').toLowerCase().includes(q) ||
+            (b.studentMatric || b.student_matric || '').toLowerCase().includes(q) ||
+            (b.supervisor || '').toLowerCase().includes(q) ||
+            (b.journalName || b.journal_name || '').toLowerCase().includes(q) ||
+            (b.problemStatement || '').toLowerCase().includes(q) ||
+            (b.methodology || '').toLowerCase().includes(q) ||
             (b.isbn || '').includes(q) ||
+            (b.issn || '').includes(q) ||
             (b.callNumber || '').toLowerCase().includes(q) ||
             (b.subject || '').toLowerCase().includes(q) ||
             (b.department || '').toLowerCase().includes(q) ||
@@ -334,34 +353,22 @@ export default function PublicDiscovery({
 
       return matchQuery && matchSubject && matchDepartment && matchFormat && matchAvail;
     });
-  }, [books, searchQuery, searchField, showAdvancedSearch, advSearch, facets]);
+  }, [books, searchQuery, searchField, showAdvancedSearch, advSearch, facets, resourceCategory]);
 
   // Reset page when search or facet changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, searchField, facets, advSearch]);
+  }, [searchQuery, searchField, facets, advSearch, resourceCategory]);
+
+  const bookCount = useMemo(() => books.filter(b => b.category !== 'Journal' && b.category !== 'Student Project' && !String(b.id || '').startsWith('TH-') && !String(b.resourceType || '').toLowerCase().includes('project') && !String(b.resourceType || '').toLowerCase().includes('journal')).length, [books]);
+  const journalCount = useMemo(() => books.filter(b => b.category === 'Journal' || b.materialType === 'Journal' || Boolean(b.issn) || String(b.resourceType || '').toLowerCase().includes('journal')).length, [books]);
+  const projectCount = useMemo(() => books.filter(b => b.category === 'Student Project' || b.materialType === 'Thesis' || b.materialType === 'Dissertation' || String(b.id || '').startsWith('TH-') || String(b.resourceType || '').toLowerCase().includes('project')).length, [books]);
 
   const totalResults = filteredBooks.length;
   const totalPages = Math.max(1, Math.ceil(totalResults / pageSize));
   const startIndex = (currentPage - 1) * pageSize;
   const endIndex = Math.min(startIndex + pageSize, totalResults);
   const displayedBooks = filteredBooks.slice(startIndex, endIndex);
-
-  // Curated Content Collections for Homepage
-  const featuredBooks = books.slice(0, 4);
-  const newArrivals = [...books].reverse().slice(0, 4);
-  const mostBorrowed = books.slice(1, 5);
-  const recommendedResources = books.filter(b => b.isDigital).slice(0, 4);
-
-  // Popular Research Topics
-  const researchTopics = [
-    { title: 'Cooperative Agricultural Micro-Credit', count: 48, icon: '🌾' },
-    { title: 'Relational Database Optimization & SQL Tuning', count: 62, icon: '💾' },
-    { title: 'Sub-Saharan Banking Regulatory Compliance', count: 35, icon: '🏦' },
-    { title: 'Agronomic Value Chain Logistics & Export', count: 29, icon: '🌱' },
-    { title: 'Artificial Intelligence & Neural Machine Learning', count: 54, icon: '🧠' },
-    { title: 'Financial Auditing Standards & Forensics', count: 41, icon: '📊' }
-  ];
 
   // E-Journals
   const eJournals = [
@@ -381,26 +388,6 @@ export default function PublicDiscovery({
     { name: 'HINARI / WHO Global Health Library', type: 'Biomedical & Social Sciences', desc: 'Global research in public health, rural development and nutrition.', icon: '🩺' }
   ];
 
-  // Announcements, News & Events
-  const announcements = [
-    { tag: 'NBTE ACCREDITATION', title: 'Directorate of Library Services Retains Grade A Compliance Scorecard', date: 'Sept 2026', desc: 'The National Board for Technical Education (NBTE) has reaffirmed full accreditation for the college library stacks.' },
-    { tag: 'EXTENDED HOURS', title: 'Semester Examination 24/7 Carrel & Reading Stack Access Schedule', date: 'Oct 2026', desc: 'Acoustic study pods and Stack 2 reserve collections will remain open until midnight throughout the examination cycle.' },
-    { tag: 'NEW ACQUISITIONS', title: 'TETFUND Stack 3 Ingestion: 450 New Cooperative & IT Reference Volumes', date: 'Sept 2026', desc: 'Physical books cataloged under Dewey Decimal Classification now ready for circulation desk checkout.' }
-  ];
-
-  const libraryEvents = [
-    { date: 'OCT 08', time: '10:00 AM', title: 'Turnitin & Plagiarism Prevention Masterclass for HND II Students', room: 'Media Hall A' },
-    { date: 'OCT 15', time: '02:00 PM', title: 'Open Science & Digital Commons Publishing Workshop for Faculty', room: 'E-Library Hub' },
-    { date: 'OCT 22', time: '11:00 AM', title: 'Zotero & Mendeley Academic Citation & Bibliography Workshop', room: 'Stack 1 Lab' }
-  ];
-
-  const faqs = [
-    { q: 'How many books can a student borrow simultaneously?', a: 'Under institutional Tier 3 RBAC policies, ND and HND students can borrow up to 2 physical volumes for 14 days, renewable once online if no hold reservations exist.' },
-    { q: 'How do I obtain my Final Year Library Graduation Clearance?', a: 'Clearance is automated. Visit the Graduation Clearance portal (#/scholar/clearance). Once all loans are returned and fines are ₦0.00, your certified cryptographic certificate generates instantly.' },
-    { q: 'Can I access the digital e-books and past questions from home?', a: 'Yes! All open-access and student departmental resources uploaded by HODs can be read in the built-in browser reader with watermark protection anytime.' },
-    { q: 'What should I do if I misplace my library Smart PVC NFC card?', a: 'Report immediately to the Circulation Desk (#/admin/circulation) to lock your RFID token, then generate a temporary replacement barcode on the Scholar ID screen.' }
-  ];
-
   const handleAskSubmit = (e) => {
     e.preventDefault();
     sounds.playSuccessChime();
@@ -417,95 +404,196 @@ export default function PublicDiscovery({
       className="min-h-screen bg-[#021810] text-emerald-50 flex flex-col font-sans selection:bg-emerald-500 selection:text-white"
       style={{ backgroundImage: PATTERNS.opac }}
     >
-      {/* 1. INSTITUTIONAL OPAC TOP HEADER */}
-      <header className="bg-[#032317]/95 backdrop-blur-md border-b border-emerald-800/60 sticky top-0 z-40 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-xl">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-[#021810] border border-emerald-400/50 p-0.5 flex items-center justify-center shadow-lg shadow-emerald-950 shrink-0 overflow-hidden">
+      {/* 1. INSTITUTIONAL OPAC TOP HEADER & STREAMLINED NAV */}
+      <header className="bg-[#032317]/95 backdrop-blur-md border-b border-emerald-800/60 sticky top-0 z-40 px-3 sm:px-5 py-2 shadow-xl">
+        <div className="flex items-center justify-between gap-3 max-w-[1920px] mx-auto">
+          {/* Logo & College Identity */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="w-8 h-8 rounded-xl bg-[#021810] border border-emerald-400/50 p-0.5 flex items-center justify-center shadow-md shadow-emerald-950 shrink-0 overflow-hidden">
               <img
                 src="/assets/fcc-logo.png"
                 alt="FCC Logo"
-                className="w-full h-full object-cover rounded-xl"
+                className="w-full h-full object-cover rounded-lg"
               />
             </div>
             <div>
-              <div className="text-sm font-black text-white leading-none tracking-tight">{INSTITUTION.shortName}</div>
-              <div className="text-[11px] text-emerald-400 font-mono font-medium">Unified OPAC & Institutional Discovery</div>
+              <div className="text-xs font-black text-white leading-none tracking-tight">{INSTITUTION.shortName}</div>
+              <div className="text-[9.5px] text-emerald-400 font-mono font-medium">OPAC Discovery</div>
             </div>
           </div>
 
-          {/* Quick Nav Anchors */}
-          <nav className="hidden lg:flex items-center gap-1 font-medium text-xs">
-            {[
-              { id: 'overlay', label: 'Federated API Overlay', icon: Zap, isRecommended: true },
-              { id: 'home', label: 'Discovery Home', icon: Globe },
-              { id: 'catalog', label: `College Stacks (${books.length})`, icon: BookOpen },
-              { id: 'google_books', label: 'Google Books', icon: Sparkles },
-              { id: 'openlibrary', label: 'Open Library (Live API)', icon: Globe },
-              { id: 'gutenberg', label: 'Project Gutenberg (E-Books)', icon: BookMarked },
-              { id: 'archive', label: 'Internet Archive (Full PDFs)', icon: Library },
-              { id: 'trove', label: 'Trove Archives', icon: Library },
-              { id: 'journals', label: 'E-Journals', icon: Newspaper },
-              { id: 'databases', label: 'Databases', icon: Database },
-              { id: 'repository', label: 'Institutional Repository', icon: Building2 },
-              { id: 'partner_libraries', label: `Partner Libraries (${partnerLibraries.length})`, icon: Building }
-            ].map(item => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    setActiveTab(item.id);
-                    sounds.playClick();
-                  }}
-                  className={`px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 ${
-                    activeTab === item.id
-                      ? item.isRecommended
-                        ? 'bg-gradient-to-r from-amber-500/20 to-emerald-500/20 text-amber-300 border border-amber-400 font-bold shadow'
-                        : 'bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold shadow'
-                      : item.isRecommended
-                        ? 'text-amber-400 hover:text-amber-200 hover:bg-amber-950/40 border border-amber-500/30'
-                        : 'text-emerald-400/80 hover:text-white hover:bg-emerald-950/60'
-                  }`}
-                >
-                  <Icon size={14} className={item.isRecommended ? 'text-amber-400' : ''} />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
+          {/* Unified Compact Navigation Bar in Exact Sequence */}
+          <nav className="flex items-center gap-1 font-medium text-[11px] overflow-x-auto scrollbar-none py-0.5">
+            {/* 1. College Catalog */}
+            <button
+              onClick={() => {
+                setActiveTab('home');
+                sounds.playClick();
+              }}
+              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shrink-0 ${
+                activeTab === 'home' || activeTab === 'catalog'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-sm shadow-emerald-950 border border-emerald-400/40'
+                  : 'text-emerald-300/80 hover:text-white hover:bg-emerald-900/40 border border-transparent'
+              }`}
+            >
+              <BookOpen size={12} className={activeTab === 'home' || activeTab === 'catalog' ? 'text-white' : 'text-emerald-400'} />
+              <span>College Catalog ({books.length})</span>
+            </button>
+
+            {/* 2. Federated Search (Live APIs) */}
+            <button
+              onClick={() => {
+                setActiveTab('overlay');
+                sounds.playClick();
+              }}
+              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shrink-0 ${
+                activeTab === 'overlay'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-sm shadow-emerald-950 border border-emerald-400/40'
+                  : 'text-emerald-300/80 hover:text-white hover:bg-emerald-900/40 border border-transparent'
+              }`}
+            >
+              <Zap size={12} className={activeTab === 'overlay' ? 'text-white' : 'text-emerald-400'} />
+              <span>Federated Search</span>
+              <span className={`text-[8.5px] px-1 py-0.2 rounded font-mono ${
+                activeTab === 'overlay' ? 'bg-black/30 text-emerald-100' : 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+              }`}>
+                Live APIs
+              </span>
+            </button>
+
+            {/* 3. Google Books */}
+            <button
+              onClick={() => {
+                setActiveTab('google_books');
+                sounds.playClick();
+              }}
+              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shrink-0 ${
+                activeTab === 'google_books'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-sm shadow-emerald-950 border border-emerald-400/40'
+                  : 'text-emerald-300/80 hover:text-white hover:bg-emerald-900/40 border border-transparent'
+              }`}
+            >
+              <Sparkles size={12} className={activeTab === 'google_books' ? 'text-white' : 'text-emerald-400'} />
+              <span>Google Books</span>
+            </button>
+
+            {/* 4. Open Library */}
+            <button
+              onClick={() => {
+                setActiveTab('openlibrary');
+                sounds.playClick();
+              }}
+              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shrink-0 ${
+                activeTab === 'openlibrary'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-sm shadow-emerald-950 border border-emerald-400/40'
+                  : 'text-emerald-300/80 hover:text-white hover:bg-emerald-900/40 border border-transparent'
+              }`}
+            >
+              <Globe size={12} className={activeTab === 'openlibrary' ? 'text-white' : 'text-emerald-400'} />
+              <span>Open Library</span>
+            </button>
+
+            {/* 5. Gutenberg */}
+            <button
+              onClick={() => {
+                setActiveTab('gutenberg');
+                sounds.playClick();
+              }}
+              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shrink-0 ${
+                activeTab === 'gutenberg'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-sm shadow-emerald-950 border border-emerald-400/40'
+                  : 'text-emerald-300/80 hover:text-white hover:bg-emerald-900/40 border border-transparent'
+              }`}
+            >
+              <BookMarked size={12} className={activeTab === 'gutenberg' ? 'text-white' : 'text-emerald-400'} />
+              <span>Gutenberg</span>
+            </button>
+
+            {/* 6. Internet Archive */}
+            <button
+              onClick={() => {
+                setActiveTab('archive');
+                sounds.playClick();
+              }}
+              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shrink-0 ${
+                activeTab === 'archive'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-sm shadow-emerald-950 border border-emerald-400/40'
+                  : 'text-emerald-300/80 hover:text-white hover:bg-emerald-900/40 border border-transparent'
+              }`}
+            >
+              <Library size={12} className={activeTab === 'archive' ? 'text-white' : 'text-emerald-400'} />
+              <span>Internet Archive</span>
+            </button>
+
+            {/* 7. Partner Libraries (6) */}
+            <button
+              onClick={() => {
+                setActiveTab('partner_libraries');
+                sounds.playClick();
+              }}
+              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shrink-0 ${
+                activeTab === 'partner_libraries'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-sm shadow-emerald-950 border border-emerald-400/40'
+                  : 'text-emerald-300/80 hover:text-white hover:bg-emerald-900/40 border border-transparent'
+              }`}
+            >
+              <Building size={12} className={activeTab === 'partner_libraries' ? 'text-white' : 'text-emerald-400'} />
+              <span>Partner Libraries ({partnerLibraries.length})</span>
+            </button>
+
+            {/* 8. Serials & Repositories */}
+            <button
+              onClick={() => {
+                setActiveTab('journals');
+                sounds.playClick();
+              }}
+              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shrink-0 ${
+                activeTab === 'journals'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-sm shadow-emerald-950 border border-emerald-400/40'
+                  : 'text-emerald-300/80 hover:text-white hover:bg-emerald-900/40 border border-transparent'
+              }`}
+            >
+              <Newspaper size={12} className={activeTab === 'journals' ? 'text-white' : 'text-emerald-400'} />
+              <span>Serials & Repositories</span>
+            </button>
+
+            {/* 9. Self-Service Kiosk */}
+            <button
+              onClick={() => {
+                sounds.playClick();
+                navigateTo('/kiosk');
+              }}
+              className="px-2.5 py-1 rounded-lg bg-teal-950/60 border border-teal-700/60 text-teal-300 hover:text-white hover:bg-teal-900/60 text-[11px] font-semibold transition shrink-0 flex items-center gap-1 shadow-sm"
+              title="Launch Self-Service Checkout / Return Kiosk"
+            >
+              <Scan size={12} className="text-teal-400" />
+              <span>Self-Service Kiosk</span>
+            </button>
+
+            {/* 10. Ask a Librarian */}
+            <button
+              onClick={() => {
+                sounds.playClick();
+                setShowAskLibrarianModal(true);
+              }}
+              className="px-2.5 py-1 rounded-lg bg-[#021810] border border-emerald-800/80 text-emerald-300 hover:text-white hover:border-emerald-600 text-[11px] font-semibold transition shrink-0 flex items-center gap-1"
+            >
+              <HelpCircle size={12} className="text-emerald-400" />
+              <span>Ask a Librarian</span>
+            </button>
+
+            {/* 11. Student / Staff Login */}
+            <button
+              onClick={() => {
+                sounds.playClick();
+                onOpenLogin();
+              }}
+              className="px-3 py-1 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[11px] font-bold shadow-md shadow-emerald-950 flex items-center gap-1 transition shrink-0 border border-emerald-400/40 active:scale-95"
+            >
+              <span>Student / Staff Login</span>
+              <ArrowRight size={12} />
+            </button>
           </nav>
-        </div>
-
-        {/* Action Gateways */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          <button
-            onClick={() => {
-              sounds.playClick();
-              navigateTo('/kiosk');
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-950/80 border border-teal-600/70 text-teal-300 hover:text-white hover:bg-teal-900 text-xs font-semibold transition shadow-md hover:border-teal-400"
-            title="Launch Self-Service Checkout / Return Kiosk (Module 8)"
-          >
-            <Scan size={14} className="text-teal-400" />
-            <span className="hidden sm:inline">Self-Service Kiosk</span>
-            <span className="sm:hidden">Kiosk</span>
-          </button>
-
-          <button
-            onClick={() => setShowAskLibrarianModal(true)}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#021810] border border-emerald-800 text-emerald-300 hover:text-white hover:border-emerald-600 text-xs font-semibold transition"
-          >
-            <HelpCircle size={14} className="text-emerald-400" />
-            <span>Ask a Librarian</span>
-          </button>
-
-          <button
-            onClick={onOpenLogin}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-950 flex items-center gap-1.5 transition hover:scale-105 active:scale-95"
-          >
-            <span>Student / Staff Login</span>
-            <ArrowRight size={14} />
-          </button>
         </div>
       </header>
 
@@ -634,35 +722,36 @@ export default function PublicDiscovery({
         {/* VIEW: DISCOVERY HOME & CATALOG */}
         {(activeTab === 'home' || activeTab === 'catalog') && (
           <>
-            {/* HERO SEARCH WITH VU-FIND GRADE INTELLIGENCE */}
+            {/* HERO SEARCH WITH MODERN INSTITUTIONAL BRANDING */}
             <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#063b27] via-[#04281c] to-[#021810] border-2 border-emerald-600/40 p-6 sm:p-10 shadow-2xl space-y-6">
               <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
               <div className="relative z-10 space-y-3 max-w-3xl">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/90 border border-emerald-600/50 text-emerald-300 text-xs font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                   <Sparkles size={14} className="text-emerald-400" />
-                  <span>Next-Generation OPAC Discovery Engine • LibraryWorld & VuFind Standards</span>
+                  <span>Federal Cooperative College, Ibadan • Directorate of Library Services</span>
                 </div>
 
                 <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
-                  Discover Knowledge Across All Institutional Stacks
+                  Library Catalog & Digital Knowledge Discovery
                 </h1>
                 <p className="text-xs sm:text-sm text-emerald-200/90 leading-relaxed">
-                  Search across 125,000+ physical volumes, electronic textbooks, lecture compendiums, and digital research repositories with real-time stack availability.
+                  Search campus physical volumes, access digital e-textbooks and dissertations, or query global open academic repositories with live stack availability.
                 </p>
               </div>
 
               {/* SEARCH BAR WITH MULTI-FIELD SELECTOR & AUTOCOMPLETE */}
               <div className="relative z-20 space-y-3">
                 
-                {/* REPOSITORY SOURCE SELECTOR (No Login Required) */}
+                {/* REPOSITORY SOURCE SELECTOR */}
                 <div className="flex flex-wrap items-center gap-1.5 pb-1">
+                  <span className="text-[11px] font-mono font-bold text-emerald-400 uppercase tracking-wider mr-1">Search Target:</span>
                   {[
-                    { id: 'overlay', label: 'Federated API Overlay', icon: Zap, badge: 'Live AI + APIs', isRecommended: true },
-                    { id: 'all', label: 'All Stacks & Live APIs', icon: Sparkles, badge: 'Federated' },
-                    { id: 'google_books', label: 'Google Books', icon: Sparkles, badge: 'Curriculum' },
-                    { id: 'stacks', label: `College Stacks (${books.length})`, icon: BookOpen, badge: 'Campus' },
-                    { id: 'openlibrary', label: 'Open Library (Live API)', icon: Globe, badge: '30M+ Books' },
+                    { id: 'stacks', label: `College Stacks (${books.length})`, icon: BookOpen, badge: 'On-Campus' },
+                    { id: 'all', label: 'All Sources (Federated)', icon: Sparkles, badge: 'Multi-API' },
+                    { id: 'google_books', label: 'Google Books', icon: Sparkles, badge: 'Previews' },
+                    { id: 'openlibrary', label: 'Open Library', icon: Globe, badge: '30M+ Items' },
                     { id: 'gutenberg', label: 'Project Gutenberg', icon: BookMarked, badge: '70k+ E-Books' },
                     { id: 'archive', label: 'Internet Archive', icon: Library, badge: 'Full Books' },
                     { id: 'trove', label: 'Trove Archives', icon: Library, badge: 'National' }
@@ -676,8 +765,7 @@ export default function PublicDiscovery({
                         onClick={() => {
                           setSearchTarget(src.id);
                           sounds.playClick();
-                          if (src.id === 'overlay') setActiveTab('overlay');
-                          else if (src.id === 'google_books') setActiveTab('google_books');
+                          if (src.id === 'google_books') setActiveTab('google_books');
                           else if (src.id === 'openlibrary') setActiveTab('openlibrary');
                           else if (src.id === 'gutenberg') setActiveTab('gutenberg');
                           else if (src.id === 'archive') setActiveTab('archive');
@@ -688,24 +776,18 @@ export default function PublicDiscovery({
                             if (searchQuery) fetchLiveExternalResources(searchQuery);
                           }
                         }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                           isSelected
-                            ? src.isRecommended
-                              ? 'bg-gradient-to-r from-amber-500 to-emerald-500 text-slate-950 font-black shadow-lg shadow-amber-950 ring-1 ring-amber-300'
-                              : 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-950 ring-1 ring-emerald-400'
-                            : src.isRecommended
-                              ? 'bg-[#021810] text-amber-300 border border-amber-500/60 hover:border-amber-400'
-                              : 'bg-[#021810] text-emerald-300/80 border border-emerald-800/80 hover:border-emerald-600 hover:text-white'
+                            ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-950 ring-1 ring-emerald-400'
+                            : 'bg-[#021810] text-emerald-300/80 border border-emerald-800/80 hover:border-emerald-600 hover:text-white'
                         }`}
                       >
-                        <Icon size={13} className={isSelected && !src.isRecommended ? 'text-white' : isSelected && src.isRecommended ? 'text-slate-950' : src.isRecommended ? 'text-amber-400' : 'text-emerald-400'} />
+                        <Icon size={13} className={isSelected ? 'text-white' : 'text-emerald-400'} />
                         <span>{src.label}</span>
                         <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono ${
                           isSelected 
                             ? 'bg-black/30 text-emerald-100' 
-                            : src.isRecommended
-                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                              : 'bg-emerald-950 text-emerald-400 border border-emerald-900'
+                            : 'bg-emerald-950 text-emerald-400 border border-emerald-900'
                         }`}>
                           {src.badge}
                         </span>
@@ -789,6 +871,58 @@ export default function PublicDiscovery({
                   >
                     <Sliders size={14} />
                     <span className="hidden sm:inline">Advanced</span>
+                  </button>
+                </div>
+
+                {/* QUICK TOPIC & FORMAT FILTERS */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
+                  <span className="text-[11px] font-semibold text-emerald-400 mr-1 flex items-center gap-1">
+                    <Filter size={12} /> Quick Filters:
+                  </span>
+                  {['All', 'Co-operative Economics', 'Computer Science', 'Banking & Finance', 'Agricultural Extension'].map(sub => (
+                    <button
+                      key={sub}
+                      type="button"
+                      onClick={() => {
+                        setFacets(prev => ({ ...prev, subject: sub }));
+                        sounds.playClick();
+                      }}
+                      className={`px-2.5 py-1 rounded-xl text-xs font-semibold transition ${
+                        facets.subject === sub
+                          ? 'bg-emerald-600 text-white font-bold shadow'
+                          : 'bg-[#021810] text-emerald-300/80 border border-emerald-800/80 hover:text-white hover:border-emerald-600'
+                      }`}
+                    >
+                      {sub === 'All' ? `All Subjects (${books.length})` : sub}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFacets(prev => ({ ...prev, format: prev.format === 'Digital' ? 'All' : 'Digital' }));
+                      sounds.playClick();
+                    }}
+                    className={`px-2.5 py-1 rounded-xl text-xs font-semibold transition flex items-center gap-1 ${
+                      facets.format === 'Digital'
+                        ? 'bg-teal-600 text-white font-bold shadow'
+                        : 'bg-[#021810] text-teal-300 border border-teal-800/80 hover:text-white hover:border-teal-600'
+                    }`}
+                  >
+                    <span>⚡ E-Books Only</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFacets(prev => ({ ...prev, availability: prev.availability === 'Available' ? 'All' : 'Available' }));
+                      sounds.playClick();
+                    }}
+                    className={`px-2.5 py-1 rounded-xl text-xs font-semibold transition flex items-center gap-1 ${
+                      facets.availability === 'Available'
+                        ? 'bg-emerald-500 text-slate-950 font-bold shadow'
+                        : 'bg-[#021810] text-emerald-300 border border-emerald-800/80 hover:text-white hover:border-emerald-600'
+                    }`}
+                  >
+                    <span>✓ Available in Stacks</span>
                   </button>
                 </div>
 
@@ -1014,6 +1148,382 @@ export default function PublicDiscovery({
                       className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-lg"
                     >
                       Apply Search Filter
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* CATALOG SEARCH RESULTS / BROWSE STACKS */}
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-[#032317] to-[#021810] border border-emerald-800 shadow-xl">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-600/60 flex items-center justify-center text-emerald-400 font-bold shadow-inner">
+                    <BookOpen size={20} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-white text-base tracking-tight">Institutional Catalog Holdings</span>
+                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-mono font-bold">
+                        {books.length === 0 ? 'Awaiting Uploads (0 titles)' : `${filteredBooks.length} ${filteredBooks.length === 1 ? 'title' : 'titles'} matched`}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-emerald-400/80 font-mono">
+                      {books.length === 0 ? 'Verified live SQLite catalog • Ready for Admin & HOD submissions' : 'Physical stacks & digital e-textbooks verified against SQLite catalog'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* View Controls & Reset Filter */}
+                <div className="flex items-center gap-2 text-xs">
+                  {(searchQuery || facets.subject !== 'All' || facets.format !== 'All' || facets.availability !== 'All') && (
+                    <button
+                      onClick={() => {
+                        setSearchQuery('');
+                        setFacets({ subject: 'All', department: 'All', format: 'All', availability: 'All', yearRange: 'All', language: 'All' });
+                        setShowAdvancedSearch(false);
+                        sounds.playClick();
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900 border border-rose-700/60 text-rose-300 text-xs font-semibold flex items-center gap-1 transition"
+                    >
+                      <X size={13} />
+                      <span>Reset Filters</span>
+                    </button>
+                  )}
+                  <span className="text-[11px] text-emerald-400/70 font-mono hidden sm:inline">Page {currentPage} of {totalPages}</span>
+                </div>
+              </div>
+
+              {/* Category Filter Pills (Books, Journals, Student Projects) */}
+              <div className="flex flex-wrap items-center gap-2 p-1.5 rounded-2xl bg-[#021810] border border-emerald-800/80">
+                {[
+                  { id: 'All', label: 'All Holdings', icon: Layers, count: books.length },
+                  { id: 'Book', label: 'Books & Monograms', icon: BookOpen, count: bookCount },
+                  { id: 'Journal', label: 'Academic Journals', icon: Newspaper, count: journalCount },
+                  { id: 'Student Project', label: 'Student Projects & Theses', icon: Award, count: projectCount }
+                ].map(cat => {
+                  const Icon = cat.icon;
+                  const isActive = resourceCategory === cat.id;
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => {
+                        setResourceCategory(cat.id);
+                        sounds.playClick();
+                      }}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                        isActive
+                          ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-950 ring-1 ring-emerald-400'
+                          : 'text-emerald-300/80 hover:text-white hover:bg-emerald-900/40'
+                      }`}
+                    >
+                      <Icon size={14} className={isActive ? 'text-white' : 'text-emerald-400'} />
+                      <span>{cat.label}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                        isActive ? 'bg-black/30 text-emerald-100' : 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                      }`}>
+                        {cat.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* BOOK CARDS GRID */}
+              {displayedBooks.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {displayedBooks.map((b) => {
+                    const isProject = b.category === 'Student Project' || b.materialType === 'Thesis' || b.materialType === 'Dissertation' || (b.id && String(b.id).startsWith('TH-')) || (b.resourceType && String(b.resourceType).toLowerCase().includes('project'));
+                    const isJournal = b.category === 'Journal' || b.materialType === 'Journal' || Boolean(b.issn) || (b.resourceType && String(b.resourceType).toLowerCase().includes('journal'));
+
+                    const deptLower = (b.department || '').toLowerCase();
+                    const isCS = deptLower.includes('computer') || deptLower.includes('technology');
+                    const isBank = deptLower.includes('bank') || deptLower.includes('finance');
+                    const isAgric = deptLower.includes('agric');
+
+                    const coverGradient = isProject
+                      ? 'from-amber-950 via-slate-900 to-[#021810] border-amber-600/40'
+                      : isJournal
+                      ? 'from-teal-950 via-slate-900 to-[#021810] border-teal-600/40'
+                      : isCS
+                      ? 'from-sky-950 via-slate-900 to-[#021810] border-sky-600/40'
+                      : isBank
+                      ? 'from-purple-950 via-slate-900 to-[#021810] border-purple-600/40'
+                      : isAgric
+                      ? 'from-lime-950 via-emerald-950 to-[#021810] border-lime-600/40'
+                      : 'from-emerald-900 via-teal-950 to-[#021810] border-emerald-600/40';
+
+                    const deptBadgeColor = isProject
+                      ? 'bg-amber-950 text-amber-300 border-amber-700'
+                      : isJournal
+                      ? 'bg-teal-950 text-teal-300 border-teal-700'
+                      : isCS
+                      ? 'bg-sky-950 text-sky-300 border-sky-700'
+                      : isBank
+                      ? 'bg-purple-950 text-purple-300 border-purple-700'
+                      : isAgric
+                      ? 'bg-lime-950 text-lime-300 border-lime-700'
+                      : 'bg-emerald-950 text-emerald-300 border-emerald-700';
+
+                    const isSaved = savedBooks.includes(b.id);
+                    const isAvailable = (b.copiesAvailable || 0) > 0;
+
+                    return (
+                      <div
+                        key={b.id}
+                        onClick={() => onSelectBook(b)}
+                        className="p-4 rounded-2xl bg-[#032317] border border-emerald-800/80 hover:border-emerald-400/90 transition-all duration-300 hover:-translate-y-1.5 shadow-xl hover:shadow-2xl hover:shadow-emerald-950 flex flex-col justify-between cursor-pointer group relative overflow-hidden"
+                      >
+                        <div className="space-y-3">
+                          {/* Top Badges & Bookmark */}
+                          <div className="flex justify-between items-center gap-2">
+                            <div className="flex items-center gap-1.5 truncate">
+                              <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 text-[10px] font-mono font-bold border border-emerald-800 truncate">
+                                {b.callNumber || 'STACK ITEM'}
+                              </span>
+                              {isProject ? (
+                                <span className="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 text-[9.5px] font-bold border border-amber-700/80 flex items-center gap-1 shrink-0">
+                                  🎓 Project
+                                </span>
+                              ) : isJournal ? (
+                                <span className="px-1.5 py-0.5 rounded bg-teal-950 text-teal-300 text-[9.5px] font-bold border border-teal-700/80 flex items-center gap-1 shrink-0">
+                                  📰 Journal
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 text-[9.5px] font-bold border border-emerald-700/80 flex items-center gap-1 shrink-0">
+                                  📚 Book
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              onClick={(e) => handleToggleSaveBook(b.id, e)}
+                              className="p-1 rounded-lg hover:bg-[#021810] text-emerald-400 hover:text-white transition shrink-0"
+                              title={isSaved ? "Remove from saved books" : "Bookmark this title"}
+                            >
+                              <Bookmark size={15} className={isSaved ? 'fill-amber-400 text-amber-400' : ''} />
+                            </button>
+                          </div>
+
+                          {/* Hardcover Styled Preview */}
+                          <div className={`w-full h-40 rounded-xl bg-gradient-to-br ${coverGradient} border p-3.5 flex flex-col justify-between font-serif relative overflow-hidden shadow-inner group-hover:scale-[1.02] transition-transform duration-300`}>
+                            <div className="flex items-center justify-between">
+                              <span className={`text-[9px] font-mono uppercase font-bold px-1.5 py-0.5 rounded border ${deptBadgeColor}`}>
+                                {isProject ? 'CAPSTONE PROJECT' : isJournal ? 'PEER-REVIEWED' : (b.courseCode || b.department || 'FCC IBADAN')}
+                              </span>
+                              {b.year && (
+                                <span className="text-[10px] font-mono text-emerald-400/80">{b.year}</span>
+                              )}
+                            </div>
+
+                            <div className="my-auto py-1">
+                              <h4 className="text-xs sm:text-sm font-black text-white line-clamp-3 leading-snug group-hover:text-emerald-200 transition">
+                                {b.title}
+                              </h4>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-1 border-t border-emerald-800/40 text-[10px] font-mono text-emerald-300/80">
+                              <span className="truncate max-w-[130px]">{b.studentNames || b.student_names || b.author}</span>
+                              <span className="shrink-0">{b.isDigital ? '⚡ Digital (PDF)' : 'Physical'}</span>
+                            </div>
+                          </div>
+
+                          {/* Metadata Details */}
+                          <div>
+                            <h3 className="font-bold text-white text-xs line-clamp-2 group-hover:text-emerald-300 transition leading-snug">
+                              {b.title}
+                            </h3>
+                            {isProject ? (
+                              <div className="mt-1 space-y-0.5 text-[11px] text-emerald-300/80">
+                                <p className="truncate">Researcher: <span className="text-emerald-200 font-semibold">{b.studentNames || b.student_names || b.author}</span></p>
+                                {b.supervisor && <p className="truncate text-[10px] text-emerald-400/80">Supervisor: {b.supervisor}</p>}
+                              </div>
+                            ) : isJournal ? (
+                              <div className="mt-1 space-y-0.5 text-[11px] text-emerald-300/80">
+                                <p className="truncate">Journal: <span className="text-emerald-200 font-semibold">{b.journalName || b.journal_name || b.publisher}</span></p>
+                                {b.issn && <p className="truncate text-[10px] font-mono text-teal-300/80">ISSN: {b.issn}</p>}
+                              </div>
+                            ) : (
+                              <p className="text-[11px] text-emerald-300/80 truncate mt-1">
+                                By <span className="text-emerald-200 font-medium">{b.author}</span>
+                              </p>
+                            )}
+                            {b.shelfLocation && (
+                              <p className="text-[10px] font-mono text-emerald-400/70 truncate mt-0.5">
+                                📍 {b.shelfLocation}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Bottom Status & Direct Action */}
+                        <div className="pt-3 border-t border-emerald-900/60 flex items-center justify-between text-[11px] mt-3 gap-2">
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className={`w-2 h-2 rounded-full ${
+                              b.isDigital ? 'bg-teal-400 animate-pulse' : (isAvailable ? 'bg-emerald-400' : 'bg-rose-400')
+                            }`}></span>
+                            <span className={`font-bold ${
+                              b.isDigital ? 'text-teal-300' : (isAvailable ? 'text-emerald-400' : 'text-rose-400')
+                            }`}>
+                              {b.isDigital ? 'Digital PDF' : (isAvailable ? `${b.copiesAvailable} in Stacks` : 'On Loan')}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 ml-auto">
+                            {(b.isDigital || b.fileDataUrl || b.file_data_url) && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSelectBook(b);
+                                }}
+                                className="px-2 py-0.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-bold flex items-center gap-1 text-[10px] shadow transition"
+                              >
+                                <BookOpen size={11} /> {isProject ? 'Preview' : isJournal ? 'Read Article' : 'Read'}
+                              </button>
+                            )}
+                            <span className="text-emerald-400 group-hover:translate-x-1 transition font-bold flex items-center gap-0.5 text-[11px]">
+                              Details <ChevronRight size={13} />
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : books.length === 0 ? (
+                <div className="text-center py-16 px-6 rounded-3xl bg-gradient-to-b from-[#032317] to-[#01140d] border border-emerald-800/80 shadow-2xl space-y-5">
+                  <div className="w-16 h-16 rounded-2xl bg-emerald-950/80 border border-emerald-600/40 flex items-center justify-center text-emerald-400 mx-auto shadow-inner">
+                    <Library size={32} />
+                  </div>
+                  <div className="space-y-2 max-w-lg mx-auto">
+                    <h3 className="text-lg font-black text-white tracking-tight">Institutional Catalog Awaiting Faculty Uploads</h3>
+                    <p className="text-xs text-emerald-300/80 leading-relaxed font-normal">
+                      The catalog is connected to the backend SQLite database. All mock demo records have been cleared. Books and course texts uploaded by <span className="text-emerald-200 font-semibold">Central Library Administrators</span> or submitted by <span className="text-emerald-200 font-semibold">Heads of Department (HODs)</span> will be indexed here live.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                    <button
+                      onClick={() => {
+                        sounds.playClick();
+                        if (onOpenLogin) onOpenLogin();
+                      }}
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg flex items-center gap-2 transition"
+                    >
+                      <Building2 size={14} />
+                      <span>Staff & HOD Portal Login</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        sounds.playClick();
+                        setActiveTab('openlibrary');
+                      }}
+                      className="px-5 py-2.5 rounded-xl bg-[#021810] hover:bg-[#042d1f] border border-emerald-700/70 text-emerald-300 text-xs font-bold transition flex items-center gap-2"
+                    >
+                      <Globe size={14} />
+                      <span>Search Open Library & Global Archives</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12 p-6 rounded-3xl bg-[#032317] border border-emerald-800 space-y-3">
+                  <AlertCircle size={36} className="text-amber-400 mx-auto" />
+                  <h3 className="text-base font-bold text-white">No catalog resources match your query.</h3>
+                  <p className="text-xs text-emerald-400/80 max-w-sm mx-auto">
+                    Try broader keywords, searching by author or ISBN, or reset specific filters.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setSearchQuery('');
+                      setFacets({ subject: 'All', department: 'All', format: 'All', availability: 'All', yearRange: 'All', language: 'All' });
+                      setShowAdvancedSearch(false);
+                      sounds.playClick();
+                    }}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow"
+                  >
+                    Clear All Filters
+                  </button>
+                </div>
+              )}
+
+              {/* PAGINATION TOOLBAR */}
+              {totalResults > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-[#032317] border border-emerald-800/80 shadow-md">
+                  <div className="flex items-center gap-3 text-xs text-emerald-300">
+                    <span>
+                      Showing <strong className="text-white font-mono">{startIndex + 1}</strong> to <strong className="text-white font-mono">{endIndex}</strong> of <strong className="text-white font-mono">{totalResults}</strong> catalogue records
+                    </span>
+
+                    <div className="flex items-center gap-1.5 ml-2 border-l border-emerald-800/80 pl-3">
+                      <span className="text-emerald-400/80">Page Size:</span>
+                      {[20, 50, 100].map(size => (
+                        <button
+                          key={size}
+                          onClick={() => {
+                            setPageSize(size);
+                            setCurrentPage(1);
+                            sounds.playClick();
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition ${
+                            pageSize === size
+                              ? 'bg-emerald-600 text-white shadow'
+                              : 'bg-[#021810] text-emerald-300 border border-emerald-800 hover:bg-emerald-900/40'
+                          }`}
+                        >
+                          {size}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Page Navigation Controls */}
+                  <div className="flex items-center gap-1.5 text-xs font-mono">
+                    <button
+                      onClick={() => {
+                        if (currentPage > 1) {
+                          setCurrentPage(currentPage - 1);
+                          sounds.playClick();
+                        }
+                      }}
+                      disabled={currentPage <= 1}
+                      className="px-3 py-1.5 rounded-xl bg-[#021810] text-emerald-300 border border-emerald-800 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-900/40 transition font-bold"
+                    >
+                      ← Previous
+                    </button>
+
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum = i + 1;
+                      if (totalPages > 5 && currentPage > 3) {
+                        pageNum = currentPage - 2 + i;
+                        if (pageNum > totalPages) pageNum = totalPages - (4 - i);
+                      }
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => {
+                            setCurrentPage(pageNum);
+                            sounds.playClick();
+                          }}
+                          className={`w-8 h-8 rounded-xl font-bold transition flex items-center justify-center ${
+                            currentPage === pageNum
+                              ? 'bg-emerald-600 text-white shadow-md'
+                              : 'bg-[#021810] text-emerald-300 border border-emerald-800 hover:bg-emerald-900/40'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+
+                    <button
+                      onClick={() => {
+                        if (currentPage < totalPages) {
+                          setCurrentPage(currentPage + 1);
+                          sounds.playClick();
+                        }
+                      }}
+                      disabled={currentPage >= totalPages}
+                      className="px-3 py-1.5 rounded-xl bg-[#021810] text-emerald-300 border border-emerald-800 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-900/40 transition font-bold"
+                    >
+                      Next →
                     </button>
                   </div>
                 </div>
@@ -1515,411 +2025,6 @@ export default function PublicDiscovery({
                     <ArrowRight size={13} />
                   </button>
                 </div>
-              </div>
-            </div>
-
-            {/* CATALOG SEARCH RESULTS / BROWSE STACKS */}
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-[#032317] border border-emerald-800">
-                <div className="flex items-center gap-2">
-                  <span className="font-black text-white text-base">OPAC Collection Stacks</span>
-                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-mono font-bold">
-                    {filteredBooks.length} titles matched
-                  </span>
-                </div>
-
-                {/* Quick Facet Pills */}
-                <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                  {['All', 'Co-operative Economics', 'Computer Science', 'Banking & Finance', 'Agricultural Extension'].map(sub => (
-                    <button
-                      key={sub}
-                      onClick={() => setFacets({ ...facets, subject: sub })}
-                      className={`px-3 py-1 rounded-xl transition ${
-                        facets.subject === sub
-                          ? 'bg-emerald-600 text-white font-bold shadow'
-                          : 'bg-[#021810] text-emerald-300 border border-emerald-900 hover:border-emerald-600'
-                      }`}
-                    >
-                      {sub}
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => setFacets({ ...facets, format: facets.format === 'Digital' ? 'All' : 'Digital' })}
-                    className={`px-3 py-1 rounded-xl transition ${
-                      facets.format === 'Digital'
-                        ? 'bg-teal-600 text-white font-bold'
-                        : 'bg-[#021810] text-teal-300 border border-teal-900'
-                    }`}
-                  >
-                    ⚡ E-Books Only
-                  </button>
-                </div>
-              </div>
-
-              {/* BOOK CARDS GRID */}
-              {displayedBooks.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {displayedBooks.map((b) => (
-                    <div
-                      key={b.id}
-                      onClick={() => onSelectBook(b)}
-                      className="p-4 rounded-2xl bg-[#032317] border border-emerald-800/80 hover:border-emerald-500/80 transition-all hover:-translate-y-1 shadow-xl flex flex-col justify-between cursor-pointer group"
-                    >
-                      <div className="space-y-3">
-                        {/* Top Badges */}
-                        <div className="flex justify-between items-start">
-                          <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 text-[10px] font-mono font-bold border border-emerald-800">
-                            {b.callNumber}
-                          </span>
-                          <button
-                            onClick={(e) => handleToggleSaveBook(b.id, e)}
-                            className="p-1 rounded-lg hover:bg-[#021810] text-emerald-400 hover:text-white transition"
-                            title="Bookmark to my list"
-                          >
-                            <Bookmark size={15} className={savedBooks.includes(b.id) ? 'fill-emerald-400 text-emerald-400' : ''} />
-                          </button>
-                        </div>
-
-                        {/* Mini Canvas Cover */}
-                        <div className="w-full h-36 rounded-xl bg-gradient-to-br from-[#063f2b] to-[#02150e] border border-emerald-700/50 p-3 flex flex-col justify-between font-serif relative overflow-hidden">
-                          <div className="text-[10px] font-mono text-emerald-400/80 truncate uppercase">
-                            {b.department || 'FEDERAL COOPERATIVE'}
-                          </div>
-                          <h4 className="text-xs font-bold text-white line-clamp-3 leading-snug group-hover:text-emerald-300 transition">
-                            {b.title}
-                          </h4>
-                          <div className="text-[10px] text-emerald-400 font-mono truncate">{b.author}</div>
-                        </div>
-
-                        <div>
-                          <h3 className="font-bold text-white text-xs line-clamp-2 group-hover:text-emerald-300 transition">
-                            {b.title}
-                          </h3>
-                          <p className="text-[11px] text-emerald-300/80 truncate mt-0.5">By {b.author}</p>
-                        </div>
-                      </div>
-
-                      {/* Bottom Status */}
-                      <div className="pt-3 border-t border-emerald-900/60 flex items-center justify-between text-[11px] mt-2 gap-2">
-                        <span className={`font-bold shrink-0 ${
-                          (b.copiesAvailable || 0) > 0 ? 'text-emerald-400' : 'text-rose-400'
-                        }`}>
-                          {b.isDigital ? '⚡ E-Book / PDF' : ((b.copiesAvailable || 0) > 0 ? `${b.copiesAvailable} In Stacks` : 'Checked Out')}
-                        </span>
-                        <div className="flex items-center gap-1.5 ml-auto">
-                          {b.isDigital && (
-                            <span className="px-2 py-0.5 rounded-lg bg-emerald-600/80 hover:bg-emerald-500 text-white font-bold flex items-center gap-1 text-[10px] shadow transition">
-                              <BookOpen size={11} /> Read
-                            </span>
-                          )}
-                          <span className="text-emerald-400 group-hover:translate-x-1 transition font-bold flex items-center gap-1">
-                            Details <ChevronRight size={12} />
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12 p-6 rounded-3xl bg-[#032317] border border-emerald-800 space-y-3">
-                  <AlertCircle size={36} className="text-amber-400 mx-auto" />
-                  <h3 className="text-base font-bold text-white">No resources found matching your search.</h3>
-                  <p className="text-xs text-emerald-400/80 max-w-sm mx-auto">
-                    Try searching by author, topic keywords, or ISBN, or reset specific filters.
-                  </p>
-                  <button
-                    onClick={() => {
-                      setSearchQuery('');
-                      setFacets({ subject: 'All', department: 'All', format: 'All', availability: 'All' });
-                      setShowAdvancedSearch(false);
-                    }}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow"
-                  >
-                    Clear All Filters
-                  </button>
-                </div>
-              )}
-
-              {/* SERVER-SIDE PAGINATION TOOLBAR (Prompt 34: 20/50/100, Prev, Next, Page Numbers, Total Count) */}
-              {totalResults > 0 && (
-                <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-[#032317] border border-emerald-800/80 shadow-md">
-                  <div className="flex items-center gap-3 text-xs text-emerald-300">
-                    <span>
-                      Showing <strong className="text-white font-mono">{startIndex + 1}</strong> to <strong className="text-white font-mono">{endIndex}</strong> of <strong className="text-white font-mono">{totalResults}</strong> catalogue records
-                    </span>
-
-                    <div className="flex items-center gap-1.5 ml-2 border-l border-emerald-800/80 pl-3">
-                      <span className="text-emerald-400/80">Page Size:</span>
-                      {[20, 50, 100].map(size => (
-                        <button
-                          key={size}
-                          onClick={() => {
-                            setPageSize(size);
-                            setCurrentPage(1);
-                            sounds.playClick();
-                          }}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition ${
-                            pageSize === size
-                              ? 'bg-emerald-600 text-white shadow'
-                              : 'bg-[#021810] text-emerald-300 border border-emerald-800 hover:bg-emerald-900/40'
-                          }`}
-                        >
-                          {size}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Page Navigation Controls */}
-                  <div className="flex items-center gap-1.5 text-xs font-mono">
-                    <button
-                      onClick={() => {
-                        if (currentPage > 1) {
-                          setCurrentPage(currentPage - 1);
-                          sounds.playClick();
-                        }
-                      }}
-                      disabled={currentPage <= 1}
-                      className="px-3 py-1.5 rounded-xl bg-[#021810] text-emerald-300 border border-emerald-800 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-900/40 transition font-bold"
-                    >
-                      ← Previous
-                    </button>
-
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      let pageNum = i + 1;
-                      if (totalPages > 5 && currentPage > 3) {
-                        pageNum = currentPage - 2 + i;
-                        if (pageNum > totalPages) pageNum = totalPages - (4 - i);
-                      }
-                      return (
-                        <button
-                          key={pageNum}
-                          onClick={() => {
-                            setCurrentPage(pageNum);
-                            sounds.playClick();
-                          }}
-                          className={`w-8 h-8 rounded-xl font-bold transition flex items-center justify-center ${
-                            currentPage === pageNum
-                              ? 'bg-emerald-600 text-white shadow-md'
-                              : 'bg-[#021810] text-emerald-300 border border-emerald-800 hover:bg-emerald-900/40'
-                          }`}
-                        >
-                          {pageNum}
-                        </button>
-                      );
-                    })}
-
-                    <button
-                      onClick={() => {
-                        if (currentPage < totalPages) {
-                          setCurrentPage(currentPage + 1);
-                          sounds.playClick();
-                        }
-                      }}
-                      disabled={currentPage >= totalPages}
-                      className="px-3 py-1.5 rounded-xl bg-[#021810] text-emerald-300 border border-emerald-800 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-900/40 transition font-bold"
-                    >
-                      Next →
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* 3. SECTION: POPULAR RESEARCH TOPICS */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-black text-white flex items-center gap-2">
-                    <span>Popular Research Topics & Curriculum Focus</span>
-                  </h2>
-                  <p className="text-xs text-emerald-300/80">Trending academic research subjects across ND & HND departments</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                {researchTopics.map((topic, i) => (
-                  <div
-                    key={i}
-                    onClick={() => {
-                      setSearchQuery(topic.title);
-                      setActiveTab('catalog');
-                    }}
-                    className="p-3.5 rounded-2xl bg-[#032317] border border-emerald-800/80 hover:border-emerald-500 cursor-pointer transition text-center space-y-1.5 group"
-                  >
-                    <div className="text-2xl group-hover:scale-110 transition">{topic.icon}</div>
-                    <div className="text-xs font-bold text-white group-hover:text-emerald-300 line-clamp-2">
-                      {topic.title}
-                    </div>
-                    <div className="text-[10px] text-emerald-400 font-mono">{topic.count} resources</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 4. SECTION: FEATURED BOOKS & NEW ARRIVALS */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              
-              {/* Featured Editorial Picks */}
-              <div className="p-6 rounded-3xl bg-[#032317] border border-emerald-700/60 shadow-xl space-y-4">
-                <div className="flex justify-between items-center border-b border-emerald-800 pb-2">
-                  <span className="font-bold text-white text-base flex items-center gap-2">
-                    <Star size={16} className="text-amber-400" />
-                    <span>Featured Academic Texts</span>
-                  </span>
-                  <span className="text-xs text-emerald-400 font-mono">Curated Faculty Picks</span>
-                </div>
-
-                <div className="space-y-3">
-                  {featuredBooks.map(b => (
-                    <div
-                      key={b.id}
-                      onClick={() => onSelectBook(b)}
-                      className="p-3 rounded-xl bg-[#021810] border border-emerald-900 hover:border-emerald-500 cursor-pointer transition flex justify-between items-center gap-3"
-                    >
-                      <div className="min-w-0">
-                        <div className="font-bold text-white text-xs truncate">{b.title}</div>
-                        <div className="text-[11px] text-emerald-300/80 truncate">By {b.author}</div>
-                      </div>
-                      <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 text-[10px] font-mono shrink-0">
-                        {b.callNumber}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* New Arrivals & Recently Added */}
-              <div className="p-6 rounded-3xl bg-[#032317] border border-emerald-700/60 shadow-xl space-y-4">
-                <div className="flex justify-between items-center border-b border-emerald-800 pb-2">
-                  <span className="font-bold text-white text-base flex items-center gap-2">
-                    <Clock size={16} className="text-teal-400" />
-                    <span>New Arrivals & Recent Ingestions</span>
-                  </span>
-                  <span className="text-xs text-emerald-400 font-mono">Added This Month</span>
-                </div>
-
-                <div className="space-y-3">
-                  {newArrivals.map(b => (
-                    <div
-                      key={b.id}
-                      onClick={() => onSelectBook(b)}
-                      className="p-3 rounded-xl bg-[#021810] border border-emerald-900 hover:border-teal-500 cursor-pointer transition flex justify-between items-center gap-3"
-                    >
-                      <div className="min-w-0">
-                        <div className="font-bold text-white text-xs truncate">{b.title}</div>
-                        <div className="text-[11px] text-emerald-300/80 truncate">By {b.author}</div>
-                      </div>
-                      <span className="px-2 py-0.5 rounded bg-teal-950 text-teal-300 text-[10px] font-mono shrink-0">
-                        {b.isDigital ? '⚡ E-Book' : 'Hardcover'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* 5. ANNOUNCEMENTS, EVENTS & LIBRARY NEWS */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
-              {/* Bulletins / Announcements */}
-              <div className="p-6 rounded-3xl bg-[#032317] border border-emerald-700/60 shadow-xl space-y-3">
-                <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5 border-b border-emerald-800 pb-2">
-                  <Radio size={14} className="text-emerald-400" />
-                  <span>Library Bulletins & Announcements</span>
-                </span>
-                <div className="space-y-3">
-                  {announcements.map((a, idx) => (
-                    <div key={idx} className="p-3 rounded-xl bg-[#021810] border border-emerald-900/60 space-y-1">
-                      <div className="flex justify-between items-center text-[10px] font-mono text-emerald-400">
-                        <span>{a.tag}</span>
-                        <span>{a.date}</span>
-                      </div>
-                      <h5 className="font-bold text-white text-xs leading-snug">{a.title}</h5>
-                      <p className="text-[11px] text-emerald-200/80">{a.desc}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Upcoming Events & Workshops */}
-              <div className="p-6 rounded-3xl bg-[#032317] border border-emerald-700/60 shadow-xl space-y-3">
-                <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5 border-b border-emerald-800 pb-2">
-                  <Calendar size={14} className="text-teal-400" />
-                  <span>Upcoming Library Events & Workshops</span>
-                </span>
-                <div className="space-y-3">
-                  {libraryEvents.map((ev, idx) => (
-                    <div key={idx} className="p-3 rounded-xl bg-[#021810] border border-emerald-900/60 flex items-center gap-3">
-                      <div className="p-2.5 rounded-xl bg-emerald-900/60 text-emerald-300 font-mono text-center shrink-0">
-                        <div className="font-black text-xs">{ev.date.split(' ')[1]}</div>
-                        <div className="text-[10px] font-semibold">{ev.date.split(' ')[0]}</div>
-                      </div>
-                      <div className="min-w-0">
-                        <h5 className="font-bold text-white text-xs leading-snug truncate">{ev.title}</h5>
-                        <div className="text-[11px] text-emerald-400/80">{ev.time} • {ev.room}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Opening Hours & Contact */}
-              <div className="p-6 rounded-3xl bg-[#032317] border border-emerald-700/60 shadow-xl space-y-3">
-                <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5 border-b border-emerald-800 pb-2">
-                  <Clock size={14} className="text-amber-400" />
-                  <span>Opening Hours & Support Desk</span>
-                </span>
-
-                <div className="space-y-2 text-xs">
-                  <div className="p-2.5 rounded-xl bg-[#021810] border border-emerald-900 flex justify-between">
-                    <span className="text-slate-300">Monday — Friday</span>
-                    <span className="font-mono text-emerald-400 font-bold">8:00 AM — 8:00 PM</span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-[#021810] border border-emerald-900 flex justify-between">
-                    <span className="text-slate-300">Saturday Reading Stack</span>
-                    <span className="font-mono text-emerald-400 font-bold">9:00 AM — 4:00 PM</span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-[#021810] border border-emerald-900 flex justify-between">
-                    <span className="text-slate-300">Sunday & Public Holidays</span>
-                    <span className="font-mono text-amber-400 font-bold">Closed / Online Only</span>
-                  </div>
-
-                  <div className="pt-2 text-xs space-y-1 text-emerald-200 border-t border-emerald-900/60">
-                    <div className="flex items-center gap-2">
-                      <MapPin size={13} className="text-emerald-400 shrink-0" />
-                      <span>Prof. Hezekiah Complex, Main Campus, Ibadan</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Phone size={13} className="text-emerald-400 shrink-0" />
-                      <span>+234 803 000 4200 (Circulation Desk)</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Mail size={13} className="text-emerald-400 shrink-0" />
-                      <span>library@fccibadan.edu.ng</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 6. SECTION: FREQUENTLY ASKED QUESTIONS (FAQS) */}
-            <div className="p-6 sm:p-8 rounded-3xl bg-[#032317] border border-emerald-700/60 shadow-xl space-y-4">
-              <div className="border-b border-emerald-800 pb-2">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <HelpCircle size={18} className="text-emerald-400" />
-                  <span>Frequently Asked Questions (FAQs)</span>
-                </h3>
-                <p className="text-xs text-emerald-300/80">Answers to common institutional library inquiries</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                {faqs.map((faq, i) => (
-                  <div key={i} className="p-4 rounded-2xl bg-[#021810] border border-emerald-900/80 space-y-1.5">
-                    <h5 className="font-bold text-white text-xs leading-snug">{faq.q}</h5>
-                    <p className="text-emerald-200/90 leading-relaxed text-[11px]">{faq.a}</p>
-                  </div>
-                ))}
               </div>
             </div>
           </>

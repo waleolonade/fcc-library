@@ -691,7 +691,7 @@ export default function LmsApiExplorer({
           <div className="space-y-3">
             {[
               { method: 'GET', path: '/api/lms/books', desc: 'Search and paginate library collection with multi-field search and copy availability status.', params: 'q, department, is_digital, available_only, min_rating, sort, per_page' },
-              { method: 'GET', path: '/api/lms/books/{id}', desc: 'Retrieve single book with full author profile, review aggregates, and active hold queue details.', params: 'id (e.g. FCC-B001)' },
+              { method: 'GET', path: '/api/lms/books/{id}', desc: 'Retrieve single book with full author profile, review aggregates, and active hold queue details.', params: 'id (e.g. book ID)' },
               { method: 'GET', path: '/api/lms/search', desc: 'Unified search endpoint returning schema-normalized records for multi-source engines.', params: 'q, limit' },
               { method: 'POST', path: '/api/book-reservations', desc: 'Create hold reservation for physical book under student matric/identifier.', params: 'book_id, user_identifier, reserved_from, reserved_to' },
               { method: 'GET', path: '/api/books/{id}/reviews', desc: 'Fetch verified community reviews and dynamic average star rating for a book.', params: 'id' },

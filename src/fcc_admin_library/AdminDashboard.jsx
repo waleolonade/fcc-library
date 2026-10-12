@@ -4,7 +4,7 @@ import {
   Clock, DollarSign, Globe, User, Tag, Building2, BarChart3,
   Activity, ArrowUpRight, Sparkles
 } from 'lucide-react';
-import { SYSTEM_HEALTH_METRICS, INITIAL_PATRONS } from '../data/institutionalSeedData';
+import { SYSTEM_HEALTH_METRICS } from '../data/institutionalSeedData';
 
 // =========================================================================
 // ADMIN DASHBOARD — Real-time statistics from actual database records
@@ -130,7 +130,7 @@ function HorizontalBar({ label, value, max, color = '#6366f1' }) {
   );
 }
 
-export default function AdminDashboard({ books = [], loans = [], patrons = INITIAL_PATRONS, reservations = [], fines = [] }) {
+export default function AdminDashboard({ books = [], loans = [], patrons = [], reservations = [], fines = [] }) {
   // All stats derived from real prop data
   const stats = useMemo(() => {
     const today = new Date();

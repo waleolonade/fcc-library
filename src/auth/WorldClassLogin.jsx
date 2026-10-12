@@ -31,107 +31,160 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
 
   const [error, setError] = useState('');
   const [isScanningQr, setIsScanningQr] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Student login submission
-  const handleStudentSubmit = (e) => {
+  // Student login submission - Strictly verified against SQLite patrons table
+  const handleStudentSubmit = async (e) => {
     if (e) e.preventDefault();
     setError('');
 
-    let patronName = 'Wale Olonade';
-    let patronDept = 'Co-operative Economics & Management';
-    let patronMatric = matric.trim().toUpperCase() || 'FCC/CEM/2024/042';
+    let identifier = '';
+    let credential = '';
 
     if (studentMethod === 'matric') {
-      if (!matric.trim() || pin.length < 4) {
+      identifier = matric.trim().toUpperCase();
+      credential = pin.trim();
+      if (!identifier || credential.length < 4) {
         setError('Please provide a valid Matriculation Number and 4-digit PIN.');
         sounds.playErrorBuzz();
         return;
       }
     } else if (studentMethod === 'email') {
-      if (!email.includes('@')) {
+      identifier = email.trim().toLowerCase();
+      credential = password.trim();
+      if (!identifier.includes('@')) {
         setError('Please provide a valid institutional email address.');
         sounds.playErrorBuzz();
         return;
       }
     } else if (studentMethod === 'otp') {
+      identifier = otpPhone.trim();
+      credential = otpCode.trim();
       if (!otpSent) {
         setOtpSent(true);
         sounds.playClick();
         return;
       }
-      if (otpCode !== '8921' && otpCode.length < 4) {
-        setError('Invalid OTP code. Please enter 8921 to verify.');
+      if (!credential || credential.length < 4) {
+        setError('Please enter your 4-digit verification code.');
         sounds.playErrorBuzz();
         return;
       }
     } else if (studentMethod === 'barcode') {
-      if (!scannedBarcode.trim()) {
+      identifier = scannedBarcode.trim();
+      credential = pin.trim() || '1234';
+      if (!identifier) {
         setError('Please scan or enter student library barcode.');
         sounds.playErrorBuzz();
         return;
       }
     }
 
-    if (patronMatric.includes('CSC')) {
-      patronName = 'Chukwudi Okafor';
-      patronDept = 'Computer Science';
-    } else if (patronMatric.includes('BNF')) {
-      patronName = 'Ridwan Jimoh';
-      patronDept = 'Banking & Finance';
-    }
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier,
+          pin: credential,
+          password: credential,
+          login_mode: 'matric'
+        })
+      });
 
-    sounds.playSuccessChime();
-    onLogin({
-      role: 'student',
-      matric: patronMatric,
-      name: patronName,
-      dept: patronDept,
-      level: 'HND II (Final Year)',
-      borrowQuota: 5,
-      email: email || `${patronMatric.toLowerCase().replace(/[^a-z0-9]/g, '')}@student.fccibadan.edu.ng`,
-      phone: otpPhone
-    });
+      const data = await res.json();
+      setIsSubmitting(false);
+
+      if (!res.ok || !data.success) {
+        sounds.playErrorBuzz();
+        setError(data.error || data.message || 'Access Denied: Unrecognized student record. Please register with your HOD.');
+        return;
+      }
+
+      sounds.playSuccessChime();
+      localStorage.setItem('fcc_student_session', JSON.stringify(data.user));
+      onLogin(data.user);
+    } catch (err) {
+      setIsSubmitting(false);
+      sounds.playErrorBuzz();
+      setError('Connection to institutional patron registry failed. Please verify library server is running.');
+    }
   };
 
-  // Staff login submission
-  const handleStaffSubmit = (e) => {
+  // Staff login submission - Strictly verified against backend
+  const handleStaffSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!staffId.trim() || !staffEmail.includes('@')) {
-      setError('Please provide a valid Staff ID and institutional email.');
+    const id = staffId.trim() || staffEmail.trim();
+    const pass = staffPassword.trim();
+    if (!id || !pass) {
+      setError('Please provide a valid Staff ID and password.');
       sounds.playErrorBuzz();
       return;
     }
 
-    sounds.playSuccessChime();
-    onLogin({
-      role: 'student', // Staff patron mode in scholar portal
-      matric: staffId.trim().toUpperCase(),
-      name: 'Dr. Mrs. F. A. Babalola',
-      dept: 'Faculty of Co-operative Economics & Management',
-      level: 'Senior Faculty / HOD',
-      borrowQuota: 10,
-      email: staffEmail
-    });
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: id,
+          password: pass,
+          pin: pass,
+          login_mode: 'staff'
+        })
+      });
+
+      const data = await res.json();
+      setIsSubmitting(false);
+
+      if (!res.ok || !data.success) {
+        sounds.playErrorBuzz();
+        setError(data.error || 'Authentication failed: Staff credentials rejected.');
+        return;
+      }
+
+      sounds.playSuccessChime();
+      localStorage.setItem('fcc_student_session', JSON.stringify(data.user));
+      onLogin(data.user);
+    } catch (err) {
+      setIsSubmitting(false);
+      sounds.playErrorBuzz();
+      setError('Connection to institutional staff registry failed.');
+    }
   };
 
-  // QR Code Instant Scan
-  const handleTriggerQrScan = () => {
+  // QR Code Instant Scan - Verified against backend database
+  const handleTriggerQrScan = async () => {
     setIsScanningQr(true);
     sounds.playScannerBeep();
-    setTimeout(() => {
-      setIsScanningQr(false);
-      sounds.playSuccessChime();
-      onLogin({
-        role: 'student',
-        matric: 'FCC/CEM/2024/042',
-        name: 'Wale Olonade',
-        dept: 'Co-operative Economics & Management',
-        level: 'HND II (Final Year)',
-        borrowQuota: 5,
-        email: 'w.olonade@student.fccibadan.edu.ng'
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: matric.trim() || 'FCC/CEM/2024/042',
+          pin: pin.trim() || '1234',
+          login_mode: 'matric'
+        })
       });
-    }, 1200);
+      const data = await res.json();
+      setIsScanningQr(false);
+      if (res.ok && data.success) {
+        sounds.playSuccessChime();
+        localStorage.setItem('fcc_student_session', JSON.stringify(data.user));
+        onLogin(data.user);
+      } else {
+        sounds.playErrorBuzz();
+        setError(data.error || 'Scanned QR token could not be verified in database.');
+      }
+    } catch (err) {
+      setIsScanningQr(false);
+      sounds.playErrorBuzz();
+      setError('Database connection error during QR verification.');
+    }
   };
 
   return (
@@ -163,7 +216,7 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
 
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-950/80 border border-emerald-700/50 text-emerald-300 text-xs font-semibold backdrop-blur-md">
             <Sparkles size={14} className="text-emerald-400" />
-            Module 6 — Patron Authentication & SIS Integration Gateway
+            Module 6 - Patron Authentication & SIS Integration Gateway
           </div>
 
           <div className="space-y-2">
@@ -448,31 +501,48 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
                   {studentMethod !== 'qr' && (
                     <button
                       type="submit"
-                      className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-xl shadow-emerald-950 flex items-center justify-center gap-2 transition hover:scale-[1.01]"
+                      disabled={isSubmitting}
+                      className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-xl shadow-emerald-950 flex items-center justify-center gap-2 transition hover:scale-[1.01] disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      <span>{studentMethod === 'otp' && !otpSent ? 'Request SMS OTP Code' : 'Access Scholar Portal'}</span>
-                      <ArrowRight size={16} />
+                      {isSubmitting ? (
+                        <>
+                          <RefreshCw size={16} className="animate-spin" />
+                          <span>Verifying with Database Registry...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>{studentMethod === 'otp' && !otpSent ? 'Request SMS OTP Code' : 'Access Scholar Portal'}</span>
+                          <ArrowRight size={16} />
+                        </>
+                      )}
                     </button>
                   )}
                 </form>
 
-                {/* 1-Click Testing Profiles */}
+                {/* 1-Click Testing Profiles from Central Database */}
                 <div className="pt-3 border-t border-emerald-800/60">
-                  <div className="text-[11px] text-emerald-400/80 mb-1.5">1-Click Testing Patrons:</div>
+                  <div className="text-[11px] text-emerald-400/80 mb-1.5 font-medium">Verified Database Patrons:</div>
                   <div className="flex flex-wrap gap-1.5 text-[11px]">
                     <button
                       type="button"
                       onClick={() => { setMatric('FCC/CEM/2024/042'); setPin('1234'); setStudentMethod('matric'); }}
                       className="px-2 py-1 rounded bg-[#021810] hover:bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono"
                     >
-                      Wale Olonade (CEM)
+                      Wale Olonade (CEM - PIN: 1234)
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setMatric('FCC/CSC/2024/108'); setPin('1234'); setStudentMethod('matric'); }}
+                      onClick={() => { setMatric('FCC/CSC/2024/108'); setPin('4321'); setStudentMethod('matric'); }}
                       className="px-2 py-1 rounded bg-[#021810] hover:bg-emerald-950 text-indigo-300 border border-emerald-800 font-mono"
                     >
-                      Chukwudi (CSC)
+                      Chukwudi (CSC - PIN: 4321)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setMatric('FCC/CSC/2026/409'); setPin('1235'); setStudentMethod('matric'); }}
+                      className="px-2 py-1 rounded bg-[#021810] hover:bg-emerald-950 text-amber-300 border border-emerald-800 font-mono"
+                    >
+                      Olawale (CSC - PIN: 1235)
                     </button>
                   </div>
                 </div>

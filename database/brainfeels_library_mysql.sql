@@ -1250,12 +1250,12 @@ INSERT INTO `acquisitions` (`id`, `title`, `author`, `publisher`, `isbn`, `depar
 -- partner_libraries
 -- -------------------------------------------------------------------------
 INSERT INTO `partner_libraries` (`id`, `institution`, `country`, `opac_url`, `z3950_host`, `port`, `database_name`, `active_holdings`, `status`, `sync_mode`) VALUES
-('LIB-UI-01',  'Kenneth Dike Library — University of Ibadan', 'Nigeria','https://opac.ui.edu.ng/discovery',               'opac.edu.ng',210,'OPAC','1,450,000+ Volumes',       'Active Interlink','Live Federated Search'),
-('LIB-OAU-02', 'Hezekiah Oluwasanmi Library — OAU Ile-Ife',  'Nigeria','https://library.oauife.edu.ng/opac',             'opac.edu.ng',210,'OPAC','850,000+ Volumes',          'Active Interlink','Live Federated Search'),
+('LIB-UI-01',  'Kenneth Dike Library - University of Ibadan', 'Nigeria','https://opac.ui.edu.ng/discovery',               'opac.edu.ng',210,'OPAC','1,450,000+ Volumes',       'Active Interlink','Live Federated Search'),
+('LIB-OAU-02', 'Hezekiah Oluwasanmi Library - OAU Ile-Ife',  'Nigeria','https://library.oauife.edu.ng/opac',             'opac.edu.ng',210,'OPAC','850,000+ Volumes',          'Active Interlink','Live Federated Search'),
 ('LIB-NAT-03', 'National Library of Nigeria (NLN)',           'Nigeria','https://opac.nln.gov.ng',                        'opac.edu.ng',210,'OPAC','5,000,000+ Records',        'Active Interlink','Live Federated Search'),
 ('LIB-OPEN-04','OpenLibrary & Internet Archive',              'Nigeria','https://openlibrary.org/search',                 'opac.edu.ng',210,'OPAC','20,000,000+ eBooks',        'Active Interlink','Live Federated Search'),
 ('LIB-LOC-05', 'Library of Congress (LOC) Online Catalog',   'Nigeria','https://catalog.loc.gov',                        'opac.edu.ng',210,'OPAC','170,000,000+ Items',        'Active Interlink','Live Federated Search'),
-('LIB-DOAB-06','DOAB — Directory of Open Access Books',       'Nigeria','https://www.doabooks.org/doab?func=search',     'opac.edu.ng',210,'OPAC','85,000+ Academic Monographs','Active Interlink','Live Federated Search');
+('LIB-DOAB-06','DOAB - Directory of Open Access Books',       'Nigeria','https://www.doabooks.org/doab?func=search',     'opac.edu.ng',210,'OPAC','85,000+ Academic Monographs','Active Interlink','Live Federated Search');
 
 -- -------------------------------------------------------------------------
 -- serials

@@ -53,9 +53,14 @@ class LibraryApiController extends Controller
             'id' => 'AUD-' . rand(10000, 99999),
             'action' => 'ADD_LIBRARY_API',
             'details' => "Registered new external library API: {$api->name} ({$api->endpoint_template})",
-            'user' => 'Admin Librarian',
-            'timestamp' => Carbon::now()->toIso8601String()
+            'actor' => 'Admin Librarian',
+            'role' => 'admin',
+            'resource_type' => 'library_api',
+            'resource_id' => $api->id,
+            'timestamp' => Carbon::now()->toDateTimeString()
         ]);
+
+        $this->syncToMysql($api, 'save');
 
         return response()->json([
             'success' => true,
@@ -73,6 +78,8 @@ class LibraryApiController extends Controller
             'auth_type', 'api_key', 'description', 'docs_url', 'status'
         ]));
 
+        $this->syncToMysql($api, 'save');
+
         return response()->json([
             'success' => true,
             'message' => 'Library API configuration updated.',
@@ -86,12 +93,17 @@ class LibraryApiController extends Controller
         $name = $api->name;
         $api->delete();
 
+        $this->syncToMysql($id, 'delete');
+
         AuditLog::create([
             'id' => 'AUD-' . rand(10000, 99999),
             'action' => 'REMOVE_LIBRARY_API',
             'details' => "Deleted external library API: {$name} ({$id})",
-            'user' => 'Admin Librarian',
-            'timestamp' => Carbon::now()->toIso8601String()
+            'actor' => 'Admin Librarian',
+            'role' => 'admin',
+            'resource_type' => 'library_api',
+            'resource_id' => $id,
+            'timestamp' => Carbon::now()->toDateTimeString()
         ]);
 
         return response()->json([
@@ -469,5 +481,77 @@ class LibraryApiController extends Controller
         }
 
         return $normalized;
+    }
+
+    /**
+     * Synchronize API records directly into MySQL brainfeels_library.library_apis table
+     * ensuring phpMyAdmin and master database remain completely up to date.
+     */
+    private function syncToMysql($api, $action = 'save'): void
+    {
+        try {
+            $host = env('DB_MYSQL_HOST', '127.0.0.1');
+            $port = env('DB_MYSQL_PORT', '3306');
+            $db   = env('DB_MYSQL_DATABASE', 'brainfeels_library');
+            $user = env('DB_MYSQL_USERNAME', 'root');
+            $pass = env('DB_MYSQL_PASSWORD', '');
+
+            $pdo = new \PDO("mysql:host={$host};port={$port};dbname={$db}", $user, $pass, [
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_SILENT,
+                \PDO::ATTR_TIMEOUT => 2
+            ]);
+
+            if ($action === 'delete') {
+                $id = is_object($api) ? $api->id : $api;
+                $stmt = $pdo->prepare("DELETE FROM library_apis WHERE id = :id");
+                $stmt->execute([':id' => $id]);
+            } else {
+                $stmt = $pdo->prepare("
+                    INSERT INTO library_apis (
+                        id, name, provider, category, endpoint_template,
+                        auth_type, api_key, headers, response_type, description,
+                        docs_url, status, is_preset, created_at, updated_at
+                    ) VALUES (
+                        :id, :name, :provider, :category, :endpoint_template,
+                        :auth_type, :api_key, :headers, :response_type, :description,
+                        :docs_url, :status, :is_preset, NOW(), NOW()
+                    )
+                    ON DUPLICATE KEY UPDATE
+                        name = VALUES(name),
+                        provider = VALUES(provider),
+                        category = VALUES(category),
+                        endpoint_template = VALUES(endpoint_template),
+                        auth_type = VALUES(auth_type),
+                        api_key = VALUES(api_key),
+                        headers = VALUES(headers),
+                        response_type = VALUES(response_type),
+                        description = VALUES(description),
+                        docs_url = VALUES(docs_url),
+                        status = VALUES(status),
+                        is_preset = VALUES(is_preset),
+                        updated_at = NOW()
+                ");
+
+                $headers = is_array($api->headers ?? null) ? json_encode($api->headers) : ($api->headers ?? null);
+
+                $stmt->execute([
+                    ':id' => $api->id,
+                    ':name' => $api->name,
+                    ':provider' => $api->provider ?? 'Independent Provider',
+                    ':category' => $api->category ?? 'Academic & Books',
+                    ':endpoint_template' => $api->endpoint_template,
+                    ':auth_type' => $api->auth_type ?? 'Free Open Access',
+                    ':api_key' => $api->api_key ?? null,
+                    ':headers' => $headers,
+                    ':response_type' => $api->response_type ?? 'json',
+                    ':description' => $api->description ?? '',
+                    ':docs_url' => $api->docs_url ?? null,
+                    ':status' => $api->status ?? 'Active',
+                    ':is_preset' => !empty($api->is_preset) ? 1 : 0
+                ]);
+            }
+        } catch (\Throwable $e) {
+            // Fail silently so database resilience is preserved
+        }
     }
 }

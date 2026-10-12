@@ -93,7 +93,7 @@ function normalizeBook(raw, fallbackId = 'FCC-PDF-3779') {
   }
   return {
     ...raw,
-    id: raw.id || fallbackId || 'FCC-B001',
+    id: raw.id || fallbackId || 'FCC-BK-001',
     title: raw.title || 'Untitled Academic Monograph',
     subtitle: raw.subtitle || '',
     author: raw.author || 'FCC Library Directorate Scholar',
@@ -686,7 +686,7 @@ export default function BookDossierView({
                 {Array.from({ length: totalCopies }, (_, idx) => {
                   const copyNum = idx + 1;
                   const isCheckedOut = copyNum <= (totalCopies - availCopies);
-                  const cleanId = (book.id || 'FCC-B001').replace(/[^0-9A-Za-z]/g, '');
+                  const cleanId = (book.id || 'FCC-BK-001').replace(/[^0-9A-Za-z]/g, '');
                   const copyBarcode = `BC-${cleanId}-C${copyNum}`;
                   const accessionNum = `ACC-2026-${cleanId}-C${copyNum}`;
 

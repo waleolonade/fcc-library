@@ -121,16 +121,16 @@ export default function BarcodeQrStudio({ user, books = [], patrons = [] }) {
   const [studentName, setStudentName] = useState(user?.name || 'Wale Olonade');
   const [studentMatric, setStudentMatric] = useState(user?.matric || 'FCC/CEM/2024/042');
   const [studentLibraryId, setStudentLibraryId] = useState('STU/2026/00125');
-  const [selectedBookId, setSelectedBookId] = useState(books[0]?.id || 'FCC-B001');
+  const [selectedBookId, setSelectedBookId] = useState(books[0]?.id || '');
   const [shelfCoordinate, setShelfCoordinate] = useState('Floor 2 • West Stacks • Shelf 14A');
-  const [digitalUrl, setDigitalUrl] = useState('http://localhost:5172/#/book/FCC-PDF-3779');
+  const [digitalUrl, setDigitalUrl] = useState('');
   const [copied, setCopied] = useState(false);
 
   const selectedBook = books.find(b => b.id === selectedBookId) || books[0] || {
-    id: 'FCC-B001',
-    title: 'Computer Networks Tanenbaum 5th Edition',
-    callNumber: 'QA76.9 .D3 O46 2026',
-    author: 'Dr. K. O. Okonjo'
+    id: '',
+    title: 'No book in catalogue',
+    callNumber: 'N/A',
+    author: 'N/A'
   };
 
   const handlePrint = () => {
@@ -155,7 +155,7 @@ export default function BarcodeQrStudio({ user, books = [], patrons = [] }) {
         <div>
           <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 font-bold uppercase tracking-wider mb-1">
             <Barcode size={15} />
-            <span>Module 7 — Institutional Barcode & QR Generation Suite</span>
+            <span>Module 7 - Institutional Barcode & QR Generation Suite</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-white">
             High-Resolution Barcode & QR Label Engine

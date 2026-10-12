@@ -188,8 +188,16 @@ export const libraryApi = {
     async getAll() {
       const apiData = await fetchApi('/courses');
       if (Array.isArray(apiData)) {
-        setStored(STORAGE_KEYS.COURSES, apiData);
-        return apiData;
+        const normalized = apiData.map(c => ({
+          ...c,
+          requiredBookIds: c.required_texts || c.requiredBookIds || [],
+          recommendedBookIds: c.recommended_texts || c.recommendedBookIds || [],
+          pastQuestions: c.past_exams || c.pastQuestions || [],
+          lectureMaterials: c.lecture_packs || c.lectureMaterials || [],
+          syllabus: c.syllabus || ''
+        }));
+        setStored(STORAGE_KEYS.COURSES, normalized);
+        return normalized;
       }
       return getStored(STORAGE_KEYS.COURSES, []);
     },
@@ -204,14 +212,129 @@ export const libraryApi = {
   // 3. PATRONS & PIN MANAGEMENT API (Direct from database 'patrons' table)
   // -------------------------------------------------------------
   patrons: {
-    async getAll() {
-      const apiData = await fetchApi('/patrons');
+    async getAll(deptFilter = null) {
+      const q = deptFilter && deptFilter !== 'All' ? `?department=${encodeURIComponent(deptFilter)}` : '';
+      const apiData = await fetchApi(`/patrons${q}`);
       if (Array.isArray(apiData)) {
-        setStored(STORAGE_KEYS.PATRONS, apiData);
+        if (!deptFilter || deptFilter === 'All') {
+          setStored(STORAGE_KEYS.PATRONS, apiData);
+        }
         return apiData;
       }
-      return getStored(STORAGE_KEYS.PATRONS, []);
+      const cached = getStored(STORAGE_KEYS.PATRONS, []);
+      if (deptFilter && deptFilter !== 'All') {
+        const lower = deptFilter.toLowerCase();
+        return cached.filter(p => (p.department || '').toLowerCase().includes(lower));
+      }
+      return cached;
     },
+
+    async addPatron(patronData) {
+      const res = await fetchApi('/patrons', {
+        method: 'POST',
+        body: JSON.stringify(patronData)
+      });
+      if (res && res.patron) {
+        const current = getStored(STORAGE_KEYS.PATRONS, []);
+        const updated = [res.patron, ...current.filter(p => p.matric !== res.patron.matric && p.id !== res.patron.id)];
+        setStored(STORAGE_KEYS.PATRONS, updated, 'PATRONS_UPDATED');
+        return { success: true, patron: res.patron, message: res.message };
+      }
+      // Offline fallback: save locally
+      const fallbackPatron = {
+        id: patronData.id || `PAT-${Math.floor(1000 + Math.random() * 9000)}`,
+        library_id: patronData.libraryId || `LIB-${Math.floor(10000 + Math.random() * 90000)}`,
+        name: patronData.name || 'Scholar Student',
+        matric: patronData.matric || `FCC/${(patronData.department || 'CEM').slice(0, 3).toUpperCase()}/2026/${Math.floor(100 + Math.random() * 900)}`,
+        department: patronData.department || 'Co-operative Economics & Management',
+        level: patronData.level || 'ND I',
+        email: patronData.email || `${(patronData.name || 'scholar').toLowerCase().replace(/\s+/g, '.')}@fccibadan.edu.ng`,
+        phone: patronData.phone || '+234 800 000 0000',
+        pin: patronData.pin || '1234',
+        status: 'Active',
+        clearance_status: 'Active Student',
+        borrow_quota: patronData.borrowQuota || 5,
+        registered_branch: 'Main Campus Library',
+        valid_until: '2026-12-31'
+      };
+      const current = getStored(STORAGE_KEYS.PATRONS, []);
+      const updated = [fallbackPatron, ...current.filter(p => p.matric !== fallbackPatron.matric)];
+      setStored(STORAGE_KEYS.PATRONS, updated, 'PATRONS_UPDATED');
+      return { success: true, patron: fallbackPatron, message: 'Scholar registered in offline local registry' };
+    },
+
+    async bulkAddPatrons(students, defaultDept = null, enforceDept = null, defaultLevel = 'ND I') {
+      const res = await fetchApi('/patrons/bulk', {
+        method: 'POST',
+        body: JSON.stringify({
+          students,
+          department: defaultDept,
+          enforce_department: enforceDept,
+          level: defaultLevel
+        })
+      });
+      if (res && res.patrons) {
+        const current = getStored(STORAGE_KEYS.PATRONS, []);
+        const newMatrics = new Set(res.patrons.map(p => p.matric));
+        const updated = [...res.patrons, ...current.filter(p => !newMatrics.has(p.matric))];
+        setStored(STORAGE_KEYS.PATRONS, updated, 'PATRONS_UPDATED');
+        return { success: true, count: res.count, patrons: res.patrons, message: res.message, errors: res.errors };
+      }
+      // Offline fallback
+      const savedList = students.map((s, idx) => {
+        const dept = enforceDept || s.department || defaultDept || 'Co-operative Economics & Management';
+        const name = s.name || s.fullName || `Scholar ${idx + 1}`;
+        const matric = s.matric || `FCC/${dept.slice(0, 3).toUpperCase()}/2026/${Math.floor(100 + Math.random() * 900)}`;
+        return {
+          id: s.id || `PAT-${Math.floor(10000 + Math.random() * 90000)}`,
+          library_id: s.libraryId || `LIB-${Math.floor(10000 + Math.random() * 90000)}`,
+          name,
+          matric,
+          department: dept,
+          level: s.level || defaultLevel,
+          email: s.email || `${name.toLowerCase().replace(/\s+/g, '.')}@fccibadan.edu.ng`,
+          phone: s.phone || '+234 800 000 0000',
+          pin: s.pin || '1234',
+          status: 'Active',
+          clearance_status: 'Active Student',
+          borrow_quota: 5,
+          registered_branch: 'Main Campus Library',
+          valid_until: '2026-12-31'
+        };
+      });
+      const current = getStored(STORAGE_KEYS.PATRONS, []);
+      const newMatrics = new Set(savedList.map(p => p.matric));
+      const updated = [...savedList, ...current.filter(p => !newMatrics.has(p.matric))];
+      setStored(STORAGE_KEYS.PATRONS, updated, 'PATRONS_UPDATED');
+      return { success: true, count: savedList.length, patrons: savedList, message: `Locally imported ${savedList.length} scholars` };
+    },
+
+    async updatePatron(idOrMatric, updateData) {
+      const res = await fetchApi(`/patrons/${encodeURIComponent(idOrMatric)}`, {
+        method: 'PUT',
+        body: JSON.stringify(updateData)
+      });
+      if (res && res.patron) {
+        const current = getStored(STORAGE_KEYS.PATRONS, []);
+        const updated = current.map(p => (p.id === idOrMatric || p.matric === idOrMatric) ? { ...p, ...res.patron } : p);
+        setStored(STORAGE_KEYS.PATRONS, updated, 'PATRONS_UPDATED');
+        return { success: true, patron: res.patron, message: res.message };
+      }
+      // Offline fallback
+      const current = getStored(STORAGE_KEYS.PATRONS, []);
+      const updated = current.map(p => (p.id === idOrMatric || p.matric === idOrMatric) ? { ...p, ...updateData } : p);
+      setStored(STORAGE_KEYS.PATRONS, updated, 'PATRONS_UPDATED');
+      return { success: true, message: 'Scholar updated locally' };
+    },
+
+    async deletePatron(idOrMatric) {
+      await fetchApi(`/patrons/${encodeURIComponent(idOrMatric)}`, { method: 'DELETE' });
+      const current = getStored(STORAGE_KEYS.PATRONS, []);
+      const updated = current.filter(p => p.id !== idOrMatric && p.matric !== idOrMatric);
+      setStored(STORAGE_KEYS.PATRONS, updated, 'PATRONS_UPDATED');
+      return { success: true };
+    },
+
 
     async getByMatric(matric) {
       const patrons = await this.getAll();

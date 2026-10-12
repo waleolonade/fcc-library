@@ -6,6 +6,7 @@ use App\Http\Controllers\PatronController;
 use App\Http\Controllers\LoanController;
 use App\Http\Controllers\LibrarySystemController;
 use App\Http\Controllers\LibraryApiController;
+use App\Http\Controllers\ThesisController;
 use App\Http\Controllers\ResourceController;
 use App\Http\Controllers\CopiesBarcodeController;
 use App\Http\Controllers\SettingsController;
@@ -22,6 +23,12 @@ use App\Http\Controllers\Api\AuthorController;
 use App\Http\Controllers\Api\RecommendationController;
 use App\Http\Controllers\Api\LmsApiController;
 use App\Http\Controllers\Api\SimpleLibApiController;
+use App\Http\Controllers\Api\CourseController;
+
+// Institutional Courses & Curriculum Syllabus API (Fetched from database)
+Route::get('/courses', [CourseController::class, 'index']);
+Route::get('/courses/{code}', [CourseController::class, 'show']);
+Route::post('/courses', [CourseController::class, 'store']);
 
 // 00. Thetechguy44 Library Management System API Gateway
 Route::get('/books',      [LmsApiController::class, 'index']);
@@ -98,6 +105,8 @@ Route::prefix('auth')->group(function () {
     Route::post('/refresh', [AuthController::class, 'refresh']);
     Route::get('/me', [AuthController::class, 'me']);
 });
+Route::post('/hod/login', [AuthController::class, 'login']);
+
 
 // 3. Normalized Resources & Search Engine API (Prompt 33, 34, 36)
 // Provides server-side pagination (20, 50, 100), full-text search, and multi-field filtering
@@ -121,7 +130,9 @@ Route::get('/branches', [SettingsController::class, 'getBranches']);
 // 6. Backward Compatibility Catalog API
 Route::get('/catalog', [CatalogController::class, 'index']);
 Route::get('/catalog/lookup-isbn', [CatalogController::class, 'lookupIsbn']);
+Route::get('/catalog/{id}/file', [CatalogController::class, 'file']);
 Route::get('/catalog/{id}', [CatalogController::class, 'show']);
+Route::get('/books/{id}/file', [CatalogController::class, 'file']);
 Route::post('/catalog/check-duplicate', [CatalogController::class, 'checkDuplicate']);
 Route::post('/catalog', [CatalogController::class, 'store']);
 Route::delete('/catalog/{id}', [CatalogController::class, 'destroy']);
@@ -131,11 +142,21 @@ Route::post('/favorites/toggle', [CatalogController::class, 'toggleFavorite']);
 
 // 7. Patrons API
 Route::get('/patrons', [PatronController::class, 'index']);
-Route::get('/patrons/{id}', [PatronController::class, 'show']);
+Route::post('/patrons/bulk', [PatronController::class, 'bulkStore']);
+Route::get('/patrons/{id}', [PatronController::class, 'show'])->where('id', '.*');
 Route::post('/patrons/verify-pin', [PatronController::class, 'verifyPin']);
+Route::post('/patrons/auth', [PatronController::class, 'verifyPin']);
 Route::post('/patrons', [PatronController::class, 'store']);
+Route::put('/patrons/{id}', [PatronController::class, 'update'])->where('id', '.*');
+Route::patch('/patrons/{id}', [PatronController::class, 'update'])->where('id', '.*');
+Route::post('/patrons/{id}/update', [PatronController::class, 'update'])->where('id', '.*');
+Route::delete('/patrons/{id}', [PatronController::class, 'destroy'])->where('id', '.*');
+Route::post('/patrons/{id}/delete', [PatronController::class, 'destroy'])->where('id', '.*');
+Route::post('/patrons/{id}/clearance', [PatronController::class, 'updateClearance'])->where('id', '.*');
+Route::put('/patrons/{id}/clearance', [PatronController::class, 'updateClearance'])->where('id', '.*');
 Route::get('/users', [PatronController::class, 'index']);
 Route::get('/users/{id}', [PatronController::class, 'show']);
+
 
 // 8. Circulation & Book Loans API (Prompt 36)
 Route::get('/loans', [LoanController::class, 'index']);
@@ -146,8 +167,18 @@ Route::post('/loans/{id}/renew', [LoanController::class, 'renew']);
 Route::put('/loans/{id}/renew', [LoanController::class, 'renew']);
 
 // 9. Theses & Institutional Repository API
-Route::get('/theses', [LibrarySystemController::class, 'getTheses']);
-Route::post('/theses', [LibrarySystemController::class, 'storeThesis']);
+Route::get('/theses', [ThesisController::class, 'index']);
+Route::post('/theses', [ThesisController::class, 'store']);
+Route::get('/theses/{id}', [ThesisController::class, 'show']);
+Route::get('/theses/{id}/file', [ThesisController::class, 'file']);
+Route::post('/theses/{id}/status', [ThesisController::class, 'updateStatus']);
+Route::put('/theses/{id}/status', [ThesisController::class, 'updateStatus']);
+Route::delete('/theses/{id}', [ThesisController::class, 'destroy']);
+
+// 9b. Course Reserves Desk API (HOD & Stacks)
+Route::get('/course-reserves', [\App\Http\Controllers\Api\CourseReserveController::class, 'index']);
+Route::post('/course-reserves', [\App\Http\Controllers\Api\CourseReserveController::class, 'store']);
+Route::delete('/course-reserves/{id}', [\App\Http\Controllers\Api\CourseReserveController::class, 'destroy']);
 
 // 10. Consortia, Serials, Study Rooms & Facilities API
 Route::get('/partner-libraries', [LibrarySystemController::class, 'getPartnerLibrariesFull']);
@@ -177,8 +208,13 @@ Route::post('/admin/apis', [LibraryApiController::class, 'store']);
 
 // 13. Department Management & HOD Staging Pipeline API
 Route::get('/departments', [\App\Http\Controllers\DepartmentUploadController::class, 'getDepartments']);
+Route::post('/departments', [\App\Http\Controllers\DepartmentUploadController::class, 'storeDepartment']);
+Route::put('/departments/{id}', [\App\Http\Controllers\DepartmentUploadController::class, 'updateDepartment']);
+Route::delete('/departments/{id}', [\App\Http\Controllers\DepartmentUploadController::class, 'deleteDepartment']);
 Route::get('/department-uploads', [\App\Http\Controllers\DepartmentUploadController::class, 'index']);
 Route::post('/department-uploads', [\App\Http\Controllers\DepartmentUploadController::class, 'store']);
+Route::put('/department-uploads/{id}', [\App\Http\Controllers\DepartmentUploadController::class, 'updateUpload']);
+Route::post('/department-uploads/{id}/update', [\App\Http\Controllers\DepartmentUploadController::class, 'updateUpload']);
 Route::post('/department-uploads/{id}/approve', [\App\Http\Controllers\DepartmentUploadController::class, 'approve']);
 Route::post('/department-uploads/{id}/reject', [\App\Http\Controllers\DepartmentUploadController::class, 'reject']);
 Route::post('/hod/login', [\App\Http\Controllers\DepartmentUploadController::class, 'hodLogin']);

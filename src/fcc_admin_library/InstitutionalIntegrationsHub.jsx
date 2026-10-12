@@ -165,7 +165,7 @@ export default function InstitutionalIntegrationsHub({ onPatronsSynced }) {
         <div>
           <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 font-bold uppercase tracking-wider mb-1">
             <Database size={15} />
-            <span>Module 6 — Institutional Integration & Single Sign-On Gateway</span>
+            <span>Module 6 - Institutional Integration & Single Sign-On Gateway</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-white">
             SIS, LMS & Identity Federation Hub

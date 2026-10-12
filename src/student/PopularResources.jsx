@@ -210,7 +210,7 @@ export default function PopularResources({ books = [], loans = [], reservations 
       <div className="space-y-3">
         <h3 className="text-sm font-bold text-white flex items-center gap-2">
           <Award size={16} className="text-amber-400" />
-          Top 10 — {METRICS.find(m => m.id === activeMetric)?.label}
+          Top 10 - {METRICS.find(m => m.id === activeMetric)?.label}
         </h3>
         {rankedBooks.length === 0 ? (
           <div className="text-center py-12 text-slate-500">No data available for this metric.</div>

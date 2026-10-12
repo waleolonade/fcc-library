@@ -38,10 +38,37 @@ class LibrarySystemController extends Controller
         ]);
     }
 
-    public function getTheses()
+    public function getTheses(Request $request)
     {
-        $theses = Thesis::orderBy('year', 'desc')->get();
+        $query = Thesis::query();
+
+        if ($dept = $request->query('department')) {
+            $query->where(function ($q) use ($dept) {
+                $q->where('department', 'like', "%{$dept}%")
+                  ->orWhere('department', 'like', "%" . strtoupper($dept) . "%");
+            });
+        }
+
+        if ($status = $request->query('status')) {
+            $query->where('status', 'like', "%{$status}%");
+        }
+
+        $theses = $query->orderBy('year', 'desc')->get();
         return response()->json($theses);
+    }
+
+    public function updateThesisStatus(Request $request, $id)
+    {
+        $thesis = Thesis::where('id', $id)->firstOrFail();
+        $status = $request->input('status', 'Approved');
+        $thesis->status = $status;
+        $thesis->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => "Dissertation '{$thesis->title}' status updated to {$status}!",
+            'thesis' => $thesis
+        ]);
     }
 
     public function storeThesis(Request $request)

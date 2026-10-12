@@ -85,7 +85,7 @@ class CommunicationSeeder extends Seeder
                 'recipient_role' => 'hod',
                 'recipient_dept' => 'Co-operative Economics & Management',
                 'category' => 'acquisition_request',
-                'subject' => 'RE: Acquisition Approved — Purchase Order PO-2026-083 Dispatched',
+                'subject' => 'RE: Acquisition Approved-Purchase Order PO-2026-083 Dispatched',
                 'message' => 'Requisition approved. Purchase Order PO-2026-083 has been dispatched to Spectrum Books, Ring Road. 5 copies will be reserved for Departmental Library Stacks and 10 copies for Central Library Reserve Shelf.',
                 'priority' => 'high',
                 'status' => 'resolved',

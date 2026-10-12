@@ -29,6 +29,7 @@ export const SYSTEM_ROUTES = [
   { path: '/scholar/ill', label: 'Inter-Library Loan (ILL)', category: 'Scholar', desc: 'National consortia resource-sharing requests' },
   { path: '/scholar/helpdesk', label: 'Ask-a-Librarian Helpdesk', category: 'Scholar', desc: 'Live reference and research consultation ticket desk' },
   { path: '/scholar/ai-librarian', label: 'AI Smart Research Librarian', category: 'Scholar', desc: 'Grounding conversational research assistant' },
+  { path: '/reader', label: 'Interactive Digital Book Reader', category: 'Scholar', desc: 'Read real textbooks, handouts and capstone projects uploaded by HODs and Admin' },
 
   // HOD (Head of Department) Academic Portal
   { path: '/hod/overview', label: 'HOD Departmental Overview', category: 'HOD', desc: 'Departmental statistics, faculty metrics, student count, and upload status' },

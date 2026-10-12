@@ -8,7 +8,7 @@ import {
   Menu, X, Zap, Bell, HelpCircle, Laptop, Cpu, ArrowUpRight,
   Scan, CheckSquare, Plus, Trash2, Download, AlertTriangle,
   Fingerprint, BookDown, BookUp, ShieldAlert, ShieldCheck, Eye, Copy, Check,
-  ExternalLink, Share2, Filter, Upload, Sliders, CheckCheck, Tag, Barcode, QrCode, Settings, MessageSquare
+  ExternalLink, Share2, Filter, Upload, Sliders, CheckCheck, Tag, Barcode, QrCode, Settings, MessageSquare, Image, UserPlus, FileSpreadsheet, Edit3
 } from 'lucide-react';
 import { INSTITUTION, BRANCHES, INITIAL_BOOKS, INITIAL_LOANS, INITIAL_PARTNER_LIBRARIES } from '../data/institutionalSeedData';
 import { libraryApi } from '../api/libraryApi';
@@ -30,6 +30,9 @@ import ApiConfigurationManager from './ApiConfigurationManager';
 import { analyzeUploadedPdf } from '../utils/pdfDeepAnalyzer';
 import PdfAnalysisInspector from '../common/PdfAnalysisInspector';
 import { departmentService } from '../services/departmentService';
+import StudentAddModal from '../common/StudentAddModal';
+import StudentBulkImportModal from '../common/StudentBulkImportModal';
+import StudentEditModal from '../common/StudentEditModal';
 
 // =========================================================================
 // FCC ADMIN LIBRARY — MASTER CONSOLIDATED ADMIN & STAFF OPERATIONS PLATFORM
@@ -141,15 +144,15 @@ export default function FccAdminLibrary({
   // Local state fallbacks if standalone
   const [localBooks, setLocalBooks] = useState(() => {
     const s = localStorage.getItem('fcc_catalog_v48_gov');
-    return s ? JSON.parse(s) : INITIAL_BOOKS;
+    return s ? JSON.parse(s) : [];
   });
   const [localLoans, setLocalLoans] = useState(() => {
     const s = localStorage.getItem('fcc_loans_v48_gov');
-    return s ? JSON.parse(s) : INITIAL_LOANS;
+    return s ? JSON.parse(s) : [];
   });
   const [localPartnerLibs, setLocalPartnerLibs] = useState(() => {
     const s = localStorage.getItem('fcc_partner_libs_v48');
-    return s ? JSON.parse(s) : INITIAL_PARTNER_LIBRARIES;
+    return s ? JSON.parse(s) : [];
   });
 
   const books = propBooks || localBooks;
@@ -178,16 +181,59 @@ export default function FccAdminLibrary({
 
   // Patrons Management State
   const [patronFilterLevel, setPatronFilterLevel] = useState('all');
+  const [patronFilterDept, setPatronFilterDept] = useState('All');
+  const [patronSearchQuery, setPatronSearchQuery] = useState('');
   const [showAddPatronModal, setShowAddPatronModal] = useState(false);
-  const [newPatronForm, setNewPatronForm] = useState({
-    name: '',
-    matric: '',
-    department: 'Co-operative Economics & Management',
-    level: 'HND2',
-    email: '',
-    phone: ''
-  });
+  const [showBulkPatronModal, setShowBulkPatronModal] = useState(false);
+  const [editingPatron, setEditingPatron] = useState(null);
+  const [reassignPatronTarget, setReassignPatronTarget] = useState(null);
   const [selectedPatronForCard, setSelectedPatronForCard] = useState(null);
+
+  const filteredAdminPatrons = useMemo(() => {
+    return patrons.filter(p => {
+      const q = patronSearchQuery.trim().toLowerCase();
+      const matchesSearch = !q ||
+        (p.name || '').toLowerCase().includes(q) ||
+        (p.matric || '').toLowerCase().includes(q) ||
+        (p.department || '').toLowerCase().includes(q) ||
+        (p.email || '').toLowerCase().includes(q);
+
+      const matchesDept = patronFilterDept === 'All' ||
+        (p.department || '').toLowerCase().includes(patronFilterDept.toLowerCase());
+
+      const matchesLevel = patronFilterLevel === 'all' || patronFilterLevel === 'All' ||
+        (p.level || '').toLowerCase().includes(patronFilterLevel.toLowerCase());
+
+      return matchesSearch && matchesDept && matchesLevel;
+    });
+  }, [patrons, patronSearchQuery, patronFilterDept, patronFilterLevel]);
+
+  const handleDeletePatron = async (idOrMatric, name) => {
+    if (!confirm(`Are you sure you want to delete scholar ${name} (${idOrMatric}) from the institutional patron registry?`)) return;
+    try {
+      await libraryApi.patrons.deletePatron(idOrMatric);
+      setPatrons(prev => prev.filter(p => p.id !== idOrMatric && p.matric !== idOrMatric));
+      sounds.playClick();
+    } catch (e) {
+      alert('Could not remove patron from database.');
+    }
+  };
+
+  const handleReassignDepartment = async (patron, newDept) => {
+    try {
+      const res = await libraryApi.patrons.addPatron({
+        ...patron,
+        department: newDept
+      });
+      if (res.success) {
+        setPatrons(prev => prev.map(p => (p.matric === patron.matric || p.id === patron.id) ? { ...p, department: newDept } : p));
+        sounds.playSuccessChime();
+        setReassignPatronTarget(null);
+      }
+    } catch (e) {
+      alert('Could not reassign department.');
+    }
+  };
 
   // Acquisitions Management State
   const [showAddAcquisitionModal, setShowAddAcquisitionModal] = useState(false);
@@ -395,7 +441,7 @@ export default function FccAdminLibrary({
         setLaravelHealth({ ...healthRes.value, latencyMs: roundTripMs });
       }
 
-      if (catRes.status === 'fulfilled' && Array.isArray(catRes.value) && catRes.value.length > 0) {
+      if (catRes.status === 'fulfilled' && Array.isArray(catRes.value)) {
         setBooks(catRes.value);
         localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(catRes.value));
       }
@@ -489,7 +535,7 @@ export default function FccAdminLibrary({
   // -------------------------------------------------------------
   const [circMode, setCircMode] = useState('checkout'); // 'checkout' | 'checkin'
   const [circMatric, setCircMatric] = useState('FCC/CEM/2024/042');
-  const [circItem, setCircItem] = useState('FCC-B001');
+  const [circItem, setCircItem] = useState('');
   const [circStatus, setCircStatus] = useState(null);
   const [showBiometrics, setShowBiometrics] = useState(false);
   const [pendingCheckout, setPendingCheckout] = useState(null);
@@ -646,11 +692,33 @@ export default function FccAdminLibrary({
     pdfPages: 142,
     abstract: '',
     keywords: 'Cooperatives, Finance, Agronomy',
-    referenceStyle: 'APA 7th'
+    referenceStyle: 'APA 7th',
+    coverImage: '',
+    coverFileName: ''
   });
   const [pdfDuplicateCheck, setPdfDuplicateCheck] = useState(null);
   const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
   const [isSubmittingBook, setIsSubmittingBook] = useState(false);
+  const adminCoverInputRef = useRef(null);
+
+  const handleAdminCoverSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please upload an image file (PNG, JPG, JPEG, WEBP).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setPdfForm(prev => ({
+        ...prev,
+        coverImage: ev.target.result,
+        coverFileName: file.name
+      }));
+      if (soundEnabled) sounds.playClick();
+    };
+    reader.readAsDataURL(file);
+  };
 
   const checkDuplicateWithLaravel = async (title, isbn, doi, fileName) => {
     setIsCheckingDuplicate(true);
@@ -779,6 +847,8 @@ export default function FccAdminLibrary({
       fileSize: pdfForm.fileSize || '3.5 MB',
       fileName: pdfForm.fileName || 'monograph.pdf',
       fileDataUrl: pdfForm.fileDataUrl || '',
+      coverImage: pdfForm.coverImage || '',
+      cover_image: pdfForm.coverImage || '',
       isDigital: true,
       format: 'E-Book',
       abstract: pdfForm.abstract || 'Curriculum research monograph archived in Federal Co-operative College Institutional Repository.',
@@ -802,6 +872,7 @@ export default function FccAdminLibrary({
           shelfLocation: data.book.shelf_location || data.book.shelfLocation || newBookPayload.shelfLocation,
           fileDataUrl: data.book.file_data_url || newBookPayload.fileDataUrl,
           fileName: data.book.file_name || newBookPayload.fileName,
+          coverImage: data.book.cover_image || data.book.coverImage || newBookPayload.coverImage,
           isDigital: true
         } : newBookPayload;
 
@@ -811,10 +882,11 @@ export default function FccAdminLibrary({
           window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: finalBook }));
         }
         if (soundEnabled) sounds.playSuccessChime();
-        alert(`Ingested "${newBookPayload.title}" into Central MARC 21 Catalog & Laravel 11 Database!`);
+        alert(`Ingested "${newBookPayload.title}" with Cover Artwork into Central MARC 21 Catalog & Database!`);
         // Reset form
         setPdfUploadFile(null);
         setPdfDuplicateCheck(null);
+        setPdfForm(prev => ({ ...prev, coverImage: '', coverFileName: '' }));
       }
     } catch (e) {
       // Local fallback
@@ -1485,7 +1557,7 @@ export default function FccAdminLibrary({
                       type="text"
                       value={circItem}
                       onChange={e => setCircItem(e.target.value)}
-                      placeholder="e.g. FCC-B001 or 978-978-49021-1-4"
+                      placeholder="e.g. Accession No or ISBN"
                       className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono text-white focus:outline-none focus:border-indigo-500"
                       required
                     />
@@ -1648,6 +1720,69 @@ export default function FccAdminLibrary({
                     </div>
                   </div>
                 )}
+
+                {/* Book Cover Artwork Drop Zone & Live Preview */}
+                <div className="space-y-2 pt-3 border-t border-slate-800/80">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Image size={14} className="text-indigo-400" />
+                      <span>Book Cover Artwork</span>
+                    </span>
+                    {pdfForm.coverImage && (
+                      <button
+                        type="button"
+                        onClick={() => setPdfForm(prev => ({ ...prev, coverImage: '', coverFileName: '' }))}
+                        className="text-[10px] text-rose-400 hover:text-rose-300 font-bold transition"
+                      >
+                        Remove Cover
+                      </button>
+                    )}
+                  </div>
+
+                  <input
+                    type="file"
+                    ref={adminCoverInputRef}
+                    accept="image/*,.png,.jpg,.jpeg,.webp"
+                    onChange={handleAdminCoverSelect}
+                    className="hidden"
+                  />
+
+                  {pdfForm.coverImage ? (
+                    <div className="p-3 rounded-2xl bg-slate-950/80 border border-indigo-500/40 flex items-center gap-3 shadow-lg">
+                      <div className="w-14 h-20 rounded-xl overflow-hidden border border-indigo-500/40 shadow-md shrink-0 bg-slate-900">
+                        <img
+                          src={pdfForm.coverImage}
+                          alt="Cover Artwork Preview"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0 space-y-1 text-left">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+                          <CheckCircle size={11} /> Cover Attached
+                        </span>
+                        <div className="text-xs font-medium text-white truncate">
+                          {pdfForm.coverFileName || 'Custom Cover Image'}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => adminCoverInputRef.current?.click()}
+                          className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold transition"
+                        >
+                          Change Cover Image
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => adminCoverInputRef.current?.click()}
+                      className="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-2xl p-4 text-center transition cursor-pointer bg-slate-950/40 group"
+                    >
+                      <Image size={24} className="mx-auto text-indigo-400 mb-1.5 group-hover:scale-110 transition shrink-0" />
+                      <div className="text-xs font-semibold text-white">Upload Front Cover Artwork</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">JPG, PNG, WEBP • Saves to Database</div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Right 2 Cols: Bibliographic Metadata Form */}
@@ -1734,7 +1869,7 @@ export default function FccAdminLibrary({
                       >
                         {departments.map(d => (
                           <option key={d.code} value={d.name}>
-                            {d.code} — {d.name}
+                            {d.code} - {d.name}
                           </option>
                         ))}
                       </select>
@@ -1877,65 +2012,218 @@ export default function FccAdminLibrary({
         ------------------------------------------------------------- */}
         {activeTab === 'patrons' && (
           <div className="space-y-6 animate-fadeIn">
-            <div className="rounded-2xl bg-slate-900/90 border border-slate-800 p-5 shadow-lg space-y-4">
-              <div className="flex items-center justify-between">
+            {/* Top Bar with Actions */}
+            <div className="rounded-3xl bg-slate-900 border border-slate-800 p-6 shadow-xl space-y-4">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <Users size={18} className="text-indigo-400" />
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-950 text-indigo-300 border border-indigo-800 flex items-center gap-1">
+                      <ShieldCheck size={11} /> CENTRAL COLLEGE REGISTRY
+                    </span>
+                    <span className="text-xs text-slate-400 font-mono">CROSS-DEPARTMENT AUTHORITY</span>
+                  </div>
+                  <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                    <Users size={20} className="text-indigo-400" />
                     <span>Patron Scholars Directory</span>
                   </h3>
-                  <p className="text-xs text-slate-400">Registered students, researchers, and library card accounts</p>
+                  <p className="text-xs text-slate-400">
+                    College-wide student roster: Add individual scholars with departmental assignment, or bulk import class rosters for any department.
+                  </p>
                 </div>
-                <span className="px-3 py-1 rounded-full text-xs font-mono bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
-                  {patrons.length || 4} Registered Patrons
-                </span>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className="px-3.5 py-2 rounded-xl text-xs font-mono font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
+                    {patrons.length} Registered Patrons
+                  </span>
+                  <button
+                    onClick={() => setShowAddPatronModal(true)}
+                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-indigo-950 transition"
+                  >
+                    <UserPlus size={14} />
+                    <span>+ Add Student</span>
+                  </button>
+                  <button
+                    onClick={() => setShowBulkPatronModal(true)}
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-indigo-500/40 font-bold text-xs flex items-center gap-1.5 transition"
+                  >
+                    <FileSpreadsheet size={14} />
+                    <span>Bulk Import Roster</span>
+                  </button>
+                  <button
+                    onClick={refreshFromLaravel}
+                    className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center gap-1.5 transition"
+                    title="Synchronize from database"
+                  >
+                    <RefreshCw size={13} className={isRefreshing ? 'animate-spin text-indigo-400' : ''} />
+                    <span>Sync</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Filters & Search Toolbar */}
+              <div className="pt-3 border-t border-slate-800/80 flex flex-col md:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search size={15} className="absolute left-3.5 top-3 text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder="Search scholars by name, matriculation ID, department, or email..."
+                    value={patronSearchQuery}
+                    onChange={e => setPatronSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-950 border border-slate-800 text-white text-xs focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Building2 size={14} className="text-slate-400" />
+                    <select
+                      value={patronFilterDept}
+                      onChange={e => setPatronFilterDept(e.target.value)}
+                      className="px-3 py-2.5 rounded-2xl bg-slate-950 border border-slate-800 text-white text-xs focus:border-indigo-500 focus:outline-none max-w-[210px]"
+                    >
+                      <option value="All">All Departments</option>
+                      {departments.map(d => (
+                        <option key={d.code || d.name} value={d.name}>
+                          {d.name} ({d.code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <Filter size={14} className="text-slate-400" />
+                    <select
+                      value={patronFilterLevel}
+                      onChange={e => setPatronFilterLevel(e.target.value)}
+                      className="px-3 py-2.5 rounded-2xl bg-slate-950 border border-slate-800 text-white text-xs focus:border-indigo-500 focus:outline-none"
+                    >
+                      <option value="all">All Levels</option>
+                      <option value="ND I">ND I</option>
+                      <option value="ND II">ND II</option>
+                      <option value="HND I">HND I</option>
+                      <option value="HND II">HND II</option>
+                    </select>
+                  </div>
+
+                  {(patronSearchQuery || patronFilterDept !== 'All' || patronFilterLevel !== 'all') && (
+                    <button
+                      onClick={() => {
+                        setPatronSearchQuery('');
+                        setPatronFilterDept('All');
+                        setPatronFilterLevel('all');
+                      }}
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+                    >
+                      Reset Filters
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Scholars Roster Table */}
+            <div className="rounded-3xl bg-slate-900 border border-slate-800 p-5 shadow-xl space-y-4">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Showing <strong className="text-white">{filteredAdminPatrons.length}</strong> of {patrons.length} total scholars</span>
+                {patronFilterDept !== 'All' && (
+                  <span className="font-mono text-indigo-400">Filtered: {patronFilterDept}</span>
+                )}
               </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="border-b border-slate-800 text-slate-400 font-mono uppercase text-[10px]">
+                  <thead className="border-b border-slate-800 text-slate-400 font-mono uppercase text-[10px] bg-slate-950/40">
                     <tr>
-                      <th className="py-2.5 px-3">Scholar Name</th>
-                      <th className="py-2.5 px-3">Matriculation ID</th>
-                      <th className="py-2.5 px-3">Department</th>
-                      <th className="py-2.5 px-3">Level / Program</th>
-                      <th className="py-2.5 px-3">Active Loans</th>
-                      <th className="py-2.5 px-3">Clearance Status</th>
-                      <th className="py-2.5 px-3 text-right">Action</th>
+                      <th className="py-3 px-3">Scholar Name</th>
+                      <th className="py-3 px-3">Matriculation ID</th>
+                      <th className="py-3 px-3">Assigned Department</th>
+                      <th className="py-3 px-3">Level / Program</th>
+                      <th className="py-3 px-3">Active Loans</th>
+                      <th className="py-3 px-3">Clearance Status</th>
+                      <th className="py-3 px-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 font-sans">
-                    {patrons.length === 0 && (
-                      <tr><td colSpan={7} className="py-8 text-center text-slate-500 text-xs">No patrons registered yet. Add via the + Add Patron button or sync from the Integrations module.</td></tr>
+                    {filteredAdminPatrons.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="py-12 text-center text-slate-500 text-xs space-y-3">
+                          <Users size={32} className="mx-auto text-slate-600 mb-2" />
+                          <div>No scholars match your current search or department filter.</div>
+                          <div className="flex justify-center gap-2 pt-2">
+                            <button
+                              onClick={() => setShowAddPatronModal(true)}
+                              className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition"
+                            >
+                              + Add Scholar
+                            </button>
+                            <button
+                              onClick={() => setShowBulkPatronModal(true)}
+                              className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-indigo-600/40 font-bold text-xs transition"
+                            >
+                              + Bulk Import
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                    {patrons.map(p => (
-                      <tr key={p.matric} className="hover:bg-slate-800/40 transition">
-                        <td className="py-3 px-3">
+                    {filteredAdminPatrons.map(p => (
+                      <tr key={p.matric || p.id} className="hover:bg-slate-800/40 transition">
+                        <td className="py-3.5 px-3">
                           <div className="font-bold text-white">{p.name}</div>
                           <div className="text-[10px] text-slate-400">{p.email || 'scholar@student.fccibadan.edu.ng'}</div>
                         </td>
-                        <td className="py-3 px-3 font-mono text-indigo-400 font-semibold">{p.matric}</td>
-                        <td className="py-3 px-3 text-slate-300">{p.department}</td>
-                        <td className="py-3 px-3 text-slate-400">{p.level}</td>
-                        <td className="py-3 px-3 font-mono text-emerald-400">{p.activeLoansCount || 0} active</td>
-                        <td className="py-3 px-3">
+                        <td className="py-3.5 px-3 font-mono text-indigo-400 font-semibold">{p.matric}</td>
+                        <td className="py-3.5 px-3">
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-700/80">
+                              {p.department || 'Unassigned'}
+                            </span>
+                            <button
+                              onClick={() => setReassignPatronTarget(p)}
+                              className="text-[10px] text-indigo-400 hover:text-indigo-300 underline font-mono"
+                              title="Reassign to another department"
+                            >
+                              Change
+                            </button>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-3 text-slate-300 font-mono text-[11px]">{p.level || 'ND I'}</td>
+                        <td className="py-3.5 px-3 font-mono text-emerald-400">{p.activeLoansCount || 0} active</td>
+                        <td className="py-3.5 px-3">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            p.clearanceStatus?.includes('Fines') ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' :
+                            (p.clearanceStatus || '').includes('Fines') ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' :
                             'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                           }`}>
                             {p.clearanceStatus || 'Active Student'}
                           </span>
                         </td>
-                        <td className="py-3 px-3 text-right">
-                          <button
-                            onClick={() => {
-                              setCircMatric(p.matric);
-                              handleTabSwitch('circulation');
-                            }}
-                            className="px-2.5 py-1 rounded bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-[11px] font-mono border border-indigo-500/30 transition"
-                          >
-                            Circulation
-                          </button>
+                        <td className="py-3.5 px-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                setCircMatric(p.matric);
+                                handleTabSwitch('circulation');
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-[11px] font-mono border border-indigo-500/30 transition"
+                              title="Check out book"
+                            >
+                              Circulation
+                            </button>
+                            <button
+                              onClick={() => setEditingPatron(p)}
+                              className="p-1 rounded-lg bg-slate-800 hover:bg-indigo-900/40 text-slate-400 hover:text-indigo-300 border border-slate-700 transition"
+                              title="Edit scholar profile"
+                            >
+                              <Edit3 size={13} />
+                            </button>
+                            <button
+                              onClick={() => handleDeletePatron(p.id || p.matric, p.name)}
+                              className="p-1 rounded-lg bg-slate-800 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 border border-slate-700 transition"
+                              title="Delete scholar record"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1943,6 +2231,101 @@ export default function FccAdminLibrary({
                 </table>
               </div>
             </div>
+
+            {/* Admin Modals */}
+            <StudentAddModal
+              isOpen={showAddPatronModal}
+              onClose={() => setShowAddPatronModal(false)}
+              mode="admin"
+              departments={departments}
+              onStudentAdded={(newPatron) => {
+                setPatrons(prev => [newPatron, ...prev.filter(p => p.matric !== newPatron.matric)]);
+                refreshFromLaravel();
+              }}
+            />
+
+            <StudentEditModal
+              isOpen={Boolean(editingPatron)}
+              onClose={() => setEditingPatron(null)}
+              student={editingPatron}
+              mode="admin"
+              departments={departments}
+              onStudentUpdated={(updated) => {
+                setPatrons(prev => prev.map(p => (p.id === updated.id || p.matric === updated.matric) ? { ...p, ...updated } : p));
+                refreshFromLaravel();
+              }}
+            />
+
+            <StudentBulkImportModal
+              isOpen={showBulkPatronModal}
+              onClose={() => setShowBulkPatronModal(false)}
+              mode="admin"
+              departments={departments}
+              onImportComplete={() => {
+                refreshFromLaravel();
+              }}
+            />
+
+            {/* Quick Department Reassignment Modal */}
+            {reassignPatronTarget && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+                <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-slate-800 p-6 shadow-2xl space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-base font-bold text-white flex items-center gap-2">
+                      <Building2 size={18} className="text-indigo-400" />
+                      <span>Reassign Scholar Department</span>
+                    </h4>
+                    <button
+                      onClick={() => setReassignPatronTarget(null)}
+                      className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-1">
+                    <div className="text-xs font-bold text-white">{reassignPatronTarget.name}</div>
+                    <div className="text-[11px] font-mono text-indigo-400">{reassignPatronTarget.matric}</div>
+                    <div className="text-[10px] text-slate-400">Current: {reassignPatronTarget.department || 'Unassigned'}</div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-300">Select New Department</label>
+                    <select
+                      id="reassignDeptSelect"
+                      defaultValue={reassignPatronTarget.department || departments[0]?.name}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:border-indigo-500 focus:outline-none"
+                    >
+                      {departments.map(d => (
+                        <option key={d.code || d.name} value={d.name}>
+                          {d.name} ({d.code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="pt-2 flex justify-end gap-2">
+                    <button
+                      onClick={() => setReassignPatronTarget(null)}
+                      className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        const sel = document.getElementById('reassignDeptSelect');
+                        if (sel) {
+                          handleReassignDepartment(reassignPatronTarget, sel.value);
+                        }
+                      }}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-950"
+                    >
+                      Save Department
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

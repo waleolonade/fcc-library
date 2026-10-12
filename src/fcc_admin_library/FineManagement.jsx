@@ -78,7 +78,7 @@ function PaymentModal({ fine, onClose, onRecord }) {
               type="text"
               value={note}
               onChange={e => setNote(e.target.value)}
-              placeholder="e.g. Paid at circulation desk — Receipt #4422"
+              placeholder="e.g. Paid at circulation desk - Receipt #4422"
               className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-emerald-500"
             />
           </div>
@@ -117,7 +117,7 @@ function WaiveModal({ fine, onClose, onWaive }) {
           <textarea
             value={reason}
             onChange={e => setReason(e.target.value)}
-            placeholder="e.g. Compassionate grounds — medical emergency confirmed by welfare office"
+            placeholder="e.g. Compassionate grounds - medical emergency confirmed by welfare office"
             rows={3}
             className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white resize-none focus:outline-none focus:border-amber-500"
             required

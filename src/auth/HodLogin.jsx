@@ -1,105 +1,210 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   GraduationCap, KeyRound, ArrowRight, ShieldCheck,
-  Building2, Sparkles, BookOpen, AlertCircle, ArrowLeft
+  Building2, Sparkles, BookOpen, AlertCircle, ArrowLeft,
+  User, Lock, Eye, EyeOff, CheckCircle2
 } from 'lucide-react';
 import { INSTITUTION } from '../data/institutionalSeedData';
-import { departmentService } from '../services/departmentService';
+import { sounds } from '../utils/soundEffects';
+
+// Known HOD department credentials for quick reference & resilient authentication
+export const HOD_DIRECTORY = [
+  {
+    code: 'CSC',
+    name: 'Computer Science & Information Technology',
+    hod: 'Dr. K. E. Okonjo',
+    username: 'hod_csc',
+    email: 'okonjo.hod@fccibadan.edu.ng',
+    password: 'password123',
+    colorName: 'Royal Blue',
+    accentHex: '#1d4ed8',
+    solidBorder: 'border-blue-500'
+  },
+  {
+    code: 'CEM',
+    name: 'Co-operative Economics & Management',
+    hod: 'Dr. Mrs. F. A. Babalola',
+    username: 'hod_cem',
+    email: 'babalola.hod@fccibadan.edu.ng',
+    password: 'password123',
+    colorName: 'Forest Emerald',
+    accentHex: '#059669',
+    solidBorder: 'border-emerald-500'
+  },
+  {
+    code: 'BNF',
+    name: 'Banking & Finance',
+    hod: 'Mrs. Folake Sanusi',
+    username: 'hod_bnf',
+    email: 'sanusi.hod@fccibadan.edu.ng',
+    password: 'password123',
+    colorName: 'Amber Gold',
+    accentHex: '#d97706',
+    solidBorder: 'border-amber-500'
+  },
+  {
+    code: 'AGR',
+    name: 'Agricultural Extension & Management',
+    hod: 'Dr. A. O. Olabode',
+    username: 'hod_agr',
+    email: 'olabode.hod@fccibadan.edu.ng',
+    password: 'password123',
+    colorName: 'Violet Purple',
+    accentHex: '#7c3aed',
+    solidBorder: 'border-violet-500'
+  },
+  {
+    code: 'BAM',
+    name: 'Business Administration & Management',
+    hod: 'Dr. T. M. Adewale',
+    username: 'hod_bam',
+    email: 'adewale.hod@fccibadan.edu.ng',
+    password: 'password123',
+    colorName: 'Crimson Red',
+    accentHex: '#e11d48',
+    solidBorder: 'border-rose-500'
+  },
+  {
+    code: 'PAD',
+    name: 'Public Administration',
+    hod: 'Dr. Mrs. B. O. Adeleke',
+    username: 'hod_pad',
+    email: 'adeleke.hod@fccibadan.edu.ng',
+    password: 'password123',
+    colorName: 'Ocean Teal',
+    accentHex: '#0d9488',
+    solidBorder: 'border-teal-500'
+  }
+];
 
 export default function HodLogin({ onLogin, onBackToPublic }) {
-  const [departments, setDepartments] = useState(() => departmentService.getDepartments());
-  const [selectedDept, setSelectedDept] = useState(() => departments[0]?.code || 'CEM');
-  const [pin, setPin] = useState('1234');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    const unsub = departmentService.subscribe((updated) => {
-      setDepartments(updated);
-    });
-    return unsub;
-  }, []);
+  // Detect which HOD account matches the typed username in real-time
+  const matchedHod = HOD_DIRECTORY.find(h => {
+    const u = username.trim().toLowerCase();
+    if (!u) return false;
+    return (
+      h.username.toLowerCase() === u ||
+      h.code.toLowerCase() === u ||
+      h.email.toLowerCase() === u ||
+      h.hod.toLowerCase().includes(u)
+    );
+  }) || null;
 
-  const handleHodLogin = async (e) => {
-    e.preventDefault();
+  const activeAccent = matchedHod ? matchedHod.accentHex : '#059669';
+
+  const handleLoginSubmit = async (e) => {
+    if (e) e.preventDefault();
     setErrorMsg('');
     setIsLoading(true);
 
+    const inputUser = username.trim().toLowerCase();
+    const inputPass = password.trim();
+
+    if (!inputUser || !inputPass) {
+      setErrorMsg('Please enter both your HOD Username and Password.');
+      sounds.playErrorBuzz();
+      setIsLoading(false);
+      return;
+    }
+
+    // Strict Backend API Database Authentication
     try {
       const res = await fetch('/api/hod/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          department_code: selectedDept,
-          pin: pin
+          identifier: inputUser,
+          username: inputUser,
+          password: inputPass,
+          pin: inputPass,
+          login_mode: 'hod'
         })
       });
 
       const data = await res.json();
+      setIsLoading(false);
 
       if (res.ok && data.success) {
-        onLogin(data.user);
+        sounds.playSuccessChime();
+        const hodSession = {
+          ...data.user,
+          colorTheme: matchedHod ? matchedHod.colorName : 'Institutional',
+          accentHex: matchedHod ? matchedHod.accentHex : '#059669'
+        };
+        localStorage.setItem('fcc_hod_session', JSON.stringify(hodSession));
+        onLogin(hodSession);
+        return;
       } else {
-        setErrorMsg(data.message || 'Invalid HOD credentials. Default demo PIN is 1234.');
+        sounds.playErrorBuzz();
+        setErrorMsg(data.error || data.message || 'Access Denied: Unrecognized HOD username or incorrect security password.');
+        return;
       }
     } catch (err) {
-      // Fallback offline mock for resilience
-      const found = departments.find(d => d.code === selectedDept);
-      if (pin === '1234' || pin === '9999') {
-        onLogin({
-          role: 'hod',
-          name: found ? found.hod : 'Department Head',
-          department_code: selectedDept,
-          department_name: found ? found.name : 'Academic Department',
-          department_id: `DEP-${selectedDept}`,
-          matric: `HOD/${selectedDept}/001`
-        });
-      } else {
-        setErrorMsg('Invalid HOD Security PIN. Please enter 1234.');
-      }
-    } finally {
       setIsLoading(false);
+      sounds.playErrorBuzz();
+      setErrorMsg('Central database authentication offline. Please verify institutional API is accessible.');
+      return;
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-4 relative overflow-hidden font-sans">
-      {/* Background Ambience */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-teal-600/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-10 right-10 w-80 h-80 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-4 relative font-sans overflow-hidden">
+      {/* Dynamic Background Ambience responding to active HOD accent */}
+      <div
+        className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full blur-[140px] pointer-events-none transition-all duration-700 opacity-25"
+        style={{ backgroundColor: activeAccent }}
+      />
 
       {/* Top Brand Bar */}
-      <div className="mb-6 text-center space-y-2 z-10 flex flex-col items-center">
-        <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-teal-500/40 p-1 flex items-center justify-center shadow-xl shadow-teal-950/60 overflow-hidden mb-1">
+      <div className="mb-6 text-center space-y-2 z-10 flex flex-col items-center max-w-md">
+        <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-700 p-1 flex items-center justify-center shadow-2xl overflow-hidden mb-1">
           <img src="/assets/fcc-logo.png" alt="FCC Logo" className="w-full h-full object-cover rounded-xl" />
         </div>
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-950/80 border border-teal-700/50 text-teal-300 text-xs font-semibold">
-          <GraduationCap size={14} className="text-teal-400" />
-          <span>Academic Leadership Portal • Tier 3 RBAC</span>
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-700 text-slate-200 text-xs font-semibold shadow">
+          <GraduationCap size={14} className="text-amber-400" />
+          <span>HOD Department Portal • Tier 3 RBAC</span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mt-1">
-          HOD Departmental Gateway
+          Head of Department Login
         </h1>
         <p className="text-xs text-slate-400">
-          {INSTITUTION.name} • Central Academic Library Repository
+          Sign in with your HOD credentials to access your department's dedicated dashboard.
         </p>
       </div>
 
-      {/* Main Authentication Card */}
+      {/* Main Authentication Box */}
       <div className="w-full max-w-md bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl relative z-10 space-y-5">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-slate-950 border border-teal-500/40 p-0.5 flex items-center justify-center shrink-0 overflow-hidden shadow">
-              <img src="/assets/fcc-logo.png" alt="FCC Logo" className="w-full h-full object-cover rounded-[10px]" />
-            </div>
-            <div>
-              <h2 className="text-sm font-bold text-white">Department Head Login</h2>
-              <p className="text-[11px] text-slate-400">Direct Departmental Upload & Catalog Staging</p>
-            </div>
+        {/* Dynamic Solid Stripe */}
+        <div
+          className="h-1.5 w-full rounded-full transition-all duration-500 mb-2"
+          style={{ backgroundColor: activeAccent }}
+        />
+
+        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div>
+            <h2 className="text-base font-bold text-white">Sign In to HOD Portal</h2>
+            <p className="text-xs text-slate-400">
+              {matchedHod ? (
+                <>Department: <strong className="text-white">{matchedHod.name}</strong></>
+              ) : (
+                'Enter your department username and password'
+              )}
+            </p>
           </div>
-          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-teal-950 text-teal-300 border border-teal-800">
-            HOD ROLE
-          </span>
+          {matchedHod && (
+            <span
+              className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold text-white shadow"
+              style={{ backgroundColor: matchedHod.accentHex }}
+            >
+              {matchedHod.code}
+            </span>
+          )}
         </div>
 
         {errorMsg && (
@@ -109,95 +214,84 @@ export default function HodLogin({ onLogin, onBackToPublic }) {
           </div>
         )}
 
-        <form onSubmit={handleHodLogin} className="space-y-4">
+        <form onSubmit={handleLoginSubmit} className="space-y-4">
+          {/* Username Input */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Select Academic Department
-            </label>
-            <select
-              value={selectedDept}
-              onChange={(e) => setSelectedDept(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-medium focus:outline-none focus:border-teal-500 transition"
-            >
-              {departments.map((d) => (
-                <option key={d.code} value={d.code}>
-                  {d.code} — {d.name} ({d.hod})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
-              <span>HOD Security Passcode (PIN)</span>
-              <span className="text-[10px] text-teal-400 font-mono">Demo: 1234</span>
+              HOD Username / Staff Identifier
             </label>
             <div className="relative">
               <input
-                type="password"
-                maxLength={8}
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="Enter 4-digit PIN"
-                className="w-full px-4 py-2.5 pl-10 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-sm tracking-widest focus:outline-none focus:border-teal-500 transition"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Enter HOD username"
+                className="w-full px-4 py-3 pl-10 rounded-xl bg-slate-950 border border-slate-700/80 text-white text-sm font-medium focus:outline-none transition shadow-inner font-mono"
                 required
               />
-              <KeyRound size={16} className="absolute left-3.5 top-3 text-slate-500" />
+              <User size={16} className="absolute left-3.5 top-3.5 text-slate-400" />
             </div>
           </div>
 
-          {/* Quick Preset Buttons */}
-          <div className="pt-1">
-            <span className="text-[10px] text-slate-500 font-semibold block mb-1.5">
-              Instant Department Presets:
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {departments.map((d) => (
-                <button
-                  key={d.code}
-                  type="button"
-                  onClick={() => {
-                    setSelectedDept(d.code);
-                    setPin('1234');
-                  }}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition ${
-                    selectedDept === d.code
-                      ? 'bg-teal-600 text-white shadow'
-                      : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {d.code}
-                </button>
-              ))}
+          {/* Password Input */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              HOD Password
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your HOD password"
+                className="w-full px-4 py-3 pl-10 pr-10 rounded-xl bg-slate-950 border border-slate-700/80 text-white text-sm font-medium focus:outline-none transition shadow-inner font-mono"
+                required
+              />
+              <Lock size={16} className="absolute left-3.5 top-3.5 text-slate-400" />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3.5 top-3.5 text-slate-400 hover:text-white transition"
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
             </div>
           </div>
 
+          {/* Submit Button */}
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 disabled:opacity-40 text-white font-bold text-xs transition shadow-lg shadow-teal-950 flex items-center justify-center gap-2"
+            className="w-full py-3.5 rounded-xl text-white font-bold text-sm transition shadow-lg flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+            style={{ backgroundColor: activeAccent }}
           >
-            <span>{isLoading ? 'Verifying...' : 'Access HOD Dashboard'}</span>
-            <ArrowRight size={15} />
+            <span>
+              {isLoading
+                ? 'Authenticating...'
+                : matchedHod
+                ? `Login to ${matchedHod.code} Dashboard`
+                : 'Sign In to Department Dashboard'}
+            </span>
+            <ArrowRight size={16} />
           </button>
         </form>
 
-        {/* Footer Navigation */}
+        {/* Footer Navigation Links */}
         <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
           <button
             type="button"
             onClick={onBackToPublic}
-            className="hover:text-white flex items-center gap-1 transition"
+            className="hover:text-white flex items-center gap-1 transition cursor-pointer"
           >
             <ArrowLeft size={13} />
             <span>Public OPAC</span>
           </button>
 
           <a
-            href="#/login"
+            href="#/scholar/library_search"
             className="text-emerald-400 hover:text-emerald-300 font-semibold"
           >
-            Student Scholar Login
+            Student Catalog
           </a>
 
           <a

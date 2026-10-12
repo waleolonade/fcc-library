@@ -35,122 +35,26 @@ export default function StudentPatronProfile({
   const [selectedLoanForPayment, setSelectedLoanForPayment] = useState(null);
 
   // Reservations list
-  const [reservations, setReservations] = useState([
-    {
-      id: 'RES-2026-091',
-      bookId: 'FCC-PDF-3779',
-      bookTitle: 'Computer Networks Tanenbaum 5th Edition',
-      callNumber: 'QA76.9 .D3 O46 2026',
-      pickupDesk: 'Main Library Circulation Desk (Ground Floor)',
-      status: 'Ready for Pickup (48h Hold)',
-      queuePosition: 1,
-      reservedOn: '2026-09-28'
-    },
-    {
-      id: 'RES-2026-044',
-      bookId: 'FCC-B001',
-      bookTitle: 'Principles and Practice of Co-operative Economics',
-      callNumber: 'HD2963 .A34 2024',
-      pickupDesk: 'Prof. Hezekiah Carrel Annex',
-      status: 'In Queue (Position #2)',
-      queuePosition: 2,
-      reservedOn: '2026-09-29'
-    }
-  ]);
+  const [reservations, setReservations] = useState([]);
 
   // Borrowing History (archived)
-  const [borrowingHistory, setBorrowingHistory] = useState([
-    {
-      id: 'LN-ARCH-891',
-      bookTitle: 'Cooperative Banking and Agricultural Micro-Credit',
-      author: 'Dr. Kehinde Oladipo',
-      borrowedOn: '2026-08-10',
-      returnedOn: '2026-08-24',
-      status: 'Returned On Time',
-      fine: 0
-    },
-    {
-      id: 'LN-ARCH-842',
-      bookTitle: 'Financial Accounting in Cooperative Apex Syndicates',
-      author: 'Prof. A. O. Adebayo',
-      borrowedOn: '2026-07-02',
-      returnedOn: '2026-07-16',
-      status: 'Returned On Time',
-      fine: 0
-    },
-    {
-      id: 'LN-ARCH-789',
-      bookTitle: 'Auditing and Internal Controls in Micro-Enterprises',
-      author: 'Barrister B. A. Olowookere',
-      borrowedOn: '2026-06-11',
-      returnedOn: '2026-06-25',
-      status: 'Returned On Time',
-      fine: 0
-    }
-  ]);
+  const [borrowingHistory, setBorrowingHistory] = useState([]);
 
   // Saved / Favorited Books
   const [savedBooksList, setSavedBooksList] = useState(() => {
     try {
       const ids = JSON.parse(localStorage.getItem('fcc_saved_books_list') || '[]');
-      const matched = books.filter(b => ids.includes(b.id));
-      if (matched.length > 0) return matched;
-    } catch (e) {}
-    return books.slice(0, 3);
+      return books.filter(b => ids.includes(b.id));
+    } catch (e) {
+      return [];
+    }
   });
 
   // Reading History (E-Books)
-  const [readingHistory, setReadingHistory] = useState([
-    {
-      bookTitle: 'Computer Networks Tanenbaum 5th Edition',
-      progressPercent: 78,
-      lastRead: 'Today, 11:42 AM',
-      pagesRead: 220,
-      totalPages: 282
-    },
-    {
-      bookTitle: 'Principles and Practice of Co-operative Economics',
-      progressPercent: 45,
-      lastRead: 'Yesterday',
-      pagesRead: 172,
-      totalPages: 384
-    },
-    {
-      bookTitle: 'Cooperative Law & Statutory Auditing in Nigeria',
-      progressPercent: 100,
-      lastRead: '3 days ago',
-      pagesRead: 310,
-      totalPages: 310
-    }
-  ]);
+  const [readingHistory, setReadingHistory] = useState([]);
 
   // Notifications
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      title: 'Hold Item Ready for Pickup',
-      message: 'Your reservation for "Computer Networks Tanenbaum 5th Edition" is waiting at the Main Circulation Desk.',
-      time: '2 hours ago',
-      read: false,
-      type: 'hold'
-    },
-    {
-      id: 2,
-      title: 'Due Date Reminder (3 Days Remaining)',
-      message: 'Loan LN-9821 ("Agro-Allied Enterprise Strategy") is due for return on October 3, 2026.',
-      time: '1 day ago',
-      read: false,
-      type: 'warning'
-    },
-    {
-      id: 3,
-      title: 'NBTE Accreditation Digital Collection Live',
-      message: 'New TETFUND monographs have been added to the institutional repository.',
-      time: '3 days ago',
-      read: true,
-      type: 'announcement'
-    }
-  ]);
+  const [notifications, setNotifications] = useState([]);
 
   const libraryId = `STU/2026/${(user?.matric || '00125').replace(/[^0-9]/g, '').slice(-5) || '00125'}`;
   const barcodeValue = `FCC-STU-${(user?.matric || '00125').replace(/[^0-9]/g, '').slice(-5) || '00125'}`;

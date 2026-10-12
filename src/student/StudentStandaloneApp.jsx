@@ -110,7 +110,7 @@ export default function StudentStandaloneApp() {
     const [pathPart, queryPart] = clean.split('?');
     const params = new URLSearchParams(queryPart || '');
 
-    // 1. Direct PDF Reader deep link (e.g. #/read/3 or #/read/thesis/1)
+    // 1. Direct PDF Reader deep link (e.g. #/reader/, #/reader/FCC-HOD-8201, #/read/3, #/read/thesis/1)
     if (pathPart.startsWith('read/thesis/')) {
       const thesisId = pathPart.replace('read/thesis/', '');
       const match = (loadedTheses || []).find(t => String(t.id) === String(thesisId));
@@ -119,7 +119,7 @@ export default function StudentStandaloneApp() {
           id: `thesis-${match.id}`,
           title: match.title,
           author: match.author || match.studentName || 'Researcher',
-          pdfUrl: match.fileUrl || '/demo-theses.pdf',
+          pdfUrl: match.fileUrl || `/api/theses/${match.id}/file`,
           pdfPages: match.pages || 148,
           callNumber: `TH-${match.id}`
         });
@@ -127,11 +127,28 @@ export default function StudentStandaloneApp() {
       return;
     }
 
-    if (pathPart.startsWith('read/')) {
-      const bookId = pathPart.replace('read/', '');
-      const match = (loadedBooks || []).find(b => String(b.id) === String(bookId));
-      if (match) {
-        setActiveBookForReader(match);
+    if (pathPart === 'reader' || pathPart === 'reader/' || pathPart.startsWith('reader/') || pathPart.startsWith('read/')) {
+      const bookId = pathPart.replace(/^reader\/?/, '').replace(/^read\/?/, '').trim();
+      if (bookId) {
+        const match = (loadedBooks || []).find(b => String(b.id).toLowerCase() === String(bookId).toLowerCase());
+        if (match) {
+          setActiveBookForReader(match);
+        } else {
+          fetch(`/api/catalog/${encodeURIComponent(bookId)}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(b => {
+              if (b && b.id) setActiveBookForReader(b);
+            })
+            .catch(() => {});
+        }
+      } else {
+        // Auto-select the best uploaded book with real PDF from HODs/admin
+        const withPdf = (loadedBooks || []).find(b => b.file_data_url || b.fileDataUrl || (b.file_name && b.file_name.toLowerCase().endsWith('.pdf')));
+        if (withPdf) {
+          setActiveBookForReader(withPdf);
+        } else if (loadedBooks && loadedBooks.length > 0) {
+          setActiveBookForReader(loadedBooks[0]);
+        }
       }
       return;
     }

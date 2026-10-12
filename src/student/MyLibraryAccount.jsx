@@ -233,7 +233,7 @@ export default function MyLibraryAccount({
           {overdueLoans.length > 0 && (
             <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 space-y-2">
               <p className="text-xs font-bold text-rose-300 flex items-center gap-1.5">
-                <AlertTriangle size={14} /> Overdue Items — Fine Accruing
+                <AlertTriangle size={14} /> Overdue Items - Fine Accruing
               </p>
               {overdueLoans.map(l => (
                 <div key={l.id} className="flex items-center justify-between text-xs">
@@ -288,7 +288,7 @@ export default function MyLibraryAccount({
           {overdueLoans.length === 0 ? (
             <div className="text-center py-12">
               <CheckCircle size={36} className="mx-auto text-emerald-700 mb-2" />
-              <p className="text-slate-400">No overdue items — well done!</p>
+              <p className="text-slate-400">No overdue items - well done!</p>
             </div>
           ) : overdueLoans.map(l => (
             <LoanRow key={l.id} loan={l} books={books} onRenew={onRenewLoan} onPayFine={onPayFine} />

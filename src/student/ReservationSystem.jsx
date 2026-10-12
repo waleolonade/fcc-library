@@ -52,7 +52,7 @@ function ReserveBookModal({ book, user, existingReservations, onConfirm, onClose
     const issues = [];
     if (alreadyReserved) issues.push('You already have an active reservation for this title.');
     if (userReservations.length >= policy.reserveMax) issues.push(`You have reached your reservation limit (${policy.reserveMax}).`);
-    if (book?.copiesAvailable > 0) issues.push('Copies are currently available — borrowing directly is recommended.');
+    if (book?.copiesAvailable > 0) issues.push('Copies are currently available - borrowing directly is recommended.');
     setEligibilityResult({
       eligible: issues.length === 0,
       issues,

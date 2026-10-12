@@ -20,3 +20,8 @@ Thumbs.db
 .vscode/
 .idea/
 scratch/
+
+# Database files
+*.sqlite
+*.sqlite3
+backend/database/*.sqlite

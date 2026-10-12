@@ -1,9 +1,13 @@
-import React, { useState } from 'react';
 import {
-  Shield, Users, Key, Clock, DollarSign, Upload, FileText,
-  CheckCircle, Plus, Edit2, Trash2, Download, AlertTriangle,
-  Building2, GraduationCap, UserCheck, ShieldAlert, Sparkles, Filter
+  CheckCircle,
+  Clock,
+  Edit2,
+  Plus,
+  Shield,
+  Upload,
+  Users
 } from 'lucide-react';
+import React, { useState } from 'react';
 
 export default function InstitutionalRbacPolicies() {
   const [activeSubTab, setActiveSubTab] = useState('rbac'); // 'rbac' | 'policies' | 'batch_import'
@@ -151,7 +155,7 @@ FCC/CSC/2026/002, Jane Smith, j.smith@fccibadan.edu.ng, Computer Science, studen
           <span>Institutional RBAC & Policy Configuration Engine</span>
         </div>
         <h2 className="text-2xl font-black text-white">
-          Role-Based Access Control & Global System Policies
+          Role - Based Access Control & Global System Policies
         </h2>
         <p className="text-xs sm:text-sm text-slate-400 max-w-3xl">
           Super Admin oversight for user tiers (Super Admin, Librarian, HOD, Faculty, Student), circulation loan rules, fine calculation algorithms, and batch SIS student directory import.

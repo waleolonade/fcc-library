@@ -1,3 +1,5 @@
+import { installStorageGuard } from '../utils/safeStorage';
+installStorageGuard();
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import StudentStandaloneApp from './StudentStandaloneApp.jsx';

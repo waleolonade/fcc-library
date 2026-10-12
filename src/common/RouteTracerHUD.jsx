@@ -66,56 +66,89 @@ export default function RouteTracerHUD({
     setCustomJumpInput('');
   };
 
-  // Compile Comprehensive Catalog of Files and Action URIs
+  const [theses, setTheses] = useState([]);
+  const [patrons, setPatrons] = useState([]);
+  const [catalogBooks, setCatalogBooks] = useState(books);
+
+  useEffect(() => {
+    if (books && books.length > 0) {
+      setCatalogBooks(books);
+    } else {
+      fetch('/api/catalog')
+        .then(res => res.ok ? res.json() : [])
+        .then(data => {
+          if (Array.isArray(data)) setCatalogBooks(data);
+        })
+        .catch(() => {});
+    }
+  }, [books]);
+
+  useEffect(() => {
+    fetch('/api/theses')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        if (Array.isArray(data)) setTheses(data);
+      })
+      .catch(() => {});
+
+    fetch('/api/patrons')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        if (Array.isArray(data)) setPatrons(data);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Compile Comprehensive Catalog of Files and Action URIs from Database
   const fileAndBookLinks = [
-    ...books.slice(0, 8).map(b => ({
+    ...catalogBooks.map(b => ({
       uri: `#/book/${b.id}`,
       label: `Book: ${b.title}`,
       category: 'Catalog Books',
-      desc: `Direct permalink to ${b.title} by ${b.author} [ISBN: ${b.isbn}]`
+      desc: `Direct permalink to ${b.title} by ${b.author} [${b.callNumber || 'No Call No.'}]`
     })),
-    ...books.slice(0, 4).map(b => ({
+    ...catalogBooks.filter(b => b.isDigital).map(b => ({
       uri: `#/reader/${b.id}`,
       label: `E-Reader: ${b.title}`,
       category: 'E-Books',
       desc: `Direct chapter reading viewer for ${b.title}`
     })),
-    {
-      uri: '#/scholar/theses?id=TH-2024-001',
-      label: 'Thesis File: Decentralized Agricultural Credit Unions',
+    ...theses.map(th => ({
+      uri: `#/scholar/theses?id=${th.id}`,
+      label: `Thesis File: ${th.title}`,
       category: 'Theses Files',
-      desc: 'Adeyemi & Ogundipe (2024) Capstone Repository PDF'
-    },
-    {
-      uri: '#/scholar/theses?id=TH-2024-002',
-      label: 'Thesis File: Automated Micro-Finance Loan Default Detection',
-      category: 'Theses Files',
-      desc: 'Babatunde & Olanrewaju (2024) ML Research PDF'
-    },
-    {
-      uri: '#/file/certificate/clearance?matric=FCC-CEM-2024-042',
-      label: 'Official Clearance Certificate (Wale Olonade)',
-      category: 'Official Documents',
-      desc: 'Printable Accredited Institutional Clearance Certificate'
-    },
+      desc: `${th.author} (${th.year}) • ${th.department || 'Federal Co-operative College'} [${th.degree || 'Repository PDF'}]`
+    })),
+    ...patrons.slice(0, 5).map(p => {
+      const cleanMatric = (p.matric || '').replace(/\//g, '-');
+      return {
+        uri: `#/file/certificate/clearance?matric=${cleanMatric}`,
+        label: `Official Clearance Certificate (${p.name})`,
+        category: 'Official Documents',
+        desc: `Printable Accredited Institutional Clearance Certificate for ${p.matric}`
+      };
+    }),
     {
       uri: '#/file/certificate/accreditation?ref=NBTE-2024-FCC-A',
       label: 'NBTE Institutional Accreditation Certificate (Grade A)',
       category: 'Official Documents',
       desc: 'National Board for Technical Education Official Credential'
     },
-    {
-      uri: '#/file/card/pvc?matric=FCC-CEM-2024-042',
-      label: 'PVC Smart NFC Library ID Card Studio',
-      category: 'Official Documents',
-      desc: 'Dual-sided ISO/IEC 14443 NFC Library PVC Card'
-    },
-    {
-      uri: '#/admin/marc?id=FCC-B001',
-      label: 'MARC21 Record Export (.MRC): Co-op Management',
+    ...patrons.slice(0, 5).map(p => {
+      const cleanMatric = (p.matric || '').replace(/\//g, '-');
+      return {
+        uri: `#/file/card/pvc?matric=${cleanMatric}`,
+        label: `PVC Smart NFC Library ID Card Studio (${p.name})`,
+        category: 'Official Documents',
+        desc: `Dual-sided ISO/IEC 14443 NFC Library PVC Card for ${p.matric}`
+      };
+    }),
+    ...catalogBooks.map(b => ({
+      uri: `#/admin/marc?id=${b.id}`,
+      label: `MARC21 Record Export (.MRC): ${b.title}`,
       category: 'Bibliographic Files',
-      desc: 'Binary MARC 21 machine-readable record download'
-    }
+      desc: `Binary MARC 21 machine-readable record download for ${b.id}`
+    }))
   ];
 
   const allDirectoryItems = [
@@ -177,7 +210,7 @@ export default function RouteTracerHUD({
                 type="text"
                 value={customJumpInput}
                 onChange={(e) => setCustomJumpInput(e.target.value)}
-                placeholder="Jump to URI (e.g. #/book/FCC-B001)"
+                placeholder="Jump to URI (e.g. #/opac or #/admin)"
                 className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-[11px] font-mono text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-48 xl:w-60"
               />
               <button

@@ -444,7 +444,7 @@ export default function FccCataloguingModule({ books = [], onIngestSuccess }) {
           <div>
             <div className="flex flex-wrap items-center gap-2 mb-2">
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                MODULE 3 — Cataloguing & Bibliographic Control
+                MODULE 3 - Cataloguing & Bibliographic Control
               </span>
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-teal-500/20 text-teal-300 border border-teal-500/30">
                 Library of Congress MARC 21 Update No. 42 (May 2026)
@@ -1069,7 +1069,7 @@ export default function FccCataloguingModule({ books = [], onIngestSuccess }) {
               </div>
               <div>
                 <div className="font-bold text-white flex items-center gap-2">
-                  <span>Library of Congress MARC 21 Formats — Update No. 42 (May 2026)</span>
+                  <span>Library of Congress MARC 21 Formats - Update No. 42 (May 2026)</span>
                   <span className="px-2 py-0.2 rounded-full text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                     Compliant
                   </span>

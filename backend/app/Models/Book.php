@@ -48,9 +48,11 @@ class Book extends Model
         'uploadedAt',
         'uploadedBy',
         'references',
-        'referenceStyle'
+        'referenceStyle',
+        'coverImage'
     ];
 
+    public function getCoverImageAttribute() { return $this->attributes['cover_image'] ?? null; }
     public function getIsDigitalAttribute() { return (bool) ($this->attributes['is_digital'] ?? false); }
     public function getPdfPagesAttribute() { return (int) ($this->attributes['pdf_pages'] ?? 0); }
     public function getFileSizeAttribute() { return $this->attributes['file_size'] ?? null; }

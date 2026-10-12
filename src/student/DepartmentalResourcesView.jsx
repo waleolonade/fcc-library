@@ -27,16 +27,32 @@ export default function DepartmentalResourcesView({ user, onOpenReader }) {
     }
 
     try {
+      const isDemo = (item) => {
+        if (!item) return false;
+        const id = String(item.id || '');
+        if (['HOD-UP-001', 'HOD-UP-002', 'HOD-UP-003', 'HOD-UP-004', 'FCC-HOD-CSC-001', 'FCC-HOD-CSC-PRJ', 'FCC-HOD-CSC-JRN'].includes(id)) return true;
+        const callNum = String(item.callNumber || item.call_number || item.assigned_call_number || '');
+        if (['QA76.9 .O46 2024', 'TH-CSC-2024-001', 'JRN-CSC-VOL14'].includes(callNum)) return true;
+        const title = (item.title || '').toLowerCase();
+        return title.includes('cooperative econometrics past examination') ||
+               title.includes('distributed multi-cloud systems') ||
+               title.includes('autonomous multi-agent citation resolution') ||
+               title.includes('west african journal of applied computer science') ||
+               title.includes('soil nitrogen dynamics & cocoa harvest') ||
+               title.includes('modern micro-credit lending & syndicate') ||
+               title.includes('vector indexing lab handout');
+      };
+
       // 1. Gather approved items from local submissions
       const localSubmissions = JSON.parse(localStorage.getItem('fcc_hod_submissions_v48') || '[]');
       const pendingQueue = JSON.parse(localStorage.getItem('fcc_pending_department_uploads') || '[]');
-      const localApproved = [...localSubmissions, ...pendingQueue].filter(s => s.status === 'approved');
+      const localApproved = [...localSubmissions, ...pendingQueue].filter(s => s.status === 'approved' && !isDemo(s));
 
       // 2. Gather approved items from local catalog
       const catalog = JSON.parse(localStorage.getItem('fcc_catalog_v48_gov') || '[]');
-      const catalogHodItems = catalog.filter(b => b.id && String(b.id).includes('HOD'));
+      const catalogHodItems = catalog.filter(b => b.id && String(b.id).includes('HOD') && !isDemo(b));
 
-      const combined = [...allApproved];
+      const combined = allApproved.filter(s => !isDemo(s));
       const seen = new Set(combined.map(x => String(x.id || x.title)));
 
       for (const item of localApproved) {

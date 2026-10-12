@@ -13,6 +13,7 @@ class DepartmentUpload extends Model
         'id', 'title', 'author', 'department_id', 'department_name',
         'uploaded_by_hod_id', 'hod_name', 'course_code', 'target_level',
         'semester', 'resource_type', 'file_name', 'file_data_url',
+        'cover_image',
         'access_scope', 'status', 'review_notes', 'reviewed_by',
         'assigned_call_number', 'assigned_shelf', 'book_id'
     ];
