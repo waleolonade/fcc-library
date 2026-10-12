@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\RecommendationController;
 use App\Http\Controllers\Api\LmsApiController;
 use App\Http\Controllers\Api\SimpleLibApiController;
 use App\Http\Controllers\Api\CourseController;
+use App\Http\Controllers\PolicyController;
 
 // Institutional Courses & Curriculum Syllabus API (Fetched from database)
 Route::get('/courses', [CourseController::class, 'index']);
@@ -126,6 +127,15 @@ Route::post('/copies', [CopiesBarcodeController::class, 'store']);
 Route::get('/settings', [SettingsController::class, 'index']);
 Route::post('/settings', [SettingsController::class, 'update']);
 Route::get('/branches', [SettingsController::class, 'getBranches']);
+
+// 5b. Institutional Policies & Role-Based Access Control (RBAC) API
+Route::get('/policies', [PolicyController::class, 'getPolicies']);
+Route::post('/policies/tier', [PolicyController::class, 'updateTierPolicy']);
+Route::post('/policies/fines', [PolicyController::class, 'updateFineRules']);
+Route::get('/rbac/directory', [PolicyController::class, 'getRbacDirectory']);
+Route::post('/rbac/users', [PolicyController::class, 'createStaffUser']);
+Route::put('/rbac/users/{id}/role', [PolicyController::class, 'updateUserRole'])->where('id', '.*');
+Route::patch('/rbac/users/{id}/role', [PolicyController::class, 'updateUserRole'])->where('id', '.*');
 
 // 6. Backward Compatibility Catalog API
 Route::get('/catalog', [CatalogController::class, 'index']);

@@ -34,6 +34,14 @@ class CatalogController extends Controller
             $query->where('is_digital', 1);
         }
 
+        // Exclude any pending or unapproved books from the master student catalog
+        $query->where(function ($q) {
+            $q->whereNull('status')
+              ->orWhere('status', 'approved')
+              ->orWhere('status', 'Published')
+              ->orWhere('status', 'active');
+        });
+
         $books = $query->orderBy('uploaded_at', 'desc')->get()->map(function ($book) {
             $data = $book->toArray();
             $hasPdf = !empty($book->file_data_url) || !empty($book->file_name);
@@ -55,6 +63,12 @@ class CatalogController extends Controller
             ->orWhereRaw('LOWER(id) = ?', [strtolower($id)])
             ->first();
 
+        if ($book && ($book->status === 'pending' || $book->status === 'rejected')) {
+            return response()->json([
+                'error' => 'This resource is pending administrative approval at #/admin/hod-submissions and has not been approved for student access.'
+            ], 403);
+        }
+
         if (!$book) {
             $upload = \App\Models\DepartmentUpload::where('id', $id)
                 ->orWhere('book_id', $id)
@@ -63,6 +77,14 @@ class CatalogController extends Controller
                 ->first();
 
             if ($upload) {
+                // RESTRICTION: HOD upload MUST be approved by Admin at #/admin/hod-submissions before student catalog access
+                if (strtolower($upload->status ?? 'pending') !== 'approved') {
+                    return response()->json([
+                        'error' => 'This departmental resource is pending review and approval by the Central Library Administration at #/admin/hod-submissions before student access is permitted.',
+                        'status' => $upload->status
+                    ], 403);
+                }
+
                 if ($upload->book_id && ($b = Book::where('id', $upload->book_id)->first())) {
                     return response()->json($b);
                 }
@@ -81,6 +103,7 @@ class CatalogController extends Controller
                     'cover_image' => $upload->cover_image,
                     'isDigital' => true,
                     'is_digital' => 1,
+                    'status' => 'approved',
                     'uploadedBy' => $upload->hod_name,
                     'uploaded_by' => $upload->hod_name,
                 ]);
@@ -101,13 +124,28 @@ class CatalogController extends Controller
             ->orWhereRaw('LOWER(id) = ?', [strtolower($id)])
             ->first();
 
+        if ($book && ($book->status === 'pending' || $book->status === 'rejected')) {
+            return response()->json([
+                'error' => 'Access Denied: Resource is pending administrative approval.'
+            ], 403);
+        }
+
         $dataUrl = $book?->getAttribute('file_data_url');
+        $upload = null;
         if (!$dataUrl) {
             $upload = \App\Models\DepartmentUpload::where('book_id', $id)
                 ->orWhere('id', $id)
                 ->orWhereRaw('LOWER(book_id) = ?', [strtolower($id)])
                 ->orWhereRaw('LOWER(id) = ?', [strtolower($id)])
                 ->first();
+
+            // RESTRICTION: HOD upload MUST be approved by Admin at #/admin/hod-submissions before file access
+            if ($upload && strtolower($upload->status ?? 'pending') !== 'approved') {
+                return response()->json([
+                    'error' => 'Access Denied: This departmental document is pending review and approval by Central Library Admin at #/admin/hod-submissions before student reading is permitted.'
+                ], 403);
+            }
+
             $dataUrl = $upload?->file_data_url;
         }
 

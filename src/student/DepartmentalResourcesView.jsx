@@ -15,80 +15,22 @@ export default function DepartmentalResourcesView({ user, onOpenReader }) {
 
   const fetchDepartmentUploads = async () => {
     setIsLoading(true);
-    let allApproved = [];
     try {
+      // SECURITY: Only trust the backend API which enforces status=approved
+      // Do NOT fall back to localStorage — it may contain pending/rejected submissions
       const res = await fetch(`/api/department-uploads?status=approved`);
       if (res.ok) {
         const data = await res.json();
-        allApproved = Array.isArray(data) ? data : [];
+        const approved = (Array.isArray(data) ? data : []).filter(s =>
+          s && String(s.status || '').toLowerCase() === 'approved'
+        );
+        setUploads(approved);
+      } else {
+        setUploads([]);
       }
     } catch (e) {
-      console.warn('API fetch warning, checking storage cache:', e);
-    }
-
-    try {
-      const isDemo = (item) => {
-        if (!item) return false;
-        const id = String(item.id || '');
-        if (['HOD-UP-001', 'HOD-UP-002', 'HOD-UP-003', 'HOD-UP-004', 'FCC-HOD-CSC-001', 'FCC-HOD-CSC-PRJ', 'FCC-HOD-CSC-JRN'].includes(id)) return true;
-        const callNum = String(item.callNumber || item.call_number || item.assigned_call_number || '');
-        if (['QA76.9 .O46 2024', 'TH-CSC-2024-001', 'JRN-CSC-VOL14'].includes(callNum)) return true;
-        const title = (item.title || '').toLowerCase();
-        return title.includes('cooperative econometrics past examination') ||
-               title.includes('distributed multi-cloud systems') ||
-               title.includes('autonomous multi-agent citation resolution') ||
-               title.includes('west african journal of applied computer science') ||
-               title.includes('soil nitrogen dynamics & cocoa harvest') ||
-               title.includes('modern micro-credit lending & syndicate') ||
-               title.includes('vector indexing lab handout');
-      };
-
-      // 1. Gather approved items from local submissions
-      const localSubmissions = JSON.parse(localStorage.getItem('fcc_hod_submissions_v48') || '[]');
-      const pendingQueue = JSON.parse(localStorage.getItem('fcc_pending_department_uploads') || '[]');
-      const localApproved = [...localSubmissions, ...pendingQueue].filter(s => s.status === 'approved' && !isDemo(s));
-
-      // 2. Gather approved items from local catalog
-      const catalog = JSON.parse(localStorage.getItem('fcc_catalog_v48_gov') || '[]');
-      const catalogHodItems = catalog.filter(b => b.id && String(b.id).includes('HOD') && !isDemo(b));
-
-      const combined = allApproved.filter(s => !isDemo(s));
-      const seen = new Set(combined.map(x => String(x.id || x.title)));
-
-      for (const item of localApproved) {
-        const key = String(item.id || item.title);
-        if (!seen.has(key)) {
-          seen.add(key);
-          combined.push(item);
-        }
-      }
-
-      for (const cat of catalogHodItems) {
-        const key = String(cat.id || cat.title);
-        if (!seen.has(key)) {
-          seen.add(key);
-          combined.push({
-            id: cat.id,
-            title: cat.title,
-            author: cat.author,
-            department_name: cat.department || cat.subject,
-            course_code: cat.courseCode || 'GEN',
-            target_level: cat.targetLevel || 'HND II',
-            resource_type: cat.format === 'E-Book' ? 'Lecture Handout' : 'Research Monograph',
-            assigned_call_number: cat.callNumber,
-            assigned_shelf: cat.shelfLocation,
-            file_data_url: cat.fileDataUrl,
-            file_name: cat.fileName,
-            abstract: cat.abstract,
-            access_scope: cat.accessLevel || 'Public Institution-Wide',
-            status: 'approved'
-          });
-        }
-      }
-
-      setUploads(combined);
-    } catch (err) {
-      setUploads(allApproved);
+      console.warn('API fetch warning for department uploads:', e);
+      setUploads([]);
     } finally {
       setIsLoading(false);
     }

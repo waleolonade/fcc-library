@@ -259,95 +259,37 @@ export default function StudentResearchHub({
   const [approvedHodJournals, setApprovedHodJournals] = useState([]);
 
   // Fetch approved HOD capstone/dissertation submissions & journals
+  // SECURITY: Only backend API is trusted — no localStorage fallback for pending items
   const loadApprovedUploads = async () => {
-    let apiApproved = [];
     try {
       const res = await fetch('/api/department-uploads?status=approved');
-      if (res.ok) {
-        const data = await res.json();
-        apiApproved = Array.isArray(data) ? data : [];
+      if (!res.ok) {
+        setApprovedHodDissertations([]);
+        setApprovedHodJournals([]);
+        return;
       }
-    } catch (e) {
-      // Backend fallback
-    }
-
-    try {
-      const isDemo = (s) => {
-        if (!s) return false;
-        const id = String(s.id || '');
-        if (['HOD-UP-001', 'HOD-UP-002', 'HOD-UP-003', 'HOD-UP-004', 'FCC-HOD-CSC-001', 'FCC-HOD-CSC-PRJ', 'FCC-HOD-CSC-JRN'].includes(id)) return true;
-        const callNum = String(s.callNumber || s.call_number || s.assigned_call_number || '');
-        if (['QA76.9 .O46 2024', 'TH-CSC-2024-001', 'JRN-CSC-VOL14'].includes(callNum)) return true;
-        const t = (s.title || '').toLowerCase();
-        return t.includes('cooperative econometrics past examination') ||
-               t.includes('distributed multi-cloud systems') ||
-               t.includes('autonomous multi-agent citation resolution') ||
-               t.includes('west african journal of applied computer science') ||
-               t.includes('soil nitrogen dynamics & cocoa harvest') ||
-               t.includes('modern micro-credit lending & syndicate') ||
-               t.includes('vector indexing lab handout');
-      };
-
-      const localSubs = JSON.parse(localStorage.getItem('fcc_hod_submissions_v48') || '[]');
-      const pendingQueue = JSON.parse(localStorage.getItem('fcc_pending_department_uploads') || '[]');
-      const catalog = JSON.parse(localStorage.getItem('fcc_catalog_v48_gov') || '[]');
-
-      const allMerged = [...apiApproved, ...localSubs, ...pendingQueue].filter(s => !isDemo(s) && s.status === 'approved');
-      const seen = new Set();
-      const uniqueApproved = [];
-      for (const item of allMerged) {
-        const key = String(item.id || item.title);
-        if (!seen.has(key)) {
-          seen.add(key);
-          uniqueApproved.push(item);
-        }
-      }
-
-      // Add from local catalog if marked approved
-      for (const b of catalog) {
-        const key = String(b.id || b.title);
-        if (!seen.has(key)) {
-          if (b.category === 'Student Project' || String(b.id || '').startsWith('TH-') || String(b.resourceType || '').toLowerCase().includes('project')) {
-            seen.add(key);
-            uniqueApproved.push({
-              ...b,
-              status: 'approved',
-              category: 'Student Project',
-              department_name: b.department || b.subject,
-              target_level: b.targetLevel || 'HND II',
-              file_data_url: b.fileDataUrl,
-              assigned_call_number: b.callNumber
-            });
-          } else if (b.category === 'Journal' || Boolean(b.issn) || String(b.resourceType || '').toLowerCase().includes('journal')) {
-            seen.add(key);
-            uniqueApproved.push({
-              ...b,
-              status: 'approved',
-              category: 'Journal',
-              department_name: b.department || b.subject,
-              file_data_url: b.fileDataUrl,
-              assigned_call_number: b.callNumber
-            });
-          }
-        }
-      }
+      const data = await res.json();
+      const apiApproved = (Array.isArray(data) ? data : []).filter(s =>
+        s && String(s.status || '').toLowerCase() === 'approved'
+      );
 
       // Partition into projects and journals
-      const projects = uniqueApproved.filter(s => {
+      const projects = apiApproved.filter(s => {
         const cat = (s.category || '').toLowerCase();
-        const res = (s.resource_type || s.resourceType || '').toLowerCase();
-        return cat.includes('project') || res.includes('project') || res.includes('dissertation') || res.includes('capstone') || res.includes('thesis') || String(s.id || '').startsWith('TH-');
+        const resType = (s.resource_type || s.resourceType || '').toLowerCase();
+        return cat.includes('project') || resType.includes('project') || resType.includes('dissertation') || resType.includes('capstone') || resType.includes('thesis') || String(s.id || '').startsWith('TH-');
       });
 
-      const journals = uniqueApproved.filter(s => {
+      const journals = apiApproved.filter(s => {
         const cat = (s.category || '').toLowerCase();
-        const res = (s.resource_type || s.resourceType || '').toLowerCase();
-        return cat.includes('journal') || res.includes('journal') || res.includes('periodical') || res.includes('serial') || Boolean(s.issn);
+        const resType = (s.resource_type || s.resourceType || '').toLowerCase();
+        return cat.includes('journal') || resType.includes('journal') || resType.includes('periodical') || resType.includes('serial') || Boolean(s.issn);
       });
 
       setApprovedHodDissertations(projects);
       setApprovedHodJournals(journals);
     } catch (e) {
+      console.warn('Research Hub: failed to load approved HOD uploads:', e);
       setApprovedHodDissertations([]);
       setApprovedHodJournals([]);
     }

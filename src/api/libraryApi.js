@@ -1060,7 +1060,61 @@ export const libraryApi = {
   },
 
   // -------------------------------------------------------------
-  // 13. REAL-TIME EVENT SUBSCRIPTION
+  // 14. INSTITUTIONAL POLICIES & RBAC API (Direct from database)
+  // -------------------------------------------------------------
+  policies: {
+    async getPolicies() {
+      const res = await fetchApi('/policies');
+      return res || { success: false };
+    },
+
+    async updateTier(role, policyData) {
+      const res = await fetchApi('/policies/tier', {
+        method: 'POST',
+        body: JSON.stringify({ role, policy: policyData })
+      });
+      if (syncChannel) syncChannel.postMessage({ type: 'POLICIES_UPDATED', timestamp: Date.now() });
+      return res;
+    },
+
+    async updateFineRules(fineRules) {
+      const res = await fetchApi('/policies/fines', {
+        method: 'POST',
+        body: JSON.stringify(fineRules)
+      });
+      if (syncChannel) syncChannel.postMessage({ type: 'POLICIES_UPDATED', timestamp: Date.now() });
+      return res;
+    }
+  },
+
+  rbac: {
+    async getDirectory(params = {}) {
+      const query = new URLSearchParams(params).toString();
+      const res = await fetchApi(`/rbac/directory${query ? '?' + query : ''}`);
+      return res || { success: false, users: [], stats: {} };
+    },
+
+    async updateUserRole(id, data) {
+      const res = await fetchApi(`/rbac/users/${encodeURIComponent(id)}/role`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+      });
+      if (syncChannel) syncChannel.postMessage({ type: 'RBAC_UPDATED', timestamp: Date.now() });
+      return res;
+    },
+
+    async createStaffUser(data) {
+      const res = await fetchApi('/rbac/users', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      if (syncChannel) syncChannel.postMessage({ type: 'RBAC_UPDATED', timestamp: Date.now() });
+      return res;
+    }
+  },
+
+  // -------------------------------------------------------------
+  // 15. REAL-TIME EVENT SUBSCRIPTION
   // -------------------------------------------------------------
   subscribe(callback) {
     if (!syncChannel) return () => {};

@@ -141,7 +141,28 @@ export const isDemoOrExcluded = (item) => {
 
 export const isPendingOrUnapproved = (item) => {
   if (!item) return false;
-  if (item.status && item.status.toLowerCase() !== 'approved') return true;
+  const id = String(item.id || '');
+  const status = String(item.status || '').toLowerCase().trim();
+
+  // HOD-originated items MUST have explicit 'approved' status
+  // to appear in the student catalog — Admin approval at #/admin/hod-submissions is mandatory
+  const isHodItem =
+    id.startsWith('HOD-UP-') ||
+    id.startsWith('FCC-HOD-') ||
+    id.startsWith('hod-') ||
+    Boolean(item.uploaded_by_hod_id) ||
+    Boolean(item.hod_name);
+
+  if (isHodItem) {
+    // Strict: must be explicitly 'approved' — pending/rejected/missing = blocked
+    return status !== 'approved';
+  }
+
+  // For non-HOD items: if status is explicitly set to pending/rejected, block them
+  if (status && status !== 'approved' && status !== 'published' && status !== 'active') {
+    return true;
+  }
+
   return false;
 };
 

@@ -654,13 +654,12 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
         if (data.upload) {
           setUploads(prev => [data.upload, ...prev]);
         }
-        if (data.book) {
-          window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: data.book }));
-        }
+        // NOTE: Do NOT dispatch fcc-catalog-updated for pending uploads!
+        // Only Admin approval at #/admin/hod-submissions should trigger catalog publication.
         window.dispatchEvent(new CustomEvent('fcc-submissions-updated', { detail: data.upload }));
 
-        setSuccessMsg(`✓ Book "${payload.title}" (${effectiveLevel}) published with Cover Artwork! Students now have instant access in OPAC, Student Portal & Reader.`);
-        setTimeout(() => setSuccessMsg(''), 6000);
+        setSuccessMsg(`✓ "${payload.title}" submitted for Central Library Review. Your submission is now in the Admin Review Queue at #/admin/hod-submissions. Students will gain access only after the Chief College Librarian approves and publishes it.`);
+        setTimeout(() => setSuccessMsg(''), 10000);
 
         // Reset quick form
         setQuickUploadForm({
@@ -1439,7 +1438,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
 
                   <div className="flex items-center justify-between pt-2">
                     <span className="text-[11px] text-slate-400">
-                      ⚡ Automatically indexed into OPAC, Student Reader, and Central Stacks.
+                      ⏳ Submitted to Central Library Review Queue — Admin approval required before student access.
                     </span>
 
                     <button
@@ -1455,7 +1454,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                       ) : (
                         <>
                           <Check size={14} />
-                          <span>Publish Book/PDF to Student Catalog</span>
+                          <span>Submit for Library Review & Approval</span>
                         </>
                       )}
                     </button>
@@ -1738,7 +1737,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                 }}
                 onUploadSuccess={(newUp) => {
                   setUploads([newUp, ...uploads]);
-                  setSuccessMsg(`Resource "${newUp.title}" saved to database and queued for students!`);
+                  setSuccessMsg(`Resource "${newUp.title}" submitted to the Central Library Review Queue. Pending Chief Librarian approval at #/admin/hod-submissions before student access.`);
                   handleTabSwitch('submissions');
                 }}
               />
