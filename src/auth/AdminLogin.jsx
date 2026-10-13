@@ -17,7 +17,7 @@ import { navigateTo } from '../utils/router';
 import { PATTERNS } from '../utils/backgroundPatterns';
 
 export default function AdminLogin({ onLogin }) {
-  const [adminEmail, setAdminEmail] = useState('librarian@fccibadan.edu.ng');
+  const [adminEmail, setAdminEmail] = useState('');
   const [adminPass, setAdminPass] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -129,7 +129,6 @@ export default function AdminLogin({ onLogin }) {
                 <label className="block text-slate-300 font-semibold uppercase tracking-wider">
                   Admin Authority Passkey
                 </label>
-                <span className="text-[10px] text-indigo-400 font-mono">Demo: 9999</span>
               </div>
               <div className="relative">
                 <input

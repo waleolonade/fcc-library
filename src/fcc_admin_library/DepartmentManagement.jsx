@@ -381,9 +381,9 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
             <p className="text-[11px] text-emerald-400">Active Academic Programs</p>
           </div>
           <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-1">
-            <span className="text-[10px] font-mono uppercase text-slate-400">Enrolled Scholars</span>
+            <span className="text-[10px] font-mono uppercase text-slate-400">Registered Students</span>
             <div className="text-2xl font-black text-white">{totalStudents.toLocaleString()}</div>
-            <p className="text-[11px] text-teal-400">Across ND & HND tiers</p>
+            <p className="text-[11px] text-teal-400">Live Database Roster</p>
           </div>
           <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-1">
             <span className="text-[10px] font-mono uppercase text-slate-400">Curriculum Courses</span>
@@ -497,7 +497,7 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
                     {/* 1. Students Metric */}
                     <div className={`relative overflow-hidden p-3 rounded-2xl bg-slate-950 border border-slate-800 hover:${theme.borderSolid} transition-all flex flex-col justify-between group/stat`}>
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold">Students</span>
+                        <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold">Registered Students</span>
                         <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
                           <Users size={12} />
                         </div>

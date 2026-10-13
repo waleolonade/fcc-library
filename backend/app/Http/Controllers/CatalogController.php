@@ -19,15 +19,26 @@ class CatalogController extends Controller
             }
         }
 
+        if ($author = $request->query('author')) {
+            $query->where('author', 'like', "%{$author}%");
+        }
+
         if ($search = $request->query('search')) {
+            $field = strtolower(trim((string)$request->query('field', $request->query('search_field', 'all'))));
             $s = "%{$search}%";
-            $query->where(function ($q) use ($s) {
-                $q->where('title', 'like', $s)
-                  ->orWhere('author', 'like', $s)
-                  ->orWhere('isbn', 'like', $s)
-                  ->orWhere('call_number', 'like', $s)
-                  ->orWhere('subject', 'like', $s);
-            });
+            if ($field === 'author') {
+                $query->where('author', 'like', $s);
+            } elseif ($field === 'title') {
+                $query->where('title', 'like', $s);
+            } else {
+                $query->where(function ($q) use ($s) {
+                    $q->where('title', 'like', $s)
+                      ->orWhere('author', 'like', $s)
+                      ->orWhere('isbn', 'like', $s)
+                      ->orWhere('call_number', 'like', $s)
+                      ->orWhere('subject', 'like', $s);
+                });
+            }
         }
 
         if ($request->query('digitalOnly') === 'true') {

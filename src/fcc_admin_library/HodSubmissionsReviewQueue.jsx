@@ -935,8 +935,8 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
                         <strong className="text-white font-mono">{uploadsCount} resources</strong>
                       </div>
                       <div className="p-2 rounded-lg bg-slate-950/60 border border-slate-800/60">
-                        <span className="text-slate-500 block text-[9.5px]">Enrolled Students</span>
-                        <strong className="text-white font-mono">{dept.student_count || dept.studentCount || 150} scholars</strong>
+                        <span className="text-slate-500 block text-[9.5px]">Registered Students</span>
+                        <strong className="text-white font-mono">{(dept.student_count ?? dept.studentCount ?? 0)} scholars</strong>
                       </div>
                     </div>
                   </div>

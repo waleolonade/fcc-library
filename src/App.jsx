@@ -633,11 +633,19 @@ export default function App() {
 
   return (
     <div
-      className="min-h-screen bg-[#021810] text-emerald-50 font-sans selection:bg-emerald-500 selection:text-white flex flex-col pb-16"
+      className={`min-h-screen bg-[#021810] text-emerald-50 font-sans selection:bg-emerald-500 selection:text-white flex flex-col ${
+        viewMode === 'student'
+          ? 'h-screen overflow-hidden'
+          : currentUser &&
+            ['admin', 'hod'].includes(currentUser.role) &&
+            !['kiosk', 'book_dossier', 'admin_login', 'hod_login'].includes(viewMode)
+          ? 'pb-16 lg:pb-0 lg:h-screen lg:overflow-hidden'
+          : 'pb-16'
+      }`}
       style={{ backgroundImage: PATTERNS.app }}
     >
       {/* Top Banner Notice with Traceable URL Address Bar */}
-      <div className="bg-gradient-to-r from-[#032317] via-[#042e1f] to-[#021810] border-b border-emerald-800/40 text-xs py-1.5 px-3 sm:px-4 flex flex-wrap items-center justify-between gap-2 z-40">
+      <div className="bg-gradient-to-r from-[#032317] via-[#042e1f] to-[#021810] border-b border-emerald-800/40 text-xs py-1.5 px-3 sm:px-4 flex flex-wrap items-center justify-between gap-2 z-40 shrink-0">
         <div className="flex items-center gap-2">
           <img
             src="/assets/fcc-logo.png"
@@ -691,7 +699,7 @@ export default function App() {
       </div>
 
       {/* Main View Router */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-h-0 min-w-0">
         {viewMode === 'kiosk' ? (
           <SelfServiceKiosk
             books={books}
@@ -788,9 +796,9 @@ export default function App() {
             onSwitchToUserPortal={() => {
               setCurrentUser({
                 role: 'student',
-                matric: 'FCC/CEM/2024/042',
-                name: 'Wale Olonade',
-                dept: 'Co-operative Economics & Management'
+                matric: 'FCC/CSC/2026/409',
+                name: 'OLAWALE AKEEM OLONADE',
+                dept: 'Computer Science & Information Technology'
               });
               navigateTo('/scholar/catalog');
             }}

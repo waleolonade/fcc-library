@@ -37,8 +37,8 @@ export default function StudyRoomBooking({ user }) {
     const passCode = `PIN-${Math.floor(1000 + Math.random() * 9000)}`;
     const newBooking = {
       id: `BKG-${Math.floor(1000 + Math.random() * 9000)}`,
-      matric: user?.matric || 'FCC/CEM/2024/042',
-      studentName: user?.name || 'Wale Olonade',
+      matric: user?.matric || 'FCC/CSC/2026/409',
+      studentName: user?.name || 'OLAWALE AKEEM OLONADE',
       roomId: room.id,
       roomName: room.name,
       date: new Date().toISOString().split('T')[0],

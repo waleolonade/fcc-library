@@ -5,10 +5,21 @@ import {
 } from 'lucide-react';
 import { INSTITUTION } from '../data/institutionalSeedData';
 import { sounds } from '../utils/soundEffects';
+import { BarcodeSvg, QrCodeSvg } from '../common/BarcodeQrStudio';
+import { formatStudentLibraryId } from '../utils/studentIdentity';
 
 export default function DigitalLibraryCardModal({ user, onClose }) {
   const [showQrExpanded, setShowQrExpanded] = useState(false);
   const [walletAdded, setWalletAdded] = useState(false);
+
+  // Strict Institutional Format: FCC-STU-{YY}{MATRIC_NUM} e.g. FCC-STU-26409
+  const libraryId = (user?.library_id && String(user.library_id).startsWith('FCC-STU-'))
+    ? user.library_id
+    : (user?.barcode && String(user.barcode).startsWith('FCC-STU-'))
+      ? user.barcode
+      : (user?.libraryId && String(user.libraryId).startsWith('FCC-STU-'))
+        ? user.libraryId
+        : formatStudentLibraryId(user?.matric);
 
   const handleAddToWallet = () => {
     setWalletAdded(true);
@@ -70,31 +81,29 @@ export default function DigitalLibraryCardModal({ user, onClose }) {
             </div>
 
             <div className="space-y-1 text-xs">
-              <div className="text-base font-black tracking-tight">{user?.name || 'Wale Olonade'}</div>
-              <div className="text-emerald-400 font-mono font-bold">{user?.matric || 'FCC/CEM/2024/042'}</div>
-              <div className="text-[11px] text-slate-300 truncate">{user?.department || 'Co-operative Economics'}</div>
-              <div className="text-[10px] text-indigo-300 font-mono">{user?.level || 'HND II'} • {user?.faculty || 'Management Sciences'}</div>
+              <div className="text-base font-black tracking-tight">{user?.name || 'OLAWALE AKEEM OLONADE'}</div>
+              <div className="text-emerald-400 font-mono font-bold">{user?.matric || 'FCC/CSC/2026/409'}</div>
+              <div className="text-[11px] text-slate-300 truncate">{user?.department || 'Computer Science & Information Technology'}</div>
+              <div className="text-[10px] text-indigo-300 font-mono">{user?.level || 'HND I'} • {user?.faculty || 'Applied Sciences & Computing'}</div>
               <div className="text-[10px] text-slate-400 font-mono">Valid Thru: <strong className="text-slate-200">{user?.validUntil || '2027-11-30'}</strong></div>
             </div>
           </div>
 
           {/* Bottom Barcode & QR Code Section */}
           <div className="pt-3 border-t border-emerald-800/60 flex items-center justify-between gap-3">
-            {/* Simulated 1D Barcode */}
+            {/* Standard Institutional Barcode */}
             <div className="space-y-1">
-              <div className="flex items-center h-8 gap-0.5 bg-white p-1 rounded">
-                {[4, 2, 6, 3, 5, 2, 7, 4, 3, 6, 2, 5, 4, 7, 3, 5, 2, 6, 3, 4, 2, 7, 5, 3].map((w, i) => (
-                  <div key={i} className="h-full bg-black" style={{ width: `${w * 1.2}px` }}></div>
-                ))}
+              <div className="p-1.5 bg-white rounded-lg flex flex-col items-center shadow">
+                <BarcodeSvg value={libraryId} height={32} className="text-black" />
               </div>
-              <div className="text-[9px] font-mono text-center tracking-widest text-slate-400">
-                {user?.libraryId || 'LIB-FCC-42091'}
+              <div className="text-[10px] font-mono text-center tracking-widest text-emerald-300 font-bold">
+                {libraryId}
               </div>
             </div>
 
             {/* QR Code Container */}
             <div className="p-1.5 bg-white rounded-xl shadow-lg shrink-0 cursor-pointer" onClick={() => setShowQrExpanded(!showQrExpanded)}>
-              <QrCode size={36} className="text-slate-950" />
+              <QrCodeSvg value={`fcc-patron:${libraryId}:${user?.matric || 'FCC/CSC/2026/409'}`} size={42} />
             </div>
           </div>
         </div>

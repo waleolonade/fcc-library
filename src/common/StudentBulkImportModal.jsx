@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { libraryApi } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
+import { formatStudentBarcode } from '../utils/studentIdentity';
 
 export default function StudentBulkImportModal({
   isOpen,
@@ -166,10 +167,13 @@ FCC/BAM/2026/014, Emmanuel David, Business Administration & Management, HND II, 
       }
 
       if (name.trim()) {
+        const autoBarcode = formatStudentBarcode(matric, dept);
         students.push({
           id: `preview-${lineIndex}`,
           name: name.trim(),
           matric: matric.trim(),
+          libraryId: autoBarcode,
+          barcode: autoBarcode,
           department: dept,
           level: lvl.trim() || defaultLevel,
           email: email.trim(),
@@ -437,6 +441,7 @@ FCC/BAM/2026/014, Emmanuel David, Business Administration & Management, HND II, 
                       <th className="py-2 px-3">#</th>
                       <th className="py-2 px-3">Scholar Name</th>
                       <th className="py-2 px-3">Matric No</th>
+                      <th className="py-2 px-3">Auto Barcode</th>
                       <th className="py-2 px-3">Assigned Department</th>
                       <th className="py-2 px-3">Level</th>
                       <th className="py-2 px-3 text-right">Status</th>
@@ -448,6 +453,7 @@ FCC/BAM/2026/014, Emmanuel David, Business Administration & Management, HND II, 
                         <td className="py-2 px-3 font-mono text-slate-500">{i + 1}</td>
                         <td className="py-2 px-3 font-semibold text-white">{st.name}</td>
                         <td className="py-2 px-3 font-mono text-indigo-400">{st.matric || 'Auto-generated'}</td>
+                        <td className="py-2 px-3 font-mono text-emerald-400 font-semibold">{st.barcode}</td>
                         <td className="py-2 px-3 text-slate-300">
                           <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px]">
                             {st.department}

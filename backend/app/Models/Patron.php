@@ -24,6 +24,7 @@ class Patron extends Model
     ];
 
     protected $appends = [
+        'barcode',
         'libraryId',
         'borrowQuota',
         'activeLoansCount',
@@ -37,6 +38,32 @@ class Patron extends Model
         'profileCompletion'
     ];
 
+    public function getBarcodeAttribute() {
+        if (!empty($this->attributes['barcode'])) {
+            return $this->attributes['barcode'];
+        }
+        $matric = $this->attributes['matric'] ?? '';
+        $dept = $this->attributes['department'] ?? '';
+        $deptCode = 'CSC';
+        if (preg_match('/(?:FCC[\/-])?([A-Za-z]{2,4})[\/-]/i', $matric, $m)) {
+            $deptCode = strtoupper($m[1]);
+        } elseif (stripos($dept, 'computer') !== false) {
+            $deptCode = 'CSC';
+        } elseif (stripos($dept, 'co-operative') !== false || stripos($dept, 'cooperative') !== false) {
+            $deptCode = 'CEM';
+        } elseif (stripos($dept, 'banking') !== false) {
+            $deptCode = 'BNF';
+        } elseif (stripos($dept, 'public') !== false) {
+            $deptCode = 'PAD';
+        } elseif (stripos($dept, 'agric') !== false) {
+            $deptCode = 'AGR';
+        } elseif (stripos($dept, 'business') !== false) {
+            $deptCode = 'BAM';
+        }
+        $digits = preg_replace('/[^0-9]/', '', $matric);
+        $suffix = !empty($digits) ? str_pad(substr($digits, -5), 5, '0', STR_PAD_LEFT) : '26409';
+        return "FCC-STU-{$deptCode}-{$suffix}";
+    }
     public function getLibraryIdAttribute() { return $this->attributes['library_id'] ?? null; }
     public function getBorrowQuotaAttribute() { return (int) ($this->attributes['borrow_quota'] ?? 5); }
     public function getActiveLoansCountAttribute() { return (int) ($this->attributes['active_loans_count'] ?? 0); }

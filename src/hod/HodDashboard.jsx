@@ -273,8 +273,8 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
       hodEmail: 'f.babalola@fccibadan.edu.ng',
       hod_email: 'f.babalola@fccibadan.edu.ng',
       hodPhone: '+234 803 234 5678',
-      studentCount: 420,
-      student_count: 420
+      studentCount: 0,
+      student_count: 0
     };
   }, [departments, currentDeptCode]);
 
@@ -959,7 +959,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
           hod_name: profileForm.hod,
           hod_email: profileForm.hodEmail,
           hod_pin: currentDept.hod_pin || '1234',
-          student_count: Number(currentDept.student_count || 150),
+          student_count: Number(scholarsList.length),
           faculty_count: Number(currentDept.faculty_count || 8)
         })
       });
@@ -1008,7 +1008,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
       items: [
         { id: 'dissertations', label: 'HND Dissertations', icon: Award, badge: dissertations.filter(d => (d.status || '').toLowerCase().includes('review') || (d.status || '').toLowerCase().includes('pending')).length, badgeAlert: true },
         { id: 'reserves', label: 'Course Reserves', icon: Bookmark, badge: reservesList.length },
-        { id: 'scholars', label: 'Department Scholars', icon: Users, badge: scholarsList.length }
+        { id: 'scholars', label: 'Registered Students', icon: Users, badge: scholarsList.length }
       ]
     },
     {
@@ -1022,7 +1022,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
 
   return (
     <div
-      className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans"
+      className="min-h-screen lg:min-h-0 lg:h-screen lg:max-h-full lg:overflow-hidden bg-slate-950 text-slate-100 flex flex-col font-sans"
       style={{ backgroundImage: PATTERNS.hod }}
     >
       {/* Top Department Solid Color Stripe */}
@@ -1034,7 +1034,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
-            title="Toggle Sidebar"
+            title={sidebarOpen ? 'Hide Sidebar' : 'Show Sidebar'}
           >
             <Menu size={18} />
           </button>
@@ -1126,12 +1126,11 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
       </div>
 
       {/* 2. BODY LAYOUT */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar */}
+      <div className="flex-1 min-h-0 flex overflow-hidden">
+        {/* Left Sidebar (fully hideable, scrolls independently of main) */}
+        {sidebarOpen && (
         <aside
-          className={`border-r border-slate-800 bg-slate-900/95 backdrop-blur-xl flex flex-col shrink-0 transition-all duration-300 z-30 ${
-            sidebarOpen ? 'w-64' : 'w-16'
-          }`}
+          className="w-64 h-full min-h-0 border-r border-slate-800 bg-slate-900/95 backdrop-blur-xl flex flex-col shrink-0 overflow-hidden z-30 animate-fadeIn"
         >
           {sidebarOpen && (
             <div className="p-4 border-b border-slate-800/80 bg-slate-950/40">
@@ -1209,9 +1208,10 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
             </div>
           )}
         </aside>
+        )}
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6 lg:p-8 space-y-6">
           {/* Notification Alert Banner */}
           {successMsg && (
             <div className="p-4 rounded-2xl bg-teal-500/10 border border-teal-500/30 text-teal-300 text-xs font-semibold flex items-center justify-between animate-fadeIn shadow-lg">
@@ -1562,7 +1562,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                     <Users size={16} className="text-teal-400" />
                   </div>
                   <div className="text-2xl font-black text-white">{scholarsList.length}</div>
-                  <div className="text-[11px] text-teal-400 font-mono">Registered Patrons</div>
+                  <div className="text-[11px] text-teal-400 font-mono">Registered Students</div>
                 </div>
 
                 <div
@@ -2663,14 +2663,14 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                     </span>
                     <span className="text-xs text-slate-400 font-mono">CODE: {currentDept.code}</span>
                   </div>
-                  <h3 className="text-xl font-bold text-white">{currentDept.name} Scholars Registry</h3>
+                  <h3 className="text-xl font-bold text-white">{currentDept.name} Registered Students</h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    Exclusively authorized for {currentDept.name}. Register individual students or batch import full department rosters.
+                    Exclusively fetched from database for {currentDept.name}. Register individual students or batch import full department rosters.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="px-3 py-1.5 rounded-xl bg-teal-950 text-teal-300 font-mono text-xs font-bold border border-teal-800">
-                    {filteredScholars.length} Registered Scholars
+                    {scholarsList.length} Registered Students
                   </span>
                   <button
                     onClick={() => setShowAddStudentModal(true)}
@@ -2969,7 +2969,9 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                   </div>
                   <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
                     <span className="text-slate-400 font-mono">REGISTERED STUDENTS</span>
-                    <div className="text-base font-bold text-white">{currentDept.student_count || currentDept.studentCount || 150} Students</div>
+                    <div className="text-base font-bold text-white">
+                      {isLoadingScholars ? 'Fetching from database...' : `${scholarsList.length} Students`}
+                    </div>
                   </div>
                 </div>
               )}

@@ -10,6 +10,8 @@ import { BarcodeSvg, QrCodeSvg } from '../common/BarcodeQrStudio';
 import { sounds } from '../utils/soundEffects';
 import PaymentModal from './PaymentModal';
 import TraceBadge from '../common/TraceBadge';
+import { formatStudentLibraryId, formatStudentBarcode } from '../utils/studentIdentity';
+import OfficialStudentIdCard from './OfficialStudentIdCard';
 
 export default function StudentPatronProfile({
   user,
@@ -56,8 +58,15 @@ export default function StudentPatronProfile({
   // Notifications
   const [notifications, setNotifications] = useState([]);
 
-  const libraryId = `STU/2026/${(user?.matric || '00125').replace(/[^0-9]/g, '').slice(-5) || '00125'}`;
-  const barcodeValue = `FCC-STU-${(user?.matric || '00125').replace(/[^0-9]/g, '').slice(-5) || '00125'}`;
+  // Strict Institutional Format: FCC-STU-{YY}{MATRIC_NUM} e.g. FCC-STU-26409
+  const libraryId = (user?.library_id && String(user.library_id).startsWith('FCC-STU-'))
+    ? user.library_id
+    : (user?.barcode && String(user.barcode).startsWith('FCC-STU-'))
+      ? user.barcode
+      : formatStudentLibraryId(user?.matric);
+  const barcodeValue = (user?.barcode && String(user.barcode).startsWith('FCC-STU-'))
+    ? user.barcode
+    : libraryId;
   const totalFines = loans.reduce((acc, l) => acc + (l.fine || 0), 0);
   const activeLoans = loans.filter(l => l.matric === user?.matric && l.status !== 'Returned');
 
@@ -104,12 +113,12 @@ export default function StudentPatronProfile({
                 </span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                {user?.name || 'Wale Olonade'}
+                {user?.name || 'OLAWALE AKEEM OLONADE'}
               </h1>
               <div className="text-xs text-emerald-300 flex flex-wrap items-center gap-x-3 gap-y-1">
-                <span className="font-mono font-bold">{user?.matric || 'FCC/CEM/2024/042'}</span>
+                <span className="font-mono font-bold">{user?.matric || 'FCC/CSC/2026/409'}</span>
                 <span>•</span>
-                <span>{user?.dept || 'Co-operative Economics & Management'}</span>
+                <span>{user?.dept || 'Computer Science & Information Technology'}</span>
                 <span>•</span>
                 <span className="font-mono text-emerald-400">Library ID: {libraryId}</span>
               </div>
@@ -193,60 +202,9 @@ export default function StudentPatronProfile({
       ======================================================= */}
       {activeSubTab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left: ASCII-Exact Digital Card Visualizer */}
-          <div className="lg:col-span-6 space-y-4">
-            <div className="w-full rounded-3xl bg-gradient-to-b from-[#032317] via-[#042e1f] to-[#021810] border-2 border-emerald-500/60 p-6 sm:p-7 shadow-2xl space-y-4 text-center relative overflow-hidden">
-              <div className="flex items-center justify-between border-b border-emerald-800 pb-2">
-                <div className="flex items-center gap-1.5">
-                  <img src="/assets/fcc-logo.png" alt="FCC Logo" className="w-5 h-5 object-cover rounded-full shrink-0" />
-                  <span className="text-[10px] font-black tracking-widest uppercase text-emerald-400">
-                    {INSTITUTION.shortName} SMART LIBRARY MEMBERSHIP
-                  </span>
-                </div>
-                <span className="text-[10px] font-mono text-emerald-300">RFID: ACTIVE</span>
-              </div>
-
-              <div>
-                <h3 className="text-xl font-black text-white uppercase tracking-tight">
-                  {user?.name || 'Wale Olonade'}
-                </h3>
-                <div className="text-xs text-emerald-300 font-mono mt-0.5">
-                  {user?.matric || 'FCC/CEM/2024/042'}
-                </div>
-              </div>
-
-              <div className="p-2 rounded-xl bg-[#021810] border border-emerald-900/80">
-                <span className="text-[9px] text-slate-400 uppercase font-mono block">LIBRARY ID</span>
-                <span className="text-base font-black font-mono text-white tracking-widest">
-                  {libraryId}
-                </span>
-              </div>
-
-              {/* Barcode Strip */}
-              <div className="p-3 rounded-2xl bg-white text-slate-950 flex flex-col items-center shadow-inner">
-                <BarcodeSvg value={barcodeValue} height={44} className="text-black" />
-              </div>
-
-              {/* QR Code */}
-              <div className="flex flex-col items-center justify-center pt-1">
-                <div className="p-2 bg-white rounded-2xl shadow-lg">
-                  <QrCodeSvg value={`fcc-patron:${libraryId}:${user?.matric}`} size={110} />
-                </div>
-                <span className="text-[9px] font-mono text-emerald-400/80 mt-2">
-                  Scan at Entrance Turnstile or Self-Checkout Kiosk
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-center gap-3">
-              <button
-                onClick={() => window.print()}
-                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold flex items-center gap-1.5 transition"
-              >
-                <Printer size={14} />
-                <span>Print Official Card</span>
-              </button>
-            </div>
+          {/* Left: Restructured Official CR80 ISO/IEC 7810 ID Card with Print & 300 DPI PDF Export */}
+          <div className="lg:col-span-6">
+            <OfficialStudentIdCard user={user} />
           </div>
 
           {/* Right: Academic Profile & SIS Verification */}

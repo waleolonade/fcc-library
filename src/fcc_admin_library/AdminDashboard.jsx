@@ -154,7 +154,7 @@ export default function AdminDashboard({ books = [], loans = [], patrons = [], r
       borrowedCopies,
       overdueLoans: overdueLoans.length,
       activeLoans: activeLoans.length,
-      registeredMembers: patrons.length || SYSTEM_HEALTH_METRICS.registeredPatrons,
+      registeredMembers: patrons.length,
       activeReservations,
       digitalResources: digitalCount,
       totalAuthors: uniqueAuthors,
@@ -217,7 +217,7 @@ export default function AdminDashboard({ books = [], loans = [], patrons = [], r
         <StatCard icon={BookMarked} label="Total Copies" value={stats.totalCopies.toLocaleString()} color="teal" sub={`${stats.availableCopies} available`} />
         <StatCard icon={Scan} label="Active Loans" value={stats.activeLoans} color="emerald" sub="Currently checked out" trend={8} />
         <StatCard icon={AlertTriangle} label="Overdue" value={stats.overdueLoans} color="rose" sub={`₦${stats.totalFinesAmount.toLocaleString()} fines`} />
-        <StatCard icon={Users} label="Members" value={stats.registeredMembers.toLocaleString()} color="purple" sub="Registered patrons" />
+        <StatCard icon={Users} label="Registered Students" value={stats.registeredMembers.toLocaleString()} color="purple" sub="Live database scholars" />
         <StatCard icon={Clock} label="Reservations" value={stats.activeReservations} color="amber" sub="Pending / Ready" />
       </div>
 
@@ -291,10 +291,10 @@ export default function AdminDashboard({ books = [], loans = [], patrons = [], r
         <h3 className="font-bold text-white text-sm">Institution-wide Collection Metrics</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
           {[
-            { label: 'Total Catalogue Records', value: SYSTEM_HEALTH_METRICS.totalCatalogRecords.toLocaleString(), color: 'text-indigo-400' },
-            { label: 'Physical Copies', value: SYSTEM_HEALTH_METRICS.totalPhysicalCopies.toLocaleString(), color: 'text-teal-400' },
-            { label: 'Registered Patrons', value: SYSTEM_HEALTH_METRICS.registeredPatrons.toLocaleString(), color: 'text-emerald-400' },
-            { label: 'Active Reservations', value: SYSTEM_HEALTH_METRICS.activeReservations.toLocaleString(), color: 'text-amber-400' },
+            { label: 'Total Catalogue Records', value: books.length.toLocaleString(), color: 'text-indigo-400' },
+            { label: 'Physical Copies', value: stats.totalCopies.toLocaleString(), color: 'text-teal-400' },
+            { label: 'Registered Students', value: patrons.length.toLocaleString(), color: 'text-emerald-400' },
+            { label: 'Active Reservations', value: stats.activeReservations.toLocaleString(), color: 'text-amber-400' },
           ].map(stat => (
             <div key={stat.label} className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
               <div className={`text-lg font-extrabold ${stat.color}`}>{stat.value}</div>

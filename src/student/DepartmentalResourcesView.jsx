@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   GraduationCap, BookOpen, Download, Eye, FileText, Search,
-  CheckCircle, Sparkles, Filter, ExternalLink, ShieldAlert, Tag, MapPin
+  CheckCircle, Sparkles, Filter, ExternalLink, ShieldAlert, Tag, MapPin, User, X
 } from 'lucide-react';
 
 export default function DepartmentalResourcesView({ user, onOpenReader }) {
   const [uploads, setUploads] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchField, setSearchField] = useState('all'); // 'all' | 'author' | 'title' | 'course'
   const [selectedType, setSelectedType] = useState('All');
   const [watermarkNotice, setWatermarkNotice] = useState('');
 
@@ -56,15 +57,25 @@ export default function DepartmentalResourcesView({ user, onOpenReader }) {
   const filteredItems = useMemo(() => {
     return uploads.filter(item => {
       const q = searchQuery.toLowerCase().trim();
-      const matchQuery = !q ||
-        (item.title && item.title.toLowerCase().includes(q)) ||
-        (item.course_code && item.course_code.toLowerCase().includes(q)) ||
-        (item.author && item.author.toLowerCase().includes(q));
+      let matchQuery = true;
+      if (q) {
+        if (searchField === 'author') {
+          matchQuery = Boolean(item.author && item.author.toLowerCase().includes(q));
+        } else if (searchField === 'title') {
+          matchQuery = Boolean(item.title && item.title.toLowerCase().includes(q));
+        } else if (searchField === 'course') {
+          matchQuery = Boolean(item.course_code && item.course_code.toLowerCase().includes(q));
+        } else {
+          matchQuery = (item.title && item.title.toLowerCase().includes(q)) ||
+            (item.course_code && item.course_code.toLowerCase().includes(q)) ||
+            (item.author && item.author.toLowerCase().includes(q));
+        }
+      }
 
       const matchType = selectedType === 'All' || item.resource_type === selectedType;
       return matchQuery && matchType;
     });
-  }, [uploads, searchQuery, selectedType]);
+  }, [uploads, searchQuery, searchField, selectedType]);
 
   const handleDownload = (item) => {
     setWatermarkNotice(`Downloading "${item.title}" with digital watermark protection for scholar ${user?.matric || 'FCC Scholar'}...`);
@@ -114,32 +125,80 @@ export default function DepartmentalResourcesView({ user, onOpenReader }) {
       )}
 
       {/* Search & Filter Bar */}
-      <div className="flex flex-col md:flex-row gap-3 bg-slate-900 p-4 rounded-2xl border border-slate-800">
-        <div className="relative flex-1">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search departmental past questions, course code (e.g. CEM 411, CSC 301)..."
-            className="w-full px-4 py-2.5 pl-10 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition"
-          />
-          <Search size={15} className="absolute left-3.5 top-3 text-slate-500" />
+      <div className="space-y-3 bg-slate-900 p-4 rounded-2xl border border-slate-800">
+        {/* Search Scope Pills */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-[11px] font-bold text-teal-400 uppercase tracking-wider">Search By:</span>
+          {[
+            { id: 'all', label: 'All Fields' },
+            { id: 'author', label: 'Author / Lecturer', icon: User },
+            { id: 'title', label: 'Title' },
+            { id: 'course', label: 'Course Code' }
+          ].map(scope => {
+            const Icon = scope.icon;
+            const active = searchField === scope.id;
+            return (
+              <button
+                key={scope.id}
+                type="button"
+                onClick={() => setSearchField(scope.id)}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                  active
+                    ? 'bg-teal-500 text-slate-950 shadow-md font-black ring-1 ring-teal-300'
+                    : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                {Icon && <Icon size={12} className={active ? 'text-slate-950' : 'text-teal-400'} />}
+                <span>{scope.label}</span>
+              </button>
+            );
+          })}
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          {resourceTypes.map(t => (
-            <button
-              key={t}
-              onClick={() => setSelectedType(t)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                selectedType === t
-                  ? 'bg-teal-600 text-white shadow'
-                  : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              {t}
-            </button>
-          ))}
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder={
+                searchField === 'author'
+                  ? 'Search by author, lecturer, or scholar name (e.g. Dr. Adeyemi, Prof. Balogun)...'
+                  : searchField === 'title'
+                  ? 'Search by material, past question, or syllabus title...'
+                  : searchField === 'course'
+                  ? 'Search by course code (e.g. CEM 411, CSC 301, BNF 211)...'
+                  : 'Search by title, author / lecturer, or course code...'
+              }
+              className="w-full px-4 py-2.5 pl-10 pr-10 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition"
+            />
+            <Search size={15} className="absolute left-3.5 top-3 text-slate-500" />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
+              >
+                <X size={15} />
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {resourceTypes.map(t => (
+              <button
+                key={t}
+                onClick={() => setSelectedType(t)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                  selectedType === t
+                    ? 'bg-teal-600 text-white shadow'
+                    : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -206,7 +265,19 @@ export default function DepartmentalResourcesView({ user, onOpenReader }) {
                     </h3>
 
                     <p className="text-xs text-slate-400">
-                      By {item.author} • {item.department_name}
+                      By{' '}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchField('author');
+                          setSearchQuery(item.author);
+                        }}
+                        className="text-teal-300 font-semibold hover:underline hover:text-teal-200 transition"
+                        title={`Filter resources by author: ${item.author}`}
+                      >
+                        {item.author}
+                      </button>{' '}
+                      • {item.department_name}
                     </p>
 
                     {item.assigned_call_number && (

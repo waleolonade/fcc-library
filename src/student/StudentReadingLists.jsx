@@ -29,7 +29,7 @@ export default function StudentReadingLists({
     e.preventDefault();
     if (!newListName.trim()) return;
     onCreateList({
-      matric: user?.matric || 'FCC/CEM/2024/042',
+      matric: user?.matric || 'FCC/CSC/2026/409',
       name: newListName.trim(),
       description: newListDesc.trim(),
       items: []
@@ -44,7 +44,7 @@ export default function StudentReadingLists({
     if (!activeList || !activeList.items) return;
     const listBooks = activeList.items.map(i => books.find(b => b.id === i.bookId)).filter(Boolean);
     const textCitations = listBooks.map(b => formatCitation(b, 'APA')).join('\n\n');
-    const fullText = `FCC IBADAN SMART LIBRARY - SCHOLAR BIBLIOGRAPHY\nReading List: ${activeList.name}\nScholar: ${user?.name || 'FCC Scholar'} (${user?.matric || 'FCC/CEM/2024/042'})\nGenerated: ${new Date().toLocaleDateString()}\n\n` + textCitations;
+    const fullText = `FCC IBADAN SMART LIBRARY - SCHOLAR BIBLIOGRAPHY\nReading List: ${activeList.name}\nScholar: ${user?.name || 'FCC Scholar'} (${user?.matric || 'FCC/CSC/2026/409'})\nGenerated: ${new Date().toLocaleDateString()}\n\n` + textCitations;
 
     downloadCitationFile(fullText, `${activeList.name.toLowerCase().replace(/\s+/g, '_')}_bibliography.txt`);
     sounds.playSuccessChime();

@@ -32,7 +32,7 @@ export default function ScholarCardScreen() {
 
   const loadLoans = async () => {
     setLoading(true);
-    const data = await mobileApi.getStudentLoans('FCC/CEM/2024/042');
+    const data = await mobileApi.getStudentLoans('FCC/CSC/2026/409');
     setLoans(data);
     setLoading(false);
   };
@@ -72,13 +72,13 @@ export default function ScholarCardScreen() {
 
           <View style={styles.patronRow}>
             <View style={styles.avatarBox}>
-              <Text style={styles.avatarInitials}>AO</Text>
+              <Text style={styles.avatarInitials}>OA</Text>
             </View>
             <View style={styles.patronDetails}>
-              <Text style={styles.patronName}>Adebayo Oluwaseun</Text>
-              <Text style={styles.patronMatric}>FCC/CEM/2024/042</Text>
-              <Text style={styles.patronDept}>Co-operative Economics & Management</Text>
-              <Text style={styles.patronTier}>Tier: Regular Scholar (3 Max Loans)</Text>
+              <Text style={styles.patronName}>Olawale Akeem Olonade</Text>
+              <Text style={styles.patronMatric}>FCC/CSC/2026/409</Text>
+              <Text style={styles.patronDept}>Computer Science & Information Technology</Text>
+              <Text style={styles.patronTier}>Tier: Regular Scholar (5 Max Loans)</Text>
             </View>
           </View>
 
@@ -93,7 +93,7 @@ export default function ScholarCardScreen() {
                 <Text style={styles.statusText}>PASS STATUS: ACTIVE</Text>
               </View>
               <Text style={styles.barcodeText}>||| | ||||| || |||| ||| ||||</Text>
-              <Text style={styles.barcodeNum}>PATRON-978-042-CEM-2024</Text>
+              <Text style={styles.barcodeNum}>PATRON-FCC-CSC-2026-409</Text>
             </View>
           </View>
         </View>

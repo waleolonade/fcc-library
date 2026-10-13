@@ -4,9 +4,9 @@ import { Platform } from 'react-native';
 // Android Emulator uses 10.0.2.2 to reach host machine's localhost:5000
 // iOS Simulator and Web use localhost:5000
 const DEFAULT_HOST = Platform.select({
-  android: 'http://10.0.2.2:5000/api',
-  ios: 'http://localhost:5000/api',
-  default: 'http://localhost:5000/api',
+  android: 'http://10.0.2.2:8000/api',
+  ios: 'http://localhost:8000/api',
+  default: 'http://192.168.1.149:8000/api',
 });
 
 let currentApiBase = DEFAULT_HOST;
@@ -77,30 +77,23 @@ const FALLBACK_BOOKS = [
   }
 ];
 
-const FALLBACK_LOANS = [
+// Reference example schema for user / developer to follow (strictly non-functional)
+export const EXAMPLE_LOAN_SCHEMA = [
   {
-    id: 1,
+    id: 0,
     book_id: 1,
-    book_title: "Principles of Agricultural Cooperatives in Nigeria",
-    patron_matric: "FCC/CEM/2024/042",
+    book_title: "Principles of Agricultural Cooperatives in Nigeria (Example Format)",
+    patron_matric: "FCC/CEM/2024/042", // Passive format example (non-functional)
     loan_date: "2026-09-18",
     due_date: "2026-10-09",
-    status: "active",
-    renewals_count: 1,
-    days_left: 9
-  },
-  {
-    id: 2,
-    book_id: 2,
-    book_title: "Modern Database Management & Cloud Systems",
-    patron_matric: "FCC/CEM/2024/042",
-    loan_date: "2026-09-24",
-    due_date: "2026-10-15",
-    status: "active",
+    status: "inactive",
     renewals_count: 0,
-    days_left: 15
+    days_left: 0
   }
 ];
+
+// Empty fallback so fake loans are never served to active students
+const FALLBACK_LOANS = [];
 
 export const mobileApi = {
   // 1. Fetch Local Catalog Holdings from Laravel
@@ -202,22 +195,25 @@ export const mobileApi = {
     return { success: true, status: 'Online', latency_ms: 120, items_discovered: 12 };
   },
 
-  // 5. Active Loans for Student
-  async getStudentLoans(matric = 'FCC/CEM/2024/042') {
+  // 5. Active Loans for Student (Fetched dynamically from database API)
+  async getStudentLoans(matric = null) {
     try {
-      const res = await fetch(`${currentApiBase}/loans`, {
+      const url = matric 
+        ? `${currentApiBase}/loans?matric=${encodeURIComponent(matric)}` 
+        : `${currentApiBase}/loans`;
+      const res = await fetch(url, {
         headers: { 'Accept': 'application/json' },
       });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           return data;
         }
       }
     } catch (e) {
-      console.warn('[mobileApi] Loans fallback:', e.message);
+      console.warn('[mobileApi] Loans fetch error:', e.message);
     }
-    return FALLBACK_LOANS;
+    return [];
   },
 
   // 6. Renew Loan

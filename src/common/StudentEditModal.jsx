@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import {
   X, Edit3, Building2, Lock, Sparkles, CheckCircle2,
   AlertCircle, ShieldCheck, Mail, Phone, KeyRound, Award, BookOpen,
-  UserCheck, ShieldAlert, Save
+  UserCheck, ShieldAlert, Save, Barcode
 } from 'lucide-react';
 import { libraryApi } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
+import { BarcodeSvg } from './BarcodeQrStudio';
+import { formatStudentBarcode } from '../utils/studentIdentity';
 
 export default function StudentEditModal({
   isOpen,
@@ -22,6 +24,7 @@ export default function StudentEditModal({
 
   const [name, setName] = useState('');
   const [matric, setMatric] = useState('');
+  const [barcode, setBarcode] = useState('');
   const [selectedDept, setSelectedDept] = useState(hodDeptName);
   const [level, setLevel] = useState('ND I');
   const [email, setEmail] = useState('');
@@ -40,6 +43,7 @@ export default function StudentEditModal({
     if (student) {
       setName(student.name || '');
       setMatric(student.matric || '');
+      setBarcode(student.barcode || formatStudentBarcode(student.matric));
       setSelectedDept(student.department || (isHod ? hodDeptName : ''));
       setLevel(student.level || 'ND I');
       setEmail(student.email || '');
@@ -74,9 +78,12 @@ export default function StudentEditModal({
 
     setIsSubmitting(true);
     try {
+      const finalBarcode = (barcode.trim() || formatStudentBarcode(matric)).toUpperCase();
       const payload = {
         name: name.trim(),
         matric: matric.trim().toUpperCase(),
+        libraryId: finalBarcode,
+        barcode: finalBarcode,
         department: targetDept,
         level: level,
         email: email.trim(),
@@ -242,6 +249,38 @@ export default function StudentEditModal({
               <p className="text-[10px] text-slate-400 mt-1">
                 Institutional Access Policy: ND scholars strictly see only ND books; HND scholars see HND books in their department.
               </p>
+            </div>
+          </div>
+
+          {/* Institutional Student Barcode */}
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-teal-950/40 via-slate-950 to-emerald-950/40 border border-teal-500/30 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-teal-300 flex items-center gap-1.5">
+                <Barcode size={14} className="text-teal-400" />
+                <span>Student Institutional Barcode</span>
+              </label>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-teal-950 text-teal-300 border border-teal-700/60 font-bold uppercase tracking-wider">
+                Portal Login Identifier
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+              <div className="p-2.5 rounded-xl bg-white flex flex-col items-center justify-center shadow-inner">
+                <BarcodeSvg value={barcode || 'FCC-STU-CSC-26409'} height={36} className="text-black" />
+                <span className="text-[10px] font-mono text-slate-800 font-bold mt-1 tracking-wider">
+                  {barcode || 'FCC-STU-CSC-26409'}
+                </span>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono block">Edit Barcode Code (Auto-Caps)</label>
+                <input
+                  type="text"
+                  value={barcode}
+                  onChange={e => setBarcode(e.target.value.toUpperCase())}
+                  placeholder="e.g. FCC-STU-CSC-26409"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 focus:border-teal-400 text-teal-300 font-mono text-xs focus:outline-none uppercase"
+                  style={{ textTransform: 'uppercase' }}
+                />
+              </div>
             </div>
           </div>
 

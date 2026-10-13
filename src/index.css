@@ -3,9 +3,21 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
   body {
     @apply bg-[#021810] text-emerald-50 font-sans;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    min-height: 100%;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+  #root, #student-root {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
   }
 }
 
@@ -61,4 +73,76 @@
 ::selection {
   background-color: #059669;
   color: #ffffff;
+}
+
+/* ==========================================================================
+   MOBILE & TABLET RESPONSIVE ENHANCEMENTS
+   Inspired by leading world-class academic apps & native iOS/Android PWA patterns
+   ========================================================================== */
+
+/* Safe Area Inset Support for modern notch and home-bar devices */
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 16px));
+}
+
+.pb-dock {
+  padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 16px));
+}
+
+.pt-safe {
+  padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+}
+
+/* Smooth Touch Momentum Scrolling */
+.touch-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+/* Hide scrollbar on horizontal swipeable chips */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Glassmorphism Bottom Dock for Mobile */
+.mobile-nav-dock {
+  background: rgba(2, 24, 16, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(16, 185, 129, 0.28);
+  box-shadow: 0 -10px 25px -5px rgba(0, 0, 0, 0.6), 0 0 15px rgba(16, 185, 129, 0.15);
+}
+
+/* Tablet Rail Navigation Bar */
+.tablet-nav-rail {
+  background: rgba(3, 35, 23, 0.96);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-right: 1px solid rgba(16, 185, 129, 0.25);
+  box-shadow: 10px 0 25px -5px rgba(0, 0, 0, 0.5);
+}
+
+/* Mobile Slide-up Bottom Sheet Animation */
+@keyframes slideUpSheet {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slideUpSheet 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Active Tab Glow */
+.tab-active-glow {
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.4);
 }

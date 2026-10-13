@@ -4,6 +4,7 @@
 // =========================================================================
 
 import { INSTITUTION, BRANCHES, SYSTEM_HEALTH_METRICS } from '../data/institutionalSeedData';
+import { formatStudentBarcode } from '../utils/studentIdentity';
 
 // Broadcast Channel for Real-Time Cross-App Synchronization
 const syncChannel = typeof window !== 'undefined' && window.BroadcastChannel ? new BroadcastChannel('fcc_ils_realtime_sync') : null;
@@ -241,9 +242,11 @@ export const libraryApi = {
         return { success: true, patron: res.patron, message: res.message };
       }
       // Offline fallback: save locally
+      const fallbackBarcode = patronData.barcode || formatStudentBarcode(patronData.matric, patronData.department);
       const fallbackPatron = {
         id: patronData.id || `PAT-${Math.floor(1000 + Math.random() * 9000)}`,
         library_id: patronData.libraryId || `LIB-${Math.floor(10000 + Math.random() * 90000)}`,
+        barcode: fallbackBarcode,
         name: patronData.name || 'Scholar Student',
         matric: patronData.matric || `FCC/${(patronData.department || 'CEM').slice(0, 3).toUpperCase()}/2026/${Math.floor(100 + Math.random() * 900)}`,
         department: patronData.department || 'Co-operative Economics & Management',
@@ -285,9 +288,11 @@ export const libraryApi = {
         const dept = enforceDept || s.department || defaultDept || 'Co-operative Economics & Management';
         const name = s.name || s.fullName || `Scholar ${idx + 1}`;
         const matric = s.matric || `FCC/${dept.slice(0, 3).toUpperCase()}/2026/${Math.floor(100 + Math.random() * 900)}`;
+        const autoBc = s.barcode || formatStudentBarcode(matric, dept);
         return {
           id: s.id || `PAT-${Math.floor(10000 + Math.random() * 90000)}`,
           library_id: s.libraryId || `LIB-${Math.floor(10000 + Math.random() * 90000)}`,
+          barcode: autoBc,
           name,
           matric,
           department: dept,

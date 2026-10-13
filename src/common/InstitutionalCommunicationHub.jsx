@@ -40,10 +40,10 @@ export default function InstitutionalCommunicationHub({
   // Active identity profiles based on selected role
   const roleProfiles = {
     student: {
-      id: currentUser?.matric || 'FCC/CEM/2024/042',
-      name: currentUser?.name || 'Wale Olonade',
+      id: currentUser?.matric || 'FCC/CSC/2026/409',
+      name: currentUser?.name || 'OLAWALE AKEEM OLONADE',
       role: 'student',
-      dept: currentUser?.dept || 'Co-operative Economics & Management',
+      dept: currentUser?.dept || 'Computer Science & Information Technology',
       avatarLabel: 'Student Scholar',
       badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
     },
@@ -240,10 +240,10 @@ export default function InstitutionalCommunicationHub({
       recipientRole = 'all';
       recipientDept = 'Campus Wide';
     } else if (newDispatch.recipient_type === 'student') {
-      recipientId = 'FCC/CEM/2024/042';
-      recipientName = 'Wale Olonade';
+      recipientId = 'FCC/CSC/2026/409';
+      recipientName = 'OLAWALE AKEEM OLONADE';
       recipientRole = 'student';
-      recipientDept = 'Co-operative Economics & Management';
+      recipientDept = 'Computer Science & Information Technology';
     }
 
     const payload = {

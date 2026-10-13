@@ -1,13 +1,36 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
-  Search, Mic, MicOff, Bot, Sparkles, Filter, BookOpen,
-  Layers, FileText, CheckCircle, MapPin, Download,
-  Bookmark, ChevronRight, AlertCircle, RefreshCw, X, PlusCircle,
-  Building2, GraduationCap, ArrowUpDown, Clock, Tag, ExternalLink,
-  BookCheck, Zap, BookMarked, Eye, ShieldAlert, Lock, User, Award
+  ArrowUpDown,
+  Award,
+  BookOpen,
+  Bot,
+  Building2,
+  CheckCircle,
+  Clock,
+  FileText,
+  Filter,
+  GraduationCap,
+  Grid,
+  Layers,
+  List,
+  Lock,
+  MapPin,
+  Mic, MicOff,
+  Monitor,
+  RefreshCw,
+  Search,
+  ShieldAlert,
+  Smartphone,
+  Sparkles,
+  Tablet,
+  Tag,
+  User,
+  X,
+  Zap
 } from 'lucide-react';
-import { parseNaturalLanguageQuery, filterCatalogByNlp } from '../utils/nlpSearch';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { filterCatalogByNlp, parseNaturalLanguageQuery } from '../utils/nlpSearch';
 import { sounds } from '../utils/soundEffects';
+import { useDeviceType } from '../utils/useDeviceType';
 
 const DEFAULT_RECENT_SEARCHES = [
   'computer science',
@@ -260,6 +283,9 @@ export default function SmartCatalogSearch({
     return 'ND I';
   }, [user]);
 
+  const { isMobile, isTablet, isDesktop, device: deviceMode, changeDeviceMode } = useDeviceType();
+  const [layoutMode, setLayoutMode] = useState('grid'); // Default to grid layout per user requirement!
+
   const [studentDeptCode, setStudentDeptCode] = useState(initialStudentDept || 'CSC');
   const [studentLevel, setStudentLevel] = useState(initialStudentLevel || 'ND I');
   const [levelEnforcementMode, setLevelEnforcementMode] = useState(true);
@@ -284,6 +310,10 @@ export default function SmartCatalogSearch({
   }, [user]);
 
   const [searchQuery, setSearchQuery] = useState(initialQuery);
+  const [searchField, setSearchField] = useState('all'); // 'all' | 'author' | 'title' | 'course' | 'subject' | 'isbn'
+  const [authorFilter, setAuthorFilter] = useState('All');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const searchContainerRef = useRef(null);
   const [activeCategory, setActiveCategory] = useState('Everything');
   const [selectedBranch, setSelectedBranch] = useState('All Branches');
   const [availabilityFilter, setAvailabilityFilter] = useState('all'); // 'all' | 'available'
@@ -301,6 +331,17 @@ export default function SmartCatalogSearch({
   });
 
   const recognitionRef = useRef(null);
+
+  // Close search suggestions on click outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+        setIsSearchFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const currentStudentDept = useMemo(() => {
     return STUDENT_DEPARTMENTS.find(d => d.code === studentDeptCode) || STUDENT_DEPARTMENTS[0];
@@ -455,7 +496,7 @@ export default function SmartCatalogSearch({
       abstract: t.abstract || `Research study submitted to the Department of ${t.department || 'General Studies'}, Federal Cooperative College Ibadan.`,
       department: t.department || 'General Studies',
       isDigital: true,
-      pdfUrl: t.fileUrl || '/demo-theses.pdf',
+      pdfUrl: t.fileUrl || '/',
       pdfPages: t.pages || 142,
       copiesAvailable: 1,
       totalCopies: 1,
@@ -490,10 +531,119 @@ export default function SmartCatalogSearch({
     return Array.from(seenMap.values());
   }, [backendBooks, backendApprovedUploads, books, theses]);
 
+  // Dynamic list of unique authors across combined catalog for current student department
+  const uniqueAuthors = useMemo(() => {
+    const set = new Set();
+    combinedCatalog.forEach(b => {
+      const a = (b.author || '').trim();
+      if (a && a !== 'Unknown' && a !== 'N/A') set.add(a);
+    });
+    return Array.from(set).sort();
+  }, [combinedCatalog]);
+
+  // Live Multi-Field Search Suggestions Engine ("subjection during search")
+  const searchSuggestions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q || q.length < 2) return [];
+
+    const suggestions = [];
+
+    // 1. Author matches (Highest priority when searching by author or typing an author name)
+    const matchedAuthors = new Set();
+    combinedCatalog.forEach(b => {
+      [b.author, b.coAuthors, b.advisor, b.studentNames].filter(Boolean).forEach(rawA => {
+        const a = String(rawA).trim();
+        if (a.toLowerCase().includes(q) && !matchedAuthors.has(a.toLowerCase())) {
+          matchedAuthors.add(a.toLowerCase());
+          suggestions.push({
+            type: 'author',
+            label: a,
+            subtext: `Author in ${currentStudentDept.code}`,
+            field: 'author'
+          });
+        }
+      });
+    });
+
+    // 2. Title matches
+    combinedCatalog.forEach(b => {
+      if (b.title && b.title.toLowerCase().includes(q) && suggestions.length < 10) {
+        suggestions.push({
+          type: 'title',
+          label: b.title,
+          subtext: `By ${b.author || 'Author'} • ${b.courseCode || b.department || 'Curriculum'}`,
+          field: 'title'
+        });
+      }
+    });
+
+    // 3. Course matches
+    const matchedCourses = new Set();
+    combinedCatalog.forEach(b => {
+      const c = (b.courseCode || b.course_code || '').trim();
+      if (c && c.toLowerCase().includes(q) && !matchedCourses.has(c.toUpperCase())) {
+        matchedCourses.add(c.toUpperCase());
+        suggestions.push({
+          type: 'course',
+          label: c.toUpperCase(),
+          subtext: `Curriculum Course: ${b.title}`,
+          field: 'course'
+        });
+      }
+    });
+
+    return suggestions.slice(0, 8);
+  }, [searchQuery, combinedCatalog, currentStudentDept.code]);
+
   // Execute Search & Strict Department Access Gatekeeping
   const filteredResults = useMemo(() => {
-    const parsedNlp = parseNaturalLanguageQuery(searchQuery);
-    let results = filterCatalogByNlp(combinedCatalog, parsedNlp);
+    let results = combinedCatalog;
+
+    const q = searchQuery.toLowerCase().trim();
+    if (q) {
+      if (searchField === 'author') {
+        results = results.filter(item => {
+          const authorText = [
+            item.author,
+            item.coAuthors,
+            item.advisor,
+            item.studentNames,
+            item.student_names,
+            item.author_name
+          ].filter(Boolean).join(' ').toLowerCase();
+          return authorText.includes(q);
+        });
+      } else if (searchField === 'title') {
+        results = results.filter(item => {
+          const titleText = [item.title, item.subtitle].filter(Boolean).join(' ').toLowerCase();
+          return titleText.includes(q);
+        });
+      } else if (searchField === 'course') {
+        results = results.filter(item => {
+          const courseText = [item.courseCode, item.course_code].filter(Boolean).join(' ').toLowerCase();
+          return courseText.includes(q);
+        });
+      } else if (searchField === 'subject') {
+        results = results.filter(item => {
+          return (item.subject || '').toLowerCase().includes(q);
+        });
+      } else if (searchField === 'isbn') {
+        results = results.filter(item => {
+          const numText = [item.isbn, item.callNumber].filter(Boolean).join(' ').toLowerCase();
+          return numText.includes(q);
+        });
+      } else {
+        const parsedNlp = parseNaturalLanguageQuery(searchQuery);
+        results = filterCatalogByNlp(results, parsedNlp);
+      }
+    }
+
+    if (authorFilter && authorFilter !== 'All') {
+      results = results.filter(item => {
+        const authorText = [item.author, item.advisor, item.studentNames].filter(Boolean).join(' ').toLowerCase();
+        return authorText.includes(authorFilter.toLowerCase());
+      });
+    }
 
     // =========================================================================
     // STRICT DEPARTMENT-BASED ACCESS CONTROL
@@ -596,6 +746,11 @@ export default function SmartCatalogSearch({
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         sorted.sort((a, b) => {
+          if (searchField === 'author') {
+            const aAuth = (a.author || '').toLowerCase().includes(q) ? 5 : 0;
+            const bAuth = (b.author || '').toLowerCase().includes(q) ? 5 : 0;
+            return bAuth - aAuth;
+          }
           const aTitle = (a.title || '').toLowerCase().includes(q) ? 4 : 0;
           const bTitle = (b.title || '').toLowerCase().includes(q) ? 4 : 0;
           const aCourse = (a.courseCode || '').toLowerCase().includes(q) ? 2 : 0;
@@ -608,7 +763,7 @@ export default function SmartCatalogSearch({
     }
 
     return sorted;
-  }, [combinedCatalog, searchQuery, activeCategory, selectedBranch, availabilityFilter, sortBy, studentDeptCode, studentLevel, levelEnforcementMode, exclusiveDepartmentMode]);
+  }, [combinedCatalog, searchQuery, searchField, authorFilter, activeCategory, selectedBranch, availabilityFilter, sortBy, studentDeptCode, studentLevel, levelEnforcementMode, exclusiveDepartmentMode]);
 
   // Voice Search
   const handleToggleVoice = () => {
@@ -718,15 +873,252 @@ export default function SmartCatalogSearch({
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
-      {/* 1. CURRICULUM & SCHOLAR IDENTITY COMMAND BAR */}
-      <div className="relative overflow-hidden rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl backdrop-blur-xl">
-        {/* Department Accent Glow Bar */}
-        <div
-          className="h-1.5 w-full bg-gradient-to-r"
-          style={{
-            background: `linear-gradient(90deg, ${currentStudentDept.accentHex}, #10b981, ${currentStudentDept.accentHex})`
-          }}
-        />
+      {/* ============================================================== */}
+      {/* 1. DISTINCT MOBILE ARRANGEMENT & STRUCTURE                     */}
+      {/* ============================================================== */}
+      {isMobile ? (
+        <div className="space-y-3.5 animate-fadeIn">
+          {/* Mobile Identity & Quick Switcher Card */}
+          <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 shadow-xl relative overflow-hidden space-y-3">
+            <div
+              className="h-1 w-full absolute top-0 left-0"
+              style={{ background: `linear-gradient(90deg, ${currentStudentDept.accentHex}, #10b981)` }}
+            />
+
+            {/* Top row: Dept Badge + 1-Tap Desktop Switcher + Sync DB */}
+            <div className="flex items-center justify-between gap-2 pt-0.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 shadow-md font-bold text-xs ring-1 ring-white/10"
+                  style={{ backgroundColor: currentStudentDept.accentHex }}
+                >
+                  <GraduationCap size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[10px] uppercase font-mono text-slate-400 truncate">
+                    {currentStudentDept.code} • {isStudentHnd ? 'HND Tier' : 'ND Tier'}
+                  </div>
+                  <h2 className="text-sm font-black text-white truncate leading-tight">
+                    {currentStudentDept.shortName}
+                  </h2>
+                </div>
+              </div>
+
+              {/* View Switcher: 1-Tap back to Desktop View */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    sounds.playClick();
+                    changeDeviceMode('desktop');
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-emerald-500/80 text-emerald-300 hover:text-white font-bold text-[11px] flex items-center gap-1.5 shadow-md transition active:scale-95 cursor-pointer"
+                  title="Switch back to Desktop View"
+                >
+                  <Monitor size={13} className="text-emerald-400" />
+                  <span>Desktop</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    sounds.playClick();
+                    refreshCatalogFromDatabase();
+                  }}
+                  disabled={isLoadingCatalog}
+                  className="p-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 transition cursor-pointer"
+                  title="Synchronize Live Catalog"
+                >
+                  <RefreshCw size={13} className={isLoadingCatalog ? 'animate-spin text-amber-400' : 'text-slate-400'} />
+                </button>
+              </div>
+            </div>
+
+            {/* Department Dropdown + Level Quick Pills */}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <div className="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 flex items-center gap-1.5">
+                <Building2 size={13} className="text-slate-400 shrink-0" />
+                <select
+                  value={studentDeptCode}
+                  onChange={(e) => {
+                    setStudentDeptCode(e.target.value);
+                    sounds.playClick();
+                  }}
+                  className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer w-full pr-1"
+                >
+                  {STUDENT_DEPARTMENTS.map(d => (
+                    <option key={d.code} value={d.code} className="bg-slate-900 text-white">
+                      {d.code} - {d.shortName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStudentLevel('ND I');
+                    sounds.playClick();
+                  }}
+                  className={`flex-1 py-1 rounded-lg text-[10px] font-bold transition text-center cursor-pointer ${
+                    isStudentNd
+                      ? 'bg-emerald-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  ND Tier
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStudentLevel('HND II');
+                    sounds.playClick();
+                  }}
+                  className={`flex-1 py-1 rounded-lg text-[10px] font-bold transition text-center cursor-pointer ${
+                    isStudentHnd
+                      ? 'bg-purple-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  HND Tier
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile Search Bar */}
+          <div className="relative" ref={searchContainerRef}>
+            <Search size={18} className="absolute left-3.5 top-3.5 text-slate-400" />
+            <input
+              type="text"
+              placeholder={`Search ${currentStudentDept.code} books, author, course...`}
+              value={searchQuery}
+              onFocus={() => setIsSearchFocused(true)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setIsSearchFocused(true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSaveRecentSearch(searchQuery);
+                  setIsSearchFocused(false);
+                }
+              }}
+              className="w-full bg-slate-900/90 border border-slate-700/80 rounded-2xl pl-10 pr-24 py-3 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-lg font-sans"
+            />
+            <div className="absolute right-2.5 top-2 flex items-center gap-1">
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
+                >
+                  <X size={15} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleToggleVoice}
+                className={`p-1.5 rounded-xl transition cursor-pointer ${
+                  isListening ? 'bg-rose-600 text-white animate-pulse' : 'bg-slate-800 text-slate-300'
+                }`}
+                title="Voice Search"
+              >
+                {isListening ? <MicOff size={14} /> : <Mic size={14} />}
+              </button>
+            </div>
+
+            {/* Live Autocomplete suggestions on mobile */}
+            {isSearchFocused && searchSuggestions.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-2 bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl p-2 z-50 animate-fadeIn space-y-1 backdrop-blur-md">
+                {searchSuggestions.slice(0, 6).map((s, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery(s.label);
+                      if (s.field) setSearchField(s.field);
+                      setIsSearchFocused(false);
+                      sounds.playClick();
+                      handleSaveRecentSearch(s.label);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-800 transition flex items-center justify-between cursor-pointer"
+                  >
+                    <div className="truncate text-xs font-bold text-white">{s.label}</div>
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-950 text-slate-400 shrink-0 ml-2">
+                      {s.type}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Department Quick Pills (Horizontal Scrolling) */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+            {STUDENT_DEPARTMENTS.map(d => {
+              const isSelected = studentDeptCode === d.code;
+              return (
+                <button
+                  key={d.code}
+                  type="button"
+                  onClick={() => {
+                    setStudentDeptCode(d.code);
+                    sounds.playClick();
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shrink-0 transition flex items-center gap-1.5 cursor-pointer ${
+                    isSelected
+                      ? 'text-white shadow-md'
+                      : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
+                  }`}
+                  style={{ backgroundColor: isSelected ? d.accentHex : undefined }}
+                >
+                  <span>{d.code}</span>
+                  <span className="text-[10px] opacity-80">{d.shortName.split(' ')[0]}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Category Quick Pills (Horizontal Scrolling) */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+            {categories.map(cat => {
+              const CatIcon = cat.icon;
+              const isActive = activeCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveCategory(cat.id);
+                    sounds.playClick();
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shrink-0 transition flex items-center gap-1.5 cursor-pointer ${
+                    isActive
+                      ? 'text-white shadow-md'
+                      : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
+                  }`}
+                  style={{ backgroundColor: isActive ? currentStudentDept.accentHex : undefined }}
+                >
+                  <CatIcon size={12} className={isActive ? 'text-white' : 'text-slate-400'} />
+                  <span>{cat.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* 1. CURRICULUM & SCHOLAR IDENTITY COMMAND BAR */}
+          <div className="relative overflow-hidden rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl backdrop-blur-xl">
+            {/* Department Accent Glow Bar */}
+            <div
+              className="h-1.5 w-full bg-gradient-to-r"
+              style={{
+                background: `linear-gradient(90deg, ${currentStudentDept.accentHex}, #10b981, ${currentStudentDept.accentHex})`
+              }}
+            />
 
         <div className="p-5 sm:p-6 lg:p-7 space-y-5">
           {/* Top Row: Identity & Quick Selectors */}
@@ -947,17 +1339,69 @@ export default function SmartCatalogSearch({
           </div>
         </div>
 
-        {/* Search Input Box */}
-        <div className="relative">
+        {/* Multi-Way Search Scope Selector (Ways to Search, including Author) */}
+        <div className="flex flex-wrap items-center gap-1.5 pb-1 text-xs">
+          <span className="text-[11px] font-mono font-bold text-slate-400 uppercase tracking-wider mr-1">Search By:</span>
+          {[
+            { id: 'all', label: 'All Fields', icon: Sparkles },
+            { id: 'author', label: 'Author / Scholar', icon: User },
+            { id: 'title', label: 'Title', icon: BookOpen },
+            { id: 'course', label: `Course (${currentStudentDept.code})`, icon: GraduationCap },
+            { id: 'subject', label: 'Subject / Topic', icon: Layers },
+            { id: 'isbn', label: 'ISBN / Call No.', icon: FileText }
+          ].map(f => {
+            const Icon = f.icon;
+            const isSelected = searchField === f.id;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => {
+                  setSearchField(f.id);
+                  sounds.playClick();
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  isSelected
+                    ? 'text-white shadow-md'
+                    : 'bg-slate-950/80 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                }`}
+                style={{ backgroundColor: isSelected ? currentStudentDept.accentHex : undefined }}
+              >
+                <Icon size={13} className={isSelected ? 'text-white' : 'text-slate-400'} />
+                <span>{f.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Search Input Box with Autocomplete Container */}
+        <div className="relative" ref={searchContainerRef}>
           <Search size={20} className="absolute left-4 top-3.5 text-slate-400" />
           <input
             type="text"
-            placeholder={`Search ${currentStudentDept.shortName} by Title, Author, Topic, Course (e.g. ${currentStudentDept.code} 312) or Call Number...`}
+            placeholder={
+              searchField === 'author'
+                ? `Search ${currentStudentDept.shortName} by Author name or Scholar (e.g. Adebayo, Babalola, Olonade)...`
+                : searchField === 'title'
+                ? `Search ${currentStudentDept.shortName} by Book / Thesis Title...`
+                : searchField === 'course'
+                ? `Search by Course Code (e.g. ${currentStudentDept.code} 311, ${currentStudentDept.code} 412)...`
+                : searchField === 'subject'
+                ? `Search by Subject Classification or Topic...`
+                : searchField === 'isbn'
+                ? `Search by ISBN or Shelf Call Number...`
+                : `Search ${currentStudentDept.shortName} by Title, Author, Topic, Course (e.g. ${currentStudentDept.code} 312) or Call Number...`
+            }
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => setIsSearchFocused(true)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setIsSearchFocused(true);
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 handleSaveRecentSearch(searchQuery);
+                setIsSearchFocused(false);
               }
             }}
             className="w-full bg-slate-950 border border-slate-700/80 hover:border-slate-600 rounded-2xl pl-12 pr-28 py-3.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 transition shadow-inner font-sans"
@@ -988,6 +1432,47 @@ export default function SmartCatalogSearch({
               {isListening ? <MicOff size={15} /> : <Mic size={15} />}
             </button>
           </div>
+
+          {/* Live Search Suggestions (Autocomplete & Search Suggestions) */}
+          {isSearchFocused && searchSuggestions.length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-2 bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl p-2 z-50 animate-fadeIn space-y-1 backdrop-blur-md">
+              <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                <span>Search Suggestions</span>
+                <span className="text-teal-400">Click to filter</span>
+              </div>
+              {searchSuggestions.map((s, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery(s.label);
+                    if (s.field) setSearchField(s.field);
+                    setIsSearchFocused(false);
+                    sounds.playClick();
+                    handleSaveRecentSearch(s.label);
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-800 transition flex items-center justify-between group cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 rounded-lg bg-slate-950 border border-slate-800 group-hover:border-teal-500/50 text-teal-400 transition">
+                      {s.type === 'author' ? <User size={14} /> : s.type === 'course' ? <GraduationCap size={14} /> : <BookOpen size={14} />}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white group-hover:text-teal-300 transition">
+                        {s.label}
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        {s.subtext}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-slate-950 text-slate-400 group-hover:text-teal-300">
+                    {s.type.toUpperCase()}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Category Pills & Filter Toggle */}
@@ -1032,7 +1517,23 @@ export default function SmartCatalogSearch({
 
         {/* Filter Drawer */}
         {showFilters && (
-          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs animate-fadeIn">
+          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs animate-fadeIn">
+            <div>
+              <label className="text-slate-400 font-medium block mb-1 flex items-center gap-1">
+                <User size={13} style={{ color: currentStudentDept.accentHex }} /> Filter by Author
+              </label>
+              <select
+                value={authorFilter}
+                onChange={(e) => setAuthorFilter(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none"
+              >
+                <option value="All">All Authors ({uniqueAuthors.length})</option>
+                {uniqueAuthors.map(auth => (
+                  <option key={auth} value={auth}>{auth}</option>
+                ))}
+              </select>
+            </div>
+
             <div>
               <label className="text-slate-400 font-medium block mb-1 flex items-center gap-1">
                 <Building2 size={13} style={{ color: currentStudentDept.accentHex }} /> Campus Library Branch
@@ -1104,30 +1605,71 @@ export default function SmartCatalogSearch({
               Clear
             </button>
           )}
+          </div>
         </div>
-      </div>
+      </>
+      )}
 
-      {/* 3. RESULTS STATUS BAR */}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 px-1">
-        <div>
-          Showing <strong className="text-white font-bold">{filteredResults.length}</strong> resources for <strong className="text-white">{currentStudentDept.name}</strong>
-          {searchQuery && <span> matching "<strong className="text-amber-300">{searchQuery}</strong>"</span>}
+      {/* 3. RESULTS STATUS & VIEW MODE CONTROLS */}
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400 px-1 pt-1">
+        <div className="flex items-center gap-2 truncate">
+          <span>Showing <strong className="text-white font-bold">{filteredResults.length}</strong> resources for <strong className="text-white">{currentStudentDept.name}</strong></span>
+          {searchQuery && (
+            <span className="text-amber-300 truncate font-semibold">matching "{searchQuery}"</span>
+          )}
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* View Controls: Grid / List Switcher & Reset */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* View Mode Toggle */}
+          <div className="bg-slate-950 p-1 rounded-xl border border-slate-800 flex items-center gap-1 shadow-inner">
+            <button
+              type="button"
+              onClick={() => {
+                setLayoutMode('grid');
+                sounds.playClick();
+              }}
+              className={`px-2.5 py-1 rounded-lg transition flex items-center gap-1.5 text-xs font-bold cursor-pointer ${
+                layoutMode === 'grid'
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Grid Layout (Cover Art)"
+            >
+              <Grid size={13} />
+              <span>Grid</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setLayoutMode('list');
+                sounds.playClick();
+              }}
+              className={`px-2.5 py-1 rounded-lg transition flex items-center gap-1.5 text-xs font-bold cursor-pointer ${
+                layoutMode === 'list'
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="List Layout (Detailed View)"
+            >
+              <List size={13} />
+              <span>List</span>
+            </button>
+          </div>
+
           <button
             onClick={handleResetFilters}
-            className="hover:underline flex items-center gap-1 font-semibold text-slate-300"
+            className="hover:underline flex items-center gap-1 font-semibold text-slate-300 px-2 py-1 rounded-lg hover:bg-slate-800/60 transition cursor-pointer"
+            title="Reset Search and Filters"
           >
-            <RefreshCw size={11} /> Reset Filters
+            <RefreshCw size={11} />
+            <span className="hidden sm:inline">Reset</span>
           </button>
-          <span className="text-[11px] text-slate-500 font-mono hidden sm:inline">
-            HOD Upload Access Control • Active
-          </span>
         </div>
       </div>
 
-      {/* 4. RESULTS GRID */}
+      {/* 4. RESULTS RENDERER (GRID vs LIST) */}
       {filteredResults.length === 0 ? (
         <div className="p-8 sm:p-12 rounded-3xl bg-slate-900 border border-slate-800 text-center space-y-5 shadow-xl">
           <div className="w-16 h-16 rounded-2xl bg-slate-950 border border-slate-800 text-amber-400 flex items-center justify-center mx-auto">
@@ -1144,7 +1686,7 @@ export default function SmartCatalogSearch({
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2 text-xs">
             <button
               onClick={handleResetFilters}
-              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold transition flex items-center gap-2"
+              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold transition flex items-center gap-2 cursor-pointer"
             >
               <RefreshCw size={14} />
               <span>Reset Search Filters</span>
@@ -1153,7 +1695,7 @@ export default function SmartCatalogSearch({
             {onOpenAi && (
               <button
                 onClick={() => onOpenAi(`Recommend ${currentStudentDept.name} research topics and study materials`)}
-                className="px-4 py-2.5 rounded-xl text-white font-bold transition flex items-center gap-2 shadow"
+                className="px-4 py-2.5 rounded-xl text-white font-bold transition flex items-center gap-2 shadow cursor-pointer"
                 style={{ backgroundColor: currentStudentDept.accentHex }}
               >
                 <Bot size={14} />
@@ -1162,8 +1704,185 @@ export default function SmartCatalogSearch({
             )}
           </div>
         </div>
+      ) : layoutMode === 'grid' ? (
+        /* ============================================================== */
+        /* TRUE GRID LAYOUT: 2 Columns on Mobile, 3 on Tablet, 4-5 Desktop*/
+        /* ============================================================== */
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4.5 animate-fadeIn">
+          {filteredResults.map(book => {
+            const isProject = book.category === 'Student Project' || book.format === 'Student Project' || book.format === 'Thesis';
+            const isJournal = book.category === 'Journal' || book.format === 'Journal';
+            const isEbook = book.isDigital || book.pdfUrl || book.format === 'PDF' || book.format === 'E-Book';
+            const tier = getItemAcademicTier(book);
+            const isNdTier = tier === 'ND';
+            const isHndTier = tier === 'HND';
+
+            return (
+              <div
+                key={book.id}
+                className="p-2.5 sm:p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 hover:border-slate-700 hover:shadow-2xl transition-all duration-300 flex flex-col justify-between group relative overflow-hidden backdrop-blur-sm hover:-translate-y-1"
+              >
+                {/* Top Subtle Stripe in Department Color */}
+                <div
+                  className="h-1 w-full absolute top-0 left-0"
+                  style={{ backgroundColor: currentStudentDept.accentHex }}
+                />
+
+                {/* BOOK FRONT COVER ARTWORK CANVAS (2:3 Aspect Ratio) */}
+                <div
+                  onClick={() => {
+                    sounds.playClick();
+                    if ((isEbook || book.pdfUrl) && onOpenReader) {
+                      onOpenReader(book);
+                    } else if (onSelectBook) {
+                      onSelectBook(book);
+                    }
+                  }}
+                  className="w-full aspect-[2/3] rounded-xl overflow-hidden relative shadow-lg shadow-black/70 border border-slate-800 bg-slate-950 group-hover:border-slate-600 transition cursor-pointer select-none"
+                >
+                  {book.cover_image || book.coverImage ? (
+                    <img
+                      src={book.cover_image || book.coverImage}
+                      alt={`Cover of ${book.title}`}
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                    />
+                  ) : (
+                    <div
+                      className="w-full h-full p-2.5 flex flex-col justify-between text-left relative overflow-hidden"
+                      style={{
+                        background: `linear-gradient(145deg, ${currentStudentDept.accentHex}40 0%, #032317 60%, #01140e 100%)`
+                      }}
+                    >
+                      <div className="space-y-1 relative z-10">
+                        <div className="text-[7.5px] font-mono font-bold tracking-wider uppercase text-emerald-400/90 truncate">
+                          FCC • {book.department || currentStudentDept.code}
+                        </div>
+                        <div className="h-0.5 w-4 bg-teal-400 rounded-full" />
+                        <h4 className="text-[10px] sm:text-[11px] font-bold text-white line-clamp-3 leading-snug font-serif">
+                          {book.title}
+                        </h4>
+                      </div>
+                      <div className="relative z-10 text-[8px] text-slate-300 font-mono truncate">
+                        {book.author}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 3D Book Spine Shadow & Glossy Sheen */}
+                  <div className="absolute top-0 bottom-0 left-0 w-2.5 bg-gradient-to-r from-black/70 to-transparent pointer-events-none" />
+                  <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none" />
+
+                  {/* Floating Badges on Top of Cover */}
+                  <div className="absolute top-2 left-2 flex flex-col gap-1 z-10">
+                    <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-black font-mono shadow-md backdrop-blur-md ${
+                      isNdTier
+                        ? 'bg-emerald-950/90 text-emerald-300 border border-emerald-700/80'
+                        : isHndTier
+                        ? 'bg-purple-950/90 text-purple-300 border border-purple-700/80'
+                        : 'bg-blue-950/90 text-blue-300 border border-blue-700/80'
+                    }`}>
+                      {tier}
+                    </span>
+                  </div>
+
+                  <div className="absolute top-2 right-2 z-10">
+                    <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-bold shadow-md backdrop-blur-md ${
+                      (book.copiesAvailable > 0 || isEbook)
+                        ? 'bg-emerald-950/90 text-emerald-400 border border-emerald-700/80'
+                        : 'bg-rose-950/90 text-rose-400 border border-rose-700/80'
+                    }`}>
+                      {isEbook ? '⚡ PDF' : '✓ Shelf'}
+                    </span>
+                  </div>
+
+                  {/* Shelf Call Number Tag at Bottom of Cover */}
+                  <div className="absolute bottom-1.5 inset-x-1.5 z-10">
+                    <div className="px-1.5 py-0.5 rounded bg-black/85 backdrop-blur-md text-[8.5px] font-mono font-bold text-amber-300 truncate text-center border border-white/10 shadow">
+                      {book.callNumber || book.courseCode || 'GEN-LIB'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* TEXT DETAILS */}
+                <div className="pt-2 space-y-1 flex-1 flex flex-col justify-between">
+                  <div>
+                    <h3
+                      onClick={() => {
+                        sounds.playClick();
+                        if ((isEbook || book.pdfUrl) && onOpenReader) {
+                          onOpenReader(book);
+                        } else if (onSelectBook) {
+                          onSelectBook(book);
+                        }
+                      }}
+                      className="text-xs sm:text-sm font-bold text-white group-hover:text-emerald-300 transition line-clamp-2 leading-snug cursor-pointer"
+                      title={book.title}
+                    >
+                      {book.title}
+                    </h3>
+                    <p
+                      onClick={() => {
+                        if (book.author) {
+                          setSearchField('author');
+                          setSearchQuery(book.author);
+                          sounds.playClick();
+                        }
+                      }}
+                      className="text-[11px] text-slate-400 truncate mt-0.5 hover:text-teal-300 hover:underline cursor-pointer"
+                      title={`Filter by ${book.author}`}
+                    >
+                      {book.author}
+                    </p>
+                  </div>
+
+                  {/* Year & Pages */}
+                  <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono pt-1">
+                    <span>{book.year || 2026}</span>
+                    <span>📖 {book.pdfPages || 140}p</span>
+                  </div>
+                </div>
+
+                {/* ACTION BUTTONS (DIRECT ACCESS) */}
+                <div className="pt-2 mt-2 border-t border-slate-800/80 flex items-center gap-1.5">
+                  {(isEbook || book.pdfUrl) && onOpenReader ? (
+                    <button
+                      onClick={() => {
+                        sounds.playClick();
+                        onOpenReader(book);
+                      }}
+                      className="flex-1 py-1.5 px-2 rounded-xl text-white font-bold text-[11px] flex items-center justify-center gap-1 shadow transition active:scale-95 cursor-pointer"
+                      style={{ backgroundColor: currentStudentDept.accentHex }}
+                      title="Read Digital PDF"
+                    >
+                      <BookOpen size={12} />
+                      <span>Read</span>
+                    </button>
+                  ) : null}
+
+                  {onSelectBook && (
+                    <button
+                      onClick={() => {
+                        sounds.playClick();
+                        onSelectBook(book);
+                      }}
+                      className={`py-1.5 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-[11px] flex items-center justify-center transition cursor-pointer ${
+                        (isEbook || book.pdfUrl) && onOpenReader ? '' : 'flex-1'
+                      }`}
+                      title="View Details"
+                    >
+                      <span>Details</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        /* ============================================================== */
+        /* LIST LAYOUT: Detailed Horizontal Cards                          */
+        /* ============================================================== */
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fadeIn">
           {filteredResults.map(book => {
             const isProject = book.category === 'Student Project' || book.format === 'Student Project' || book.format === 'Thesis';
             const isJournal = book.category === 'Journal' || book.format === 'Journal';
@@ -1303,7 +2022,17 @@ export default function SmartCatalogSearch({
                         ) : (
                           <div className="text-xs text-slate-400 mt-1 space-y-0.5">
                             <p>
-                              By <strong className="text-slate-200">{book.author}</strong> {book.publisher && `• ${book.publisher}`} ({book.year})
+                              By <strong
+                                onClick={() => {
+                                  setSearchField('author');
+                                  setSearchQuery(book.author);
+                                  sounds.playClick();
+                                }}
+                                className="text-slate-200 hover:text-teal-300 hover:underline cursor-pointer"
+                                title="Click to view all books by this author"
+                              >
+                                {book.author}
+                              </strong> {book.publisher && `• ${book.publisher}`} ({book.year})
                             </p>
                             {book.hod_name && (
                               <p className="text-[11px] font-mono text-emerald-400">

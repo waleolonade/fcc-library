@@ -34,7 +34,7 @@ export default function HomeScreen({ navigation }) {
 
   const loadData = async () => {
     const catalogData = await mobileApi.getCatalog();
-    const loanData = await mobileApi.getStudentLoans('FCC/CEM/2024/042');
+    const loanData = await mobileApi.getStudentLoans('FCC/CSC/2026/409');
     setBooks(catalogData);
     setLoans(loanData);
   };
@@ -87,8 +87,8 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.scholarTop}>
             <View>
               <Text style={styles.welcomeLabel}>STUDENT SCHOLAR</Text>
-              <Text style={styles.scholarName}>Adebayo Oluwaseun</Text>
-              <Text style={styles.matricText}>FCC/CEM/2024/042 • Coop. Economics</Text>
+              <Text style={styles.scholarName}>Olawale Akeem Olonade</Text>
+              <Text style={styles.matricText}>FCC/CSC/2026/409 • Computer Science</Text>
             </View>
             <TouchableOpacity
               style={styles.qrIconBtn}

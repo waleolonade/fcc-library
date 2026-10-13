@@ -43,6 +43,10 @@ import GoogleBooksExplorer from './GoogleBooksExplorer';
 import ApiOverlayDiscovery from './ApiOverlayDiscovery';
 import LmsApiExplorer from './LmsApiExplorer';
 import SmartCatalogSearch from './SmartCatalogSearch';
+import { useDeviceType } from '../utils/useDeviceType';
+import MobileStudentNavigation from './MobileStudentNavigation';
+import TabletStudentNavigation from './TabletStudentNavigation';
+import { Smartphone, Monitor, Tablet as TabletIcon } from 'lucide-react';
 
 export default function StudentPortal({
   user,
@@ -64,6 +68,7 @@ export default function StudentPortal({
   // PROFILE: 'profile'
   // Campus utilities: 'kiosk', 'barcode_studio', 'clearance', 'rooms', 'ill', 'communication', 'helpdesk'
   const [activeTab, setActiveTab] = useState('home');
+  const { isMobile, isTablet, isDesktop, device: deviceMode, changeDeviceMode } = useDeviceType();
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -270,152 +275,214 @@ export default function StudentPortal({
 
   return (
     <div
-      className="flex flex-col min-h-screen bg-[#021810] text-emerald-100 font-sans selection:bg-emerald-500 selection:text-white"
+      className={`flex flex-col h-full min-h-0 bg-[#021810] text-emerald-100 font-sans selection:bg-emerald-500 selection:text-white ${
+        isMobile ? 'pb-dock overflow-y-auto' : 'overflow-hidden'
+      }`}
       style={{ backgroundImage: PATTERNS.scholar }}
     >
-      {/* 1. TOP NAVIGATION BAR */}
-      <header className="bg-[#032317]/95 backdrop-blur-md border-b border-emerald-800/80 sticky top-0 z-30 px-4 sm:px-6 py-2.5 flex items-center justify-between shadow-lg">
-        {/* Left: Sidebar Toggle + Branding + Active Breadcrumb */}
-        <div className="flex items-center gap-3 sm:gap-4">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 rounded-xl bg-[#021810] hover:bg-emerald-950 text-emerald-300 hover:text-white border border-emerald-800/80 transition flex items-center gap-1.5"
-            title={sidebarOpen ? "Hide Menu Sidebar" : "Show Menu Sidebar"}
-          >
-            <Menu size={18} />
-            <span className="text-xs font-semibold hidden sm:inline">Menu</span>
-          </button>
+      {/* MOBILE ADAPTIVE HEADER, FLOATING DOCK & SERVICES DRAWER */}
+      {isMobile && (
+        <MobileStudentNavigation
+          user={user}
+          activeTab={activeTab}
+          onTabSwitch={handleTabSwitch}
+          onOpenAi={() => setIsAiOpen(true)}
+          onLogout={onLogout}
+          dueSoonCount={dueSoonLoans.length}
+          isHnd2={isHnd2}
+          onOpenIdCard={() => setShowIdPrintModal(true)}
+          onOpenBiometrics={() => setShowBiometrics(true)}
+          deviceMode={deviceMode}
+          onChangeDeviceMode={changeDeviceMode}
+        />
+      )}
 
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 p-0.5 flex items-center justify-center shadow-md shadow-emerald-950/60 overflow-hidden shrink-0">
-              <img
-                src="/assets/fcc-logo.png"
-                alt="Federal Co-operative College"
-                className="w-full h-full object-cover rounded-[10px]"
-              />
+      {/* DESKTOP TOP NAVIGATION BAR */}
+      {isDesktop && (
+        <header className="bg-[#032317]/95 backdrop-blur-md border-b border-emerald-800/80 sticky top-0 z-30 px-4 sm:px-6 py-2.5 flex items-center justify-between shadow-lg shrink-0">
+          {/* Left: Sidebar Toggle + Branding + Active Breadcrumb */}
+          <div className="flex items-center gap-3 sm:gap-4">
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-2 rounded-xl bg-[#021810] hover:bg-emerald-950 text-emerald-300 hover:text-white border border-emerald-800/80 transition flex items-center gap-1.5"
+              title={sidebarOpen ? "Hide Menu Sidebar" : "Show Menu Sidebar"}
+            >
+              <Menu size={18} />
+              <span className="text-xs font-semibold hidden sm:inline">Menu</span>
+            </button>
+
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 p-0.5 flex items-center justify-center shadow-md shadow-emerald-950/60 overflow-hidden shrink-0">
+                <img
+                  src="/assets/fcc-logo.png"
+                  alt="Federal Co-operative College"
+                  className="w-full h-full object-cover rounded-[10px]"
+                />
+              </div>
+              <div className="hidden sm:block">
+                <div className="text-xs font-bold text-white leading-none">{INSTITUTION.shortName}</div>
+                <div className="text-[10px] text-emerald-400 font-medium">Student App & Digital Library</div>
+              </div>
             </div>
-            <div className="hidden sm:block">
-              <div className="text-xs font-bold text-white leading-none">{INSTITUTION.shortName}</div>
-              <div className="text-[10px] text-emerald-400 font-medium">Student App & Digital Library</div>
+
+            {/* Current Section Breadcrumb */}
+            <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#021810] border border-emerald-800 text-xs text-emerald-200">
+              <span className="text-emerald-400 font-bold uppercase tracking-wider text-[10px]">{currentMeta.category}</span>
+              <span className="text-emerald-600">/</span>
+              <CurrentIcon size={13} className="text-emerald-400" />
+              <span className="font-semibold">{currentMeta.label}</span>
             </div>
-          </div>
 
-          {/* Current Section Breadcrumb */}
-          <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#021810] border border-emerald-800 text-xs text-emerald-200">
-            <span className="text-emerald-400 font-bold uppercase tracking-wider text-[10px]">{currentMeta.category}</span>
-            <span className="text-emerald-600">/</span>
-            <CurrentIcon size={13} className="text-emerald-400" />
-            <span className="font-semibold">{currentMeta.label}</span>
-          </div>
-
-          {/* Special HND2 Priority Indicator */}
-          {isHnd2 && (
-            <div className="hidden xl:flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/40 text-[10px] text-emerald-300 font-bold">
-              <Sparkles size={11} className="text-emerald-400 animate-spin" />
-              <span>HND II Final Year Research Active</span>
-            </div>
-          )}
-        </div>
-
-        {/* Center: Quick Primary Switchers */}
-        <div className="hidden lg:flex items-center gap-1 bg-[#021810] p-1 rounded-2xl border border-emerald-800/80 text-xs font-semibold">
-          <button
-            onClick={() => handleTabSwitch('home')}
-            className={`px-3 py-1 rounded-xl transition ${
-              activeTab === 'home' ? 'bg-emerald-600 text-white shadow' : 'text-emerald-300/70 hover:text-white'
-            }`}
-          >
-            Home
-          </button>
-          <button
-            onClick={() => handleTabSwitch('library_search')}
-            className={`px-3 py-1 rounded-xl transition ${
-              activeTab.startsWith('library') ? 'bg-emerald-600 text-white shadow' : 'text-emerald-300/70 hover:text-white'
-            }`}
-          >
-            Library
-          </button>
-          <button
-            onClick={() => handleTabSwitch('my_borrowed')}
-            className={`px-3 py-1 rounded-xl transition flex items-center gap-1.5 ${
-              activeTab.startsWith('my_') ? 'bg-emerald-600 text-white shadow' : 'text-emerald-300/70 hover:text-white'
-            }`}
-          >
-            <span>My Library</span>
-            {userLoans.length > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-emerald-800 text-[10px] text-emerald-200 font-bold">
-                {userLoans.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => handleTabSwitch('research_hnd_projects')}
-            className={`px-3 py-1 rounded-xl transition flex items-center gap-1.5 ${
-              activeTab.startsWith('research')
-                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow'
-                : 'text-emerald-300/70 hover:text-white'
-            }`}
-          >
-            <span>Research</span>
+            {/* Special HND2 Priority Indicator */}
             {isHnd2 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40 text-[9px] font-black uppercase">
-                HND2
-              </span>
+              <div className="hidden xl:flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/40 text-[10px] text-emerald-300 font-bold">
+                <Sparkles size={11} className="text-emerald-400 animate-spin" />
+                <span>HND II Final Year Research Active</span>
+              </div>
             )}
-          </button>
-        </div>
-
-        {/* Right: AI Librarian + User Badge + Sign Out */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          <button
-            onClick={() => setIsAiOpen(true)}
-            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-950 transition"
-          >
-            <Bot size={15} />
-            <span className="hidden sm:inline">AI Librarian</span>
-          </button>
-
-          <button
-            onClick={() => handleTabSwitch('notifications')}
-            className={`p-2 rounded-xl border border-emerald-800/80 transition relative ${
-              activeTab === 'notifications' ? 'bg-emerald-600 text-white' : 'bg-[#021810] text-emerald-300 hover:text-white'
-            }`}
-            title="Notifications"
-          >
-            <Bell size={16} />
-            {dueSoonLoans.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
-            )}
-          </button>
-
-          <div
-            onClick={() => handleTabSwitch('profile')}
-            className="text-right hidden sm:block pl-2 border-l border-emerald-800 cursor-pointer group"
-          >
-            <div className="text-xs font-bold text-emerald-100 group-hover:text-emerald-300 transition flex items-center gap-1 justify-end">
-              <span>{user?.name || 'Scholar'}</span>
-              <User size={13} className="text-emerald-400" />
-            </div>
-            <div className="text-[10px] text-emerald-400 font-mono">
-              {user?.matric} • <span className="text-amber-400 font-bold">{user?.level || 'HND II'}</span>
-            </div>
           </div>
 
-          <button
-            onClick={onLogout}
-            className="p-2 rounded-xl bg-[#021810] hover:bg-emerald-950 text-emerald-300 hover:text-white border border-emerald-800/80 transition"
-            title="Sign Out"
-          >
-            <LogOut size={16} />
-          </button>
-        </div>
-      </header>
+          {/* Center: Quick Primary Switchers */}
+          <div className="hidden lg:flex items-center gap-1 bg-[#021810] p-1 rounded-2xl border border-emerald-800/80 text-xs font-semibold">
+            <button
+              onClick={() => handleTabSwitch('home')}
+              className={`px-3 py-1 rounded-xl transition ${
+                activeTab === 'home' ? 'bg-emerald-600 text-white shadow' : 'text-emerald-300/70 hover:text-white'
+              }`}
+            >
+              Home
+            </button>
+            <button
+              onClick={() => handleTabSwitch('library_search')}
+              className={`px-3 py-1 rounded-xl transition ${
+                activeTab.startsWith('library') ? 'bg-emerald-600 text-white shadow' : 'text-emerald-300/70 hover:text-white'
+              }`}
+            >
+              Library
+            </button>
+            <button
+              onClick={() => handleTabSwitch('my_borrowed')}
+              className={`px-3 py-1 rounded-xl transition flex items-center gap-1.5 ${
+                activeTab.startsWith('my_') ? 'bg-emerald-600 text-white shadow' : 'text-emerald-300/70 hover:text-white'
+              }`}
+            >
+              <span>My Library</span>
+              {userLoans.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-emerald-800 text-[10px] text-emerald-200 font-bold">
+                  {userLoans.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => handleTabSwitch('research_hnd_projects')}
+              className={`px-3 py-1 rounded-xl transition flex items-center gap-1.5 ${
+                activeTab.startsWith('research')
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow'
+                  : 'text-emerald-300/70 hover:text-white'
+              }`}
+            >
+              <span>Research</span>
+              {isHnd2 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40 text-[9px] font-black uppercase">
+                  HND2
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Right: AI Librarian + User Badge + Sign Out */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Device Mode Switcher (Visible on desktop so user can switch between mobile/tablet/desktop) */}
+            <div className="flex items-center gap-1 bg-[#01140d] px-2 py-1 rounded-xl border border-emerald-900/60 text-[10px] font-mono">
+              <span className="text-emerald-400 font-bold hidden sm:inline">VIEW:</span>
+              {[
+                { mode: 'auto', label: 'Auto' },
+                { mode: 'mobile', label: '📱 Phone' },
+                { mode: 'tablet', label: '📟 Tablet' },
+                { mode: 'desktop', label: '💻 Desktop' }
+              ].map(opt => (
+                <button
+                  key={opt.mode}
+                  onClick={() => changeDeviceMode(opt.mode)}
+                  className={`px-1.5 py-0.5 rounded transition ${
+                    deviceMode === opt.mode
+                      ? 'bg-emerald-600 text-white font-bold shadow'
+                      : 'text-emerald-300/60 hover:text-white'
+                  }`}
+                  title={`Switch layout to ${opt.label}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setIsAiOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-950 transition"
+            >
+              <Bot size={15} />
+              <span className="hidden sm:inline">AI Librarian</span>
+            </button>
+
+            <button
+              onClick={() => handleTabSwitch('notifications')}
+              className={`p-2 rounded-xl border border-emerald-800/80 transition relative ${
+                activeTab === 'notifications' ? 'bg-emerald-600 text-white' : 'bg-[#021810] text-emerald-300 hover:text-white'
+              }`}
+              title="Notifications"
+            >
+              <Bell size={16} />
+              {dueSoonLoans.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+              )}
+            </button>
+
+            <div
+              onClick={() => handleTabSwitch('profile')}
+              className="text-right hidden sm:block pl-2 border-l border-emerald-800 cursor-pointer group"
+            >
+              <div className="text-xs font-bold text-emerald-100 group-hover:text-emerald-300 transition flex items-center gap-1 justify-end">
+                <span>{user?.name || 'Scholar'}</span>
+                <User size={13} className="text-emerald-400" />
+              </div>
+              <div className="text-[10px] text-emerald-400 font-mono">
+                {user?.matric} • <span className="text-amber-400 font-bold">{user?.level || 'HND II'}</span>
+              </div>
+            </div>
+
+            <button
+              onClick={onLogout}
+              className="p-2 rounded-xl bg-[#021810] hover:bg-emerald-950 text-emerald-300 hover:text-white border border-emerald-800/80 transition"
+              title="Sign Out"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
+        </header>
+      )}
 
       {/* 2. BODY LAYOUT: COLLAPSIBLE HIERARCHICAL SIDEBAR + MAIN WORKSPACE */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Navigation Sidebar */}
-        {sidebarOpen && (
-          <aside className="w-64 border-r border-emerald-800/80 bg-[#032317]/95 backdrop-blur-md flex flex-col justify-between shrink-0 h-[calc(100vh-53px)] sticky top-[53px] overflow-y-auto p-3 space-y-4 animate-fadeIn">
+      <div className={`flex-1 min-h-0 flex min-w-0 ${isMobile ? 'overflow-visible' : 'overflow-hidden'}`}>
+        {/* Tablet Left Rail */}
+        {isTablet && (
+          <TabletStudentNavigation
+            user={user}
+            activeTab={activeTab}
+            onTabSwitch={handleTabSwitch}
+            onOpenAi={() => setIsAiOpen(true)}
+            onLogout={onLogout}
+            dueSoonCount={dueSoonLoans.length}
+            isHnd2={isHnd2}
+            onOpenIdCard={() => setShowIdPrintModal(true)}
+            onOpenBiometrics={() => setShowBiometrics(true)}
+            deviceMode={deviceMode}
+            onChangeDeviceMode={changeDeviceMode}
+          />
+        )}
+
+        {/* Desktop Left Navigation Sidebar */}
+        {isDesktop && sidebarOpen && (
+          <aside className="w-64 border-r border-emerald-800/80 bg-[#032317]/95 backdrop-blur-md flex flex-col justify-between shrink-0 h-full overflow-y-auto p-3 space-y-4 animate-fadeIn">
             <div className="space-y-3">
               {/* Institution Identity Card in Sidebar */}
               <div className="flex items-center gap-3 p-2.5 rounded-2xl bg-[#021810] border border-emerald-800/80 shadow-md">
@@ -775,8 +842,43 @@ export default function StudentPortal({
           </aside>
         )}
 
-        {/* Main Content Workspace */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-7xl w-full">
+        {/* Main Content Workspace Column */}
+        <div className={`flex-1 min-h-0 flex flex-col min-w-0 ${isMobile ? 'overflow-visible' : 'overflow-hidden'}`}>
+          {/* Tablet Top Compact Header Bar */}
+          {isTablet && (
+            <header className="bg-[#032317]/95 backdrop-blur-md border-b border-emerald-800/80 px-4 py-2 flex items-center justify-between shrink-0 shadow-md">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-white uppercase tracking-wider">{currentMeta.category}</span>
+                <span className="text-emerald-600">/</span>
+                <CurrentIcon size={14} className="text-emerald-400" />
+                <span className="text-xs font-semibold text-emerald-200">{currentMeta.label}</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <button
+                  onClick={() => {
+                    sounds.playClick();
+                    changeDeviceMode('desktop');
+                  }}
+                  className="px-2.5 py-1 rounded-xl bg-emerald-950 hover:bg-emerald-900 border border-emerald-700 text-emerald-200 text-xs font-bold flex items-center gap-1.5 transition shadow"
+                  title="Switch to Desktop View"
+                >
+                  <Monitor size={13} className="text-emerald-400" />
+                  <span>Desktop View</span>
+                </button>
+                <span className="text-[11px] font-mono text-emerald-400">{user?.matric}</span>
+                <span className="px-2 py-0.5 rounded bg-emerald-950 text-amber-400 border border-emerald-800 text-[10px] font-bold">{user?.level || 'HND II'}</span>
+              </div>
+            </header>
+          )}
+
+          <main className={`flex-1 min-h-0 w-full h-full ${isMobile ? 'overflow-visible' : 'overflow-y-auto overscroll-contain'} touch-scroll`}>
+            <div className={`w-full ${
+              isMobile
+                ? 'pb-dock px-3 sm:px-4 pt-3 max-w-full'
+                : isTablet
+                ? 'p-4 sm:p-6 max-w-7xl mx-auto'
+                : 'p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto'
+            }`}>
           {activeBookForReader ? (
             <DigitalBookReader
               book={activeBookForReader}
@@ -1109,9 +1211,9 @@ export default function StudentPortal({
               <InstitutionalCommunicationHub
                 currentRole="student"
                 currentUser={{
-                  name: user?.name || 'Wale Olonade',
-                  matric: user?.matric || 'FCC/CEM/2024/042',
-                  dept: user?.department || 'Co-operative Economics & Management'
+                  name: user?.name || 'OLAWALE AKEEM OLONADE',
+                  matric: user?.matric || 'FCC/CSC/2026/409',
+                  dept: user?.department || 'Computer Science & Information Technology'
                 }}
                 allowRoleSwitching={true}
               />
@@ -1119,7 +1221,9 @@ export default function StudentPortal({
           ) : (
             <HelpdeskTickets user={user} />
           )}
-        </main>
+            </div>
+          </main>
+        </div>
       </div>
 
       {/* Global Book Details & Citation Modal */}

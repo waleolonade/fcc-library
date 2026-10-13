@@ -176,8 +176,19 @@ export default function RouteTracerHUD({
 
   return (
     <>
-      {/* Docked Interactive Route & Link Tracer HUD Bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-700/80 shadow-2xl transition-all">
+      {/* Mobile Floating Compass Pill (Leaves bottom nav dock completely clear) */}
+      <div className="md:hidden fixed bottom-20 left-3 z-30">
+        <button
+          onClick={() => setShowSitemap(true)}
+          className="p-2.5 rounded-full bg-slate-900/90 text-emerald-400 border border-emerald-500/40 shadow-xl backdrop-blur-md flex items-center justify-center hover:scale-105 active:scale-95 transition"
+          title="Browse All Routes Sitemap"
+        >
+          <Compass size={16} className="animate-spin" style={{ animationDuration: '8s' }} />
+        </button>
+      </div>
+
+      {/* Docked Interactive Route & Link Tracer HUD Bar (Desktop & Tablet) */}
+      <div className="hidden md:block fixed bottom-0 left-0 right-0 z-30 bg-slate-900/95 backdrop-blur-md border-t border-slate-700/80 shadow-2xl transition-all">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
           
           {/* Active Route Display with Trace Indicator */}

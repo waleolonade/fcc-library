@@ -534,7 +534,7 @@ export default function FccAdminLibrary({
   // CIRCULATION STATE & ACTIONS
   // -------------------------------------------------------------
   const [circMode, setCircMode] = useState('checkout'); // 'checkout' | 'checkin'
-  const [circMatric, setCircMatric] = useState('FCC/CEM/2024/042');
+  const [circMatric, setCircMatric] = useState('FCC/CSC/2026/409');
   const [circItem, setCircItem] = useState('');
   const [circStatus, setCircStatus] = useState(null);
   const [showBiometrics, setShowBiometrics] = useState(false);
@@ -1019,7 +1019,7 @@ export default function FccAdminLibrary({
 
   return (
     <div
-      className="flex flex-col min-h-screen bg-[#021810] text-emerald-100 font-sans selection:bg-emerald-500 selection:text-white"
+      className="flex flex-col min-h-screen lg:min-h-0 lg:h-screen lg:max-h-full lg:overflow-hidden bg-[#021810] text-emerald-100 font-sans selection:bg-emerald-500 selection:text-white"
       style={{ backgroundImage: PATTERNS.adminPanel }}
     >
       {/* =========================================================================
@@ -1177,10 +1177,10 @@ export default function FccAdminLibrary({
       {/* =========================================================================
           BODY LAYOUT: SIDEBAR + MAIN WORKSPACE
       ========================================================================= */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Admin Navigation Sidebar */}
+      <div className="flex-1 min-h-0 flex overflow-hidden">
+        {/* Left Admin Navigation Sidebar (hideable via Menu button, scrolls independently) */}
         {sidebarOpen && (
-          <aside className="w-64 border-r border-emerald-800/80 bg-[#032317]/95 backdrop-blur-md flex flex-col justify-between shrink-0 h-[calc(100vh-62px)] sticky top-[62px] overflow-y-auto p-3 space-y-4 animate-fadeIn">
+          <aside className="w-64 border-r border-emerald-800/80 bg-[#032317]/95 backdrop-blur-md flex flex-col justify-between shrink-0 h-full min-h-0 overflow-y-auto overscroll-contain p-3 space-y-4 animate-fadeIn">
             <div className="space-y-4">
               {/* Institution Identity Card */}
               <div className="flex items-center gap-3 p-2.5 rounded-2xl bg-[#021810] border border-emerald-800/80 shadow-md">
@@ -1225,7 +1225,7 @@ export default function FccAdminLibrary({
                 {
                   title: 'PATRONS & POLICIES',
                   items: [
-                    { id: 'patrons', label: 'Patron Scholars & Staff', icon: Users, badge: patrons.length || '4' },
+                    { id: 'patrons', label: 'Registered Students', icon: Users, badge: patrons.length },
                     { id: 'policies', label: 'RBAC & Loan Rules', icon: ShieldCheck },
                     { id: 'barcode_qr', label: 'Barcode & QR Studio', icon: QrCode }
                   ]
@@ -1290,7 +1290,8 @@ export default function FccAdminLibrary({
         )}
 
         {/* Main Workspace Content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto space-y-6">
+        <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto space-y-6">
 
         {/* -------------------------------------------------------------
             TAB 1: OPERATIONAL OVERVIEW DASHBOARD
@@ -1298,7 +1299,7 @@ export default function FccAdminLibrary({
         {activeTab === 'overview' && (
           <div className="space-y-6 animate-fadeIn">
             {/* Top Stat Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-sm relative overflow-hidden group hover:border-indigo-500/40 transition">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Holdings</div>
@@ -1307,6 +1308,20 @@ export default function FccAdminLibrary({
                 <div className="mt-3 text-3xl font-extrabold text-white">{books.length}</div>
                 <div className="mt-1 text-xs text-indigo-400 font-mono flex items-center gap-1">
                   <span>Physical & E-Books</span> • <span>94% catalogued</span>
+                </div>
+              </div>
+
+              <div
+                onClick={() => handleTabSwitch('patrons')}
+                className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-sm relative overflow-hidden group hover:border-purple-500/40 cursor-pointer transition"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Registered Students</div>
+                  <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400"><Users size={18} /></div>
+                </div>
+                <div className="mt-3 text-3xl font-extrabold text-white">{patrons.length}</div>
+                <div className="mt-1 text-xs text-purple-400 font-mono flex items-center gap-1">
+                  <span>Active Database Scholars</span>
                 </div>
               </div>
 
@@ -2024,16 +2039,16 @@ export default function FccAdminLibrary({
                   </div>
                   <h3 className="text-xl font-bold text-white flex items-center gap-2">
                     <Users size={20} className="text-indigo-400" />
-                    <span>Patron Scholars Directory</span>
+                    <span>Registered Students Directory</span>
                   </h3>
                   <p className="text-xs text-slate-400">
-                    College-wide student roster: Add individual scholars with departmental assignment, or bulk import class rosters for any department.
+                    College-wide registered student roster: Fetched directly from the database with active departmental assignment.
                   </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2.5">
                   <span className="px-3.5 py-2 rounded-xl text-xs font-mono font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
-                    {patrons.length} Registered Patrons
+                    {patrons.length} Registered Students
                   </span>
                   <button
                     onClick={() => setShowAddPatronModal(true)}
@@ -2719,6 +2734,7 @@ export default function FccAdminLibrary({
           />
         )}
 
+        </div>
       </main>
       </div>
 

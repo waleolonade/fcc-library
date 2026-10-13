@@ -71,7 +71,7 @@ export const departmentService = {
       hod_name: dept.hod?.trim() || dept.hod_name?.trim() || 'Department Head',
       hod_email: dept.hodEmail?.trim() || dept.hod_email?.trim() || `hod.${code.toLowerCase()}@fccibadan.edu.ng`,
       hod_pin: dept.pin?.trim() || dept.hod_pin?.trim() || '1234',
-      student_count: parseInt(dept.student_count || dept.studentCount) || 150,
+      student_count: parseInt(dept.student_count || dept.studentCount) || 0,
       faculty_count: parseInt(dept.faculty_count) || 8
     };
 

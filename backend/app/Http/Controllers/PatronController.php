@@ -39,6 +39,50 @@ class PatronController extends Controller
     }
 
     /**
+     * Generate standard Institutional Library ID & Barcode: FCC-STU-{DEPT}-{YY}{MATRIC_NUM}
+     * Examples:
+     * - FCC/CSC/2026/409 => FCC-STU-CSC-26409
+     * - FCC/CEM/2024/011 => FCC-STU-CEM-24011
+     * - FCC/BNF/2024/077 => FCC-STU-BNF-24077
+     */
+    public function generateStudentIdentifier($matric, $dept = null)
+    {
+        // 1. If matric already follows FCC/DEPT/YYYY/NUM or DEPT/YYYY/NUM
+        if (preg_match('/(?:FCC[\/-])?([A-Za-z]{2,4})[\/-](\d{4})[\/-](\d+)/i', (string)$matric, $matches)) {
+            $deptCode = strtoupper($matches[1]);
+            $year2 = substr($matches[2], -2);
+            $num = $matches[3];
+            return "FCC-STU-{$deptCode}-{$year2}{$num}";
+        }
+
+        // 2. Resolve department code
+        $deptCode = $dept ? $this->resolveDeptCode($dept) : null;
+        if (empty($deptCode)) {
+            if (preg_match('/([A-Za-z]{2,4})/i', (string)$matric, $m)) {
+                $deptCode = strtoupper($m[1]);
+            } else {
+                $deptCode = 'CSC';
+            }
+        }
+
+        if (preg_match('/(\d{4})\D+(\d+)/', (string)$matric, $matches)) {
+            $year2 = substr($matches[1], -2);
+            $num = $matches[2];
+            return "FCC-STU-{$deptCode}-{$year2}{$num}";
+        }
+
+        $digits = preg_replace('/[^0-9]/', '', (string)$matric);
+        if (strlen($digits) >= 5) {
+            $suffix = substr($digits, -5);
+            return "FCC-STU-{$deptCode}-{$suffix}";
+        }
+
+        $year2 = substr(date('Y'), -2);
+        $num = str_pad($digits ?: (string)rand(100, 999), 3, '0', STR_PAD_LEFT);
+        return "FCC-STU-{$deptCode}-{$year2}{$num}";
+    }
+
+    /**
      * List all patrons or filter by department / level / search.
      */
     public function index(Request $request)
@@ -84,6 +128,7 @@ class PatronController extends Controller
         $patron = Patron::where('id', $id)
             ->orWhere('matric', $id)
             ->orWhere('library_id', $id)
+            ->orWhere('barcode', $id)
             ->first();
 
         if (!$patron) {
@@ -123,13 +168,14 @@ class PatronController extends Controller
 
         $patron = Patron::where('matric', $identifier)
             ->orWhere('library_id', $identifier)
+            ->orWhere('barcode', $identifier)
             ->orWhere('email', $identifier)
             ->first();
 
         if (!$patron) {
             return response()->json([
                 'success' => false,
-                'message' => 'No patron registered with this matriculation or library ID.'
+                'message' => 'No patron registered with this barcode, matriculation or library ID.'
             ], 404);
         }
 
@@ -167,7 +213,23 @@ class PatronController extends Controller
         }
 
         $id = $data['id'] ?? ('PAT-' . rand(1000, 9999));
-        $libraryId = $data['libraryId'] ?? $data['library_id'] ?? ('LIB-' . rand(10000, 99999));
+
+        // Auto-generate standard institutional Library ID & Barcode (FCC-STU-{DEPT}-{YY}{MATRIC_NUM})
+        $standardId = $this->generateStudentIdentifier($matric, $dept);
+        $barcode = (!empty($data['barcode']) && str_starts_with($data['barcode'], 'FCC-STU-')) ? trim($data['barcode']) : $standardId;
+        $libraryId = (!empty($data['libraryId']) && str_starts_with($data['libraryId'], 'FCC-STU-'))
+            ? trim($data['libraryId'])
+            : ((!empty($data['library_id']) && str_starts_with($data['library_id'], 'FCC-STU-'))
+                ? trim($data['library_id'])
+                : $standardId);
+
+        $candidateBc = $barcode;
+        $bcCounter = 1;
+        while (Patron::where('barcode', $candidateBc)->where('matric', '!=', $matric)->exists()) {
+            $candidateBc = "{$barcode}-{$bcCounter}";
+            $bcCounter++;
+        }
+        $barcode = $candidateBc;
 
         $email = $data['email'] ?? null;
         if (empty($email)) {
@@ -183,6 +245,7 @@ class PatronController extends Controller
             [
                 'id' => $id,
                 'library_id' => $libraryId,
+                'barcode' => $barcode,
                 'name' => $name,
                 'role' => $data['role'] ?? 'student',
                 'category' => $data['category'] ?? 'Undergraduate',
@@ -206,7 +269,7 @@ class PatronController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => "Scholar {$patron->name} registered successfully!",
+            'message' => "Scholar {$patron->name} registered successfully with Barcode {$patron->barcode}!",
             'patron' => $patron
         ]);
     }
@@ -256,7 +319,23 @@ class PatronController extends Controller
             }
 
             $id = $item['id'] ?? ('PAT-' . rand(10000, 99999));
-            $libraryId = $item['libraryId'] ?? $item['library_id'] ?? ('LIB-' . rand(10000, 99999));
+            
+            // Auto-generate standard institutional Library ID & Barcode (FCC-STU-{DEPT}-{YY}{MATRIC_NUM})
+            $standardId = $this->generateStudentIdentifier($matric, $dept);
+            $barcode = (!empty($item['barcode']) && str_starts_with($item['barcode'], 'FCC-STU-')) ? trim($item['barcode']) : $standardId;
+            $libraryId = (!empty($item['libraryId']) && str_starts_with($item['libraryId'], 'FCC-STU-'))
+                ? trim($item['libraryId'])
+                : ((!empty($item['library_id']) && str_starts_with($item['library_id'], 'FCC-STU-'))
+                    ? trim($item['library_id'])
+                    : $standardId);
+
+            $candidateBc = $barcode;
+            $bcCounter = 1;
+            while (Patron::where('barcode', $candidateBc)->where('matric', '!=', $matric)->exists()) {
+                $candidateBc = "{$barcode}-{$bcCounter}";
+                $bcCounter++;
+            }
+            $barcode = $candidateBc;
 
             $email = trim($item['email'] ?? '');
             if (empty($email)) {
@@ -275,6 +354,7 @@ class PatronController extends Controller
                     [
                         'id' => $id,
                         'library_id' => $libraryId,
+                        'barcode' => $barcode,
                         'name' => $name,
                         'role' => 'student',
                         'category' => 'Undergraduate',
@@ -302,7 +382,7 @@ class PatronController extends Controller
         return response()->json([
             'success' => true,
             'count' => count($savedPatrons),
-            'message' => "Successfully registered " . count($savedPatrons) . " scholars in bulk!",
+            'message' => "Successfully registered " . count($savedPatrons) . " scholars in bulk with institutional barcodes!",
             'patrons' => $savedPatrons,
             'errors' => $errors
         ]);
@@ -315,6 +395,8 @@ class PatronController extends Controller
     {
         $patron = Patron::where('id', $id)
             ->orWhere('matric', $id)
+            ->orWhere('barcode', $id)
+            ->orWhere('library_id', $id)
             ->first();
 
         if (!$patron) {
@@ -337,6 +419,16 @@ class PatronController extends Controller
         }
         if (!empty($data['matric'])) {
             $patron->matric = trim((string)$data['matric']);
+        }
+        if (!empty($data['barcode'])) {
+            $patron->barcode = trim((string)$data['barcode']);
+        } elseif (empty($patron->barcode)) {
+            $patron->barcode = $this->generateStudentIdentifier($patron->matric);
+        }
+        if (!empty($data['library_id']) || !empty($data['libraryId'])) {
+            $patron->library_id = trim((string)($data['library_id'] ?? $data['libraryId']));
+        } elseif (empty($patron->library_id) || str_starts_with($patron->library_id, 'LIB-')) {
+            $patron->library_id = $patron->barcode ?: $this->generateStudentIdentifier($patron->matric);
         }
         if (isset($data['email'])) {
             $patron->email = trim((string)$data['email']);

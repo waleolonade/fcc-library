@@ -23,14 +23,14 @@ export default function SelfServiceKiosk({
   // Checkout flow state
   // Step 1: Scan Patron -> Step 2: Scan Book -> Step 3: Confirmation -> Step 4: Digital Receipt
   const [checkoutStep, setCheckoutStep] = useState(1);
-  const [patronInput, setPatronInput] = useState(currentUser?.matric || 'FCC/CEM/2024/042');
+  const [patronInput, setPatronInput] = useState(currentUser?.matric || '');
   const [activePatron, setActivePatron] = useState(() => {
     if (currentUser) {
       return {
-        name: currentUser.name || 'Wale Olonade',
-        matric: currentUser.matric || 'FCC/CEM/2024/042',
-        libraryId: 'STU/2026/00125',
-        dept: currentUser.dept || 'Co-operative Economics & Management',
+        name: currentUser.name || 'Olawale Akeem Olonade',
+        matric: currentUser.matric || 'FCC/CSC/2026/409',
+        libraryId: currentUser.library_id || 'STU/2026/00125',
+        dept: currentUser.dept || 'Computer Science & Information Technology',
         fines: 0,
         quotaMax: 5
       };
@@ -448,10 +448,10 @@ export default function SelfServiceKiosk({
                     <span>Quick Patrons:</span>
                     <button
                       type="button"
-                      onClick={() => { setPatronInput('FCC/CEM/2024/042'); }}
+                      onClick={() => { setPatronInput('FCC/CSC/2026/409'); }}
                       className="underline hover:text-white"
                     >
-                      Wale Olonade (CEM)
+                      Olawale Olonade (CSC)
                     </button>
                     •
                     <button

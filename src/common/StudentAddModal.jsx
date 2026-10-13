@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   X, UserPlus, Building2, Lock, Sparkles, CheckCircle2,
-  AlertCircle, ShieldCheck, Mail, Phone, KeyRound, Award, BookOpen
+  AlertCircle, ShieldCheck, Mail, Phone, KeyRound, Award, BookOpen,
+  Barcode
 } from 'lucide-react';
 import { libraryApi } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
+import { BarcodeSvg } from './BarcodeQrStudio';
+import { formatStudentBarcode, formatStudentLibraryId } from '../utils/studentIdentity';
 
 export default function StudentAddModal({
   isOpen,
@@ -53,6 +56,9 @@ export default function StudentAddModal({
     ? `FCC/${activeDeptCode}/${new Date().getFullYear()}/${Math.floor(100 + Math.random() * 900)}`
     : matric;
 
+  // Auto-generate realistic Institutional Barcode & Library ID: FCC-STU-{DEPT}-{YY}{MATRIC_NUM}
+  const previewBarcode = formatStudentBarcode(autoGenMatric ? previewMatric : (matric || previewMatric), isHod ? hodDeptName : selectedDept);
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e) => {
@@ -74,9 +80,12 @@ export default function StudentAddModal({
     setIsSubmitting(true);
     try {
       const finalMatric = autoGenMatric ? previewMatric : matric.trim();
+      const finalId = formatStudentBarcode(finalMatric, targetDept);
       const payload = {
         name: name.trim(),
         matric: finalMatric,
+        libraryId: finalId,
+        barcode: finalId,
         department: targetDept,
         level: level,
         programme: level.includes('HND') ? 'Higher National Diploma' : 'National Diploma',
@@ -92,9 +101,10 @@ export default function StudentAddModal({
 
       if (result.success) {
         sounds?.playSuccessChime?.();
-        setSuccessMessage(`Scholar ${payload.name} registered successfully with Matric: ${finalMatric}!`);
+        const assignedBarcode = result.patron?.barcode || previewBarcode;
+        setSuccessMessage(`Scholar ${payload.name} registered successfully! Assigned Barcode: ${assignedBarcode}`);
         if (onStudentAdded) {
-          onStudentAdded(result.patron);
+          onStudentAdded(result.patron || { ...payload, barcode: assignedBarcode });
         }
         setTimeout(() => {
           onClose();
@@ -103,7 +113,7 @@ export default function StudentAddModal({
           setEmail('');
           setPhone('');
           setSuccessMessage('');
-        }, 1200);
+        }, 1300);
       } else {
         setErrorMessage(result.message || 'Failed to save student.');
       }
@@ -259,6 +269,28 @@ export default function StudentAddModal({
                 required
               />
             )}
+          </div>
+
+          {/* Institutional Barcode Auto-Generation Preview */}
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-slate-950 to-teal-950/40 border border-emerald-500/30 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
+                <Barcode size={14} className="text-emerald-400" />
+                <span>Auto-Generated Student Library Barcode</span>
+              </label>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700/60 font-bold uppercase tracking-wider">
+                Active for Login
+              </span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-white flex flex-col items-center justify-center shadow-inner">
+              <BarcodeSvg value={previewBarcode} height={36} className="text-black" />
+              <span className="text-[10px] font-mono text-slate-800 font-bold mt-1 tracking-wider">
+                {previewBarcode}
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-400 leading-relaxed">
+              Once created by HOD, this barcode is officially registered in the central database. The student can use it to login instantly on any device.
+            </p>
           </div>
 
           {/* Academic Level & Quota */}

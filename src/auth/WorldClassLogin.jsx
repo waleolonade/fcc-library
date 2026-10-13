@@ -14,29 +14,31 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
   const [studentMethod, setStudentMethod] = useState('matric'); // 'matric' | 'email' | 'otp' | 'qr' | 'barcode'
 
   // Student inputs
-  const [matric, setMatric] = useState('FCC/CEM/2024/042');
-  const [pin, setPin] = useState('1234');
-  const [email, setEmail] = useState('patron@student.fccibadan.edu.ng');
-  const [password, setPassword] = useState('scholar2026');
-  const [otpPhone, setOtpPhone] = useState('+234 803 456 7890');
+  const [matric, setMatric] = useState('');
+  const [pin, setPin] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [otpPhone, setOtpPhone] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [otpSent, setOtpSent] = useState(false);
-  const [scannedBarcode, setScannedBarcode] = useState('FCC-STU-00125');
+  const [scannedBarcode, setScannedBarcode] = useState('');
 
   // Staff inputs
-  const [staffId, setStaffId] = useState('FCC/STAFF/082');
-  const [staffEmail, setStaffEmail] = useState('babalola@fccibadan.edu.ng');
-  const [staffPassword, setStaffPassword] = useState('Staff@2026');
+  const [staffId, setStaffId] = useState('');
+  const [staffEmail, setStaffEmail] = useState('');
+  const [staffPassword, setStaffPassword] = useState('');
   const [staffMfa, setStaffMfa] = useState('');
 
   const [error, setError] = useState('');
+  const [detectedPlatform, setDetectedPlatform] = useState('');
   const [isScanningQr, setIsScanningQr] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Student login submission - Strictly verified against SQLite patrons table
+  // Student login submission - Strictly verified against Database patrons registry
   const handleStudentSubmit = async (e) => {
     if (e) e.preventDefault();
     setError('');
+    setDetectedPlatform('');
 
     let identifier = '';
     let credential = '';
@@ -70,11 +72,15 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
         sounds.playErrorBuzz();
         return;
       }
+    } else if (studentMethod === 'qr') {
+      identifier = scannedBarcode.trim() || 'fcc-patron:FCC-STU-CSC-26409:FCC/CSC/2026/409';
+      credential = pin.trim() || '1234';
     } else if (studentMethod === 'barcode') {
-      identifier = scannedBarcode.trim();
+      identifier = scannedBarcode.trim().toUpperCase();
       credential = pin.trim() || '1234';
       if (!identifier) {
-        setError('Please scan or enter student library barcode.');
+        setError('Please scan or enter student library barcode or Library ID.');
+        setDetectedPlatform('Barcode');
         sounds.playErrorBuzz();
         return;
       }
@@ -82,23 +88,57 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          identifier,
-          pin: credential,
-          password: credential,
-          login_mode: 'matric'
-        })
-      });
+      let res;
+      try {
+        res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identifier,
+            barcode: studentMethod === 'barcode' ? identifier : undefined,
+            pin: credential,
+            password: credential,
+            login_mode: studentMethod
+          })
+        });
+      } catch (proxyErr) {
+        // Fallback: If proxy connection failed, attempt direct backend port 8000
+        const directApi = `${window.location.protocol}//${window.location.hostname}:8000/api/auth/login`;
+        res = await fetch(directApi, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identifier,
+            barcode: studentMethod === 'barcode' ? identifier : undefined,
+            pin: credential,
+            password: credential,
+            login_mode: studentMethod
+          })
+        });
+      }
 
-      const data = await res.json();
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        console.warn('API returned non-JSON response body:', jsonErr);
+      }
+
       setIsSubmitting(false);
 
-      if (!res.ok || !data.success) {
+      if (!res.ok || !data || !data.success) {
         sounds.playErrorBuzz();
-        setError(data.error || data.message || 'Access Denied: Unrecognized student record. Please register with your HOD.');
+        const detected = data?.platform || (
+          studentMethod === 'barcode' ? 'Barcode' :
+          studentMethod === 'email' ? 'Email' :
+          studentMethod === 'otp' ? 'SMS OTP' :
+          studentMethod === 'qr' ? 'Scan QR Card' : 'Matric + PIN'
+        );
+        setDetectedPlatform(detected);
+        const errMessage = data?.error || data?.message || (res && res.status === 401 
+          ? `[${detected}] Access Denied: Unrecognized student record ('${identifier}'). Please verify your details or register with your HOD.`
+          : `[${detected}] Access Denied: Unrecognized student record. Please register with your HOD.`);
+        setError(errMessage);
         return;
       }
 
@@ -106,6 +146,7 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
       localStorage.setItem('fcc_student_session', JSON.stringify(data.user));
       onLogin(data.user);
     } catch (err) {
+      console.error('Login request failed:', err);
       setIsSubmitting(false);
       sounds.playErrorBuzz();
       setError('Connection to institutional patron registry failed. Please verify library server is running.');
@@ -159,15 +200,18 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
   // QR Code Instant Scan - Verified against backend database
   const handleTriggerQrScan = async () => {
     setIsScanningQr(true);
+    setError('');
+    setDetectedPlatform('Scan QR Card');
     sounds.playScannerBeep();
     try {
+      const qrIdentifier = scannedBarcode.trim() || 'fcc-patron:FCC-STU-CSC-26409:FCC/CSC/2026/409';
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          identifier: matric.trim() || 'FCC/CEM/2024/042',
-          pin: pin.trim() || '1234',
-          login_mode: 'matric'
+          identifier: qrIdentifier,
+          pin: '1234',
+          login_mode: 'qr'
         })
       });
       const data = await res.json();
@@ -178,12 +222,14 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
         onLogin(data.user);
       } else {
         sounds.playErrorBuzz();
-        setError(data.error || 'Scanned QR token could not be verified in database.');
+        setDetectedPlatform(data?.platform || 'Scan QR Card');
+        setError(data?.error || '[Scan QR Card] Scanned QR token could not be verified in database.');
       }
     } catch (err) {
       setIsScanningQr(false);
       sounds.playErrorBuzz();
-      setError('Database connection error during QR verification.');
+      setDetectedPlatform('Scan QR Card');
+      setError('[Scan QR Card] Database connection error during QR verification.');
     }
   };
 
@@ -309,9 +355,21 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
             </div>
 
             {error && (
-              <div className="mb-4 p-3.5 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center gap-2 animate-shake">
-                <AlertTriangle size={16} className="shrink-0" />
-                <span>{error}</span>
+              <div className="mb-4 p-3.5 rounded-2xl bg-rose-950/80 border border-rose-600/80 text-rose-200 text-xs shadow-xl animate-shake space-y-1.5">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle size={18} className="shrink-0 text-rose-400 mt-0.5" />
+                  <div className="space-y-1 flex-1">
+                    <div className="font-bold text-white text-[11px] uppercase tracking-wider flex items-center justify-between">
+                      <span>Authentication Error</span>
+                      {detectedPlatform && (
+                        <span className="px-2 py-0.5 rounded-full bg-rose-900 text-rose-200 text-[10px] font-mono border border-rose-500/50">
+                          Platform: {detectedPlatform}
+                        </span>
+                      )}
+                    </div>
+                    <p className="leading-relaxed text-rose-200 font-mono text-[11px]">{error}</p>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -459,18 +517,31 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
 
                   {/* METHOD 4: QR CARD SCANNER */}
                   {studentMethod === 'qr' && (
-                    <div className="text-center py-4 space-y-3">
-                      <div className="p-4 bg-white rounded-2xl inline-block shadow-xl">
-                        <QrCodeSvg value="fcc-patron:STU/2026/00125:FCC/CEM/2024/042" size={130} />
+                    <div className="text-center py-3 space-y-3">
+                      <div className="p-3.5 bg-white rounded-2xl inline-block shadow-xl">
+                        <QrCodeSvg value="fcc-patron:FCC-STU-CSC-26409:FCC/CSC/2026/409" size={120} />
                       </div>
-                      <p className="text-emerald-300 text-xs">
-                        Hold your student ID card in front of your device camera or tap below to authenticate.
+                      <div className="text-left space-y-1">
+                        <label className="text-emerald-300 font-semibold text-xs uppercase tracking-wider flex items-center gap-1.5">
+                          <QrCode size={14} className="text-emerald-400" />
+                          <span>Student QR Card Token or Matrix String</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={scannedBarcode}
+                          onChange={e => setScannedBarcode(e.target.value)}
+                          placeholder="SCAN OR PASTE TOKEN (e.g. fcc-patron:FCC-STU-CSC-26409:...)"
+                          className="w-full bg-[#021810] border border-emerald-800 rounded-xl px-3.5 py-2.5 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                      <p className="text-emerald-300/80 text-[11px]">
+                        Scan via turnstile webcam or tap 1-Click Scan to verify instantly against database.
                       </p>
                       <button
                         type="button"
                         onClick={handleTriggerQrScan}
                         disabled={isScanningQr}
-                        className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold flex items-center justify-center gap-2 shadow-lg"
+                        className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold flex items-center justify-center gap-2 shadow-lg transition"
                       >
                         <QrCode size={16} />
                         <span>{isScanningQr ? 'Scanning Optical QR Matrix...' : '1-Click Scan Student QR Card'}</span>
@@ -480,20 +551,40 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
 
                   {/* METHOD 5: BARCODE SCANNER */}
                   {studentMethod === 'barcode' && (
-                    <div className="space-y-3 text-center">
-                      <div className="p-3 bg-white rounded-2xl shadow-lg">
-                        <BarcodeSvg value={scannedBarcode} height={42} className="text-black" />
+                    <div className="space-y-3.5 text-center">
+                      <div className="p-3.5 bg-white rounded-2xl shadow-xl border border-emerald-500/20 flex flex-col items-center">
+                        <BarcodeSvg value={scannedBarcode || 'FCC-STU-CSC-26409'} height={46} className="text-black" />
+                        <span className="text-[10px] font-mono text-slate-600 mt-1 font-semibold tracking-wider">
+                          CODE-128 INSTITUTIONAL BARCODE FORMAT
+                        </span>
                       </div>
                       <div>
-                        <label className="block text-emerald-300 font-semibold mb-1 text-left uppercase tracking-wider">
-                          Scan or Type Student Barcode
-                        </label>
-                        <input
-                          type="text"
-                          value={scannedBarcode}
-                          onChange={e => setScannedBarcode(e.target.value)}
-                          className="w-full bg-[#021810] border border-emerald-800 rounded-xl px-3.5 py-2.5 text-white font-mono text-center text-sm focus:outline-none focus:border-emerald-500"
-                        />
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-emerald-300 font-semibold text-left uppercase tracking-wider text-xs flex items-center gap-1.5">
+                            <Barcode size={15} className="text-emerald-400" />
+                            <span>Scan or Type Student Barcode / Library ID</span>
+                          </label>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-600/60 font-bold uppercase tracking-wider shadow-sm">
+                            Auto-Caps Lock [A-Z]
+                          </span>
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={scannedBarcode}
+                            onChange={e => setScannedBarcode(e.target.value.toUpperCase())}
+                            placeholder="TYPE OR SCAN BARCODE (E.G. FCC-STU-CSC-26409 OR FCC-STU-26409)"
+                            autoFocus
+                            autoComplete="off"
+                            spellCheck="false"
+                            className="w-full bg-[#021810] border-2 border-emerald-600 focus:border-emerald-400 rounded-xl px-4 py-3 text-white font-mono text-center text-base tracking-widest uppercase shadow-inner focus:outline-none focus:ring-4 focus:ring-emerald-500/20 transition placeholder:text-emerald-800/80 placeholder:tracking-normal placeholder:text-xs"
+                            style={{ textTransform: 'uppercase' }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-emerald-400/80 mt-1.5 px-0.5">
+                          <span>Compatible with laser barcode scanners & direct keyboard entry.</span>
+                          <span className="text-emerald-300 font-mono font-medium">1-Scan Access</span>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -511,7 +602,13 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
                         </>
                       ) : (
                         <>
-                          <span>{studentMethod === 'otp' && !otpSent ? 'Request SMS OTP Code' : 'Access Scholar Portal'}</span>
+                          <span>
+                            {studentMethod === 'otp' && !otpSent
+                              ? 'Request SMS OTP Code'
+                              : studentMethod === 'barcode'
+                              ? 'Authenticate with Student Barcode'
+                              : 'Access Scholar Portal'}
+                          </span>
                           <ArrowRight size={16} />
                         </>
                       )}
@@ -519,33 +616,6 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
                   )}
                 </form>
 
-                {/* 1-Click Testing Profiles from Central Database */}
-                <div className="pt-3 border-t border-emerald-800/60">
-                  <div className="text-[11px] text-emerald-400/80 mb-1.5 font-medium">Verified Database Patrons:</div>
-                  <div className="flex flex-wrap gap-1.5 text-[11px]">
-                    <button
-                      type="button"
-                      onClick={() => { setMatric('FCC/CEM/2024/042'); setPin('1234'); setStudentMethod('matric'); }}
-                      className="px-2 py-1 rounded bg-[#021810] hover:bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono"
-                    >
-                      Wale Olonade (CEM - PIN: 1234)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setMatric('FCC/CSC/2024/108'); setPin('4321'); setStudentMethod('matric'); }}
-                      className="px-2 py-1 rounded bg-[#021810] hover:bg-emerald-950 text-indigo-300 border border-emerald-800 font-mono"
-                    >
-                      Chukwudi (CSC - PIN: 4321)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setMatric('FCC/CSC/2026/409'); setPin('1235'); setStudentMethod('matric'); }}
-                      className="px-2 py-1 rounded bg-[#021810] hover:bg-emerald-950 text-amber-300 border border-emerald-800 font-mono"
-                    >
-                      Olawale (CSC - PIN: 1235)
-                    </button>
-                  </div>
-                </div>
               </div>
             )}
 

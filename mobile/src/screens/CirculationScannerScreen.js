@@ -25,7 +25,7 @@ import {
 export default function CirculationScannerScreen() {
   const [scanMode, setScanMode] = useState('book'); // 'book' | 'patron'
   const [barcodeInput, setBarcodeInput] = useState('');
-  const [scannedPatron, setScannedPatron] = useState('FCC/CEM/2024/042');
+  const [scannedPatron, setScannedPatron] = useState('FCC/CSC/2026/409');
   const [lastAction, setLastAction] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -138,9 +138,9 @@ export default function CirculationScannerScreen() {
 
           <TouchableOpacity
             style={styles.quickPill}
-            onPress={() => handleSimulateScan('FCC/CEM/2024/042')}
+            onPress={() => handleSimulateScan('FCC/CSC/2026/409')}
           >
-            <Text style={styles.quickPillText}>Scholar Adebayo (042)</Text>
+            <Text style={styles.quickPillText}>Scholar Olawale (409)</Text>
           </TouchableOpacity>
         </View>
       </View>

@@ -8,7 +8,7 @@ import { sounds } from '../utils/soundEffects';
 import { copyToClipboardWithFeedback } from '../utils/router';
 
 // High-fidelity algorithmic Barcode SVG generator (Code 128 Pattern)
-export function BarcodeSvg({ value, height = 48, className = "" }) {
+export function BarcodeSvg({ value, height = 48, className = "", showLabel = true, labelClassName = "" }) {
   const safeVal = String(value || 'FCC-000000').toUpperCase();
   // Deterministic bar widths based on char codes
   const bars = safeVal.split('').flatMap((char, i) => {
@@ -43,9 +43,11 @@ export function BarcodeSvg({ value, height = 48, className = "" }) {
         <rect x={bars.length * 3 + 8} y="0" width="2" height={height} fill="currentColor" />
         <rect x={bars.length * 3 + 12} y="0" width="2" height={height} fill="currentColor" />
       </svg>
-      <span className="font-mono text-[10px] tracking-[0.2em] font-bold text-slate-400 mt-1">
-        {safeVal}
-      </span>
+      {showLabel && (
+        <span className={`font-mono text-[10px] tracking-[0.2em] font-bold text-slate-800 mt-1 uppercase ${labelClassName}`}>
+          {safeVal}
+        </span>
+      )}
     </div>
   );
 }
@@ -118,8 +120,8 @@ export function QrCodeSvg({ value, size = 120, className = "" }) {
 export default function BarcodeQrStudio({ user, books = [], patrons = [] }) {
   const [activeMode, setActiveMode] = useState('student_id');
   // 'student_id' | 'book_barcode' | 'accession' | 'shelf_qr' | 'digital_qr' | 'membership_qr'
-  const [studentName, setStudentName] = useState(user?.name || 'Wale Olonade');
-  const [studentMatric, setStudentMatric] = useState(user?.matric || 'FCC/CEM/2024/042');
+  const [studentName, setStudentName] = useState(user?.name || 'OLAWALE AKEEM OLONADE');
+  const [studentMatric, setStudentMatric] = useState(user?.matric || 'FCC/CSC/2026/409');
   const [studentLibraryId, setStudentLibraryId] = useState('STU/2026/00125');
   const [selectedBookId, setSelectedBookId] = useState(books[0]?.id || '');
   const [shelfCoordinate, setShelfCoordinate] = useState('Floor 2 • West Stacks • Shelf 14A');

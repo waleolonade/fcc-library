@@ -33,29 +33,37 @@ import StudentCardAndLoans from './StudentCardAndLoans';
 import GraduationClearance from './GraduationClearance';
 import StudentReservations from './StudentReservations';
 import LmsApiExplorer from './LmsApiExplorer';
+import { useDeviceType } from '../utils/useDeviceType';
+import MobileStudentNavigation from './MobileStudentNavigation';
+import TabletStudentNavigation from './TabletStudentNavigation';
 
 export default function StudentStandaloneApp() {
   const [studentUser, setStudentUser] = useState(() => {
     const saved = localStorage.getItem('fcc_student_session');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.matric && parsed.matric !== 'FCC/CEM/2024/042') {
+          return parsed;
+        }
       } catch (e) {
         console.error(e);
       }
     }
     return {
-      id: 1,
-      name: "Adebayo Oluwaseun",
-      matric: "FCC/CEM/2024/042",
-      email: "a.oluwaseun@fccibadan.edu.ng",
-      dept: "Cooperative Economics & Management",
-      level: "HND II",
+      id: 1754,
+      name: "OLAWALE AKEEM OLONADE",
+      matric: "FCC/CSC/2026/409",
+      library_id: "FCC-STU-CSC-26409",
+      barcode: "FCC-STU-CSC-26409",
+      email: "w.olonade@student.fccibadan.edu.ng",
+      dept: "Computer Science & Information Technology",
+      level: "HND I",
       status: "Active",
-      phone: "+234 803 123 4567",
+      phone: "+234 803 491 8821",
       photoUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80",
       borrowingLimit: 5,
-      currentBorrows: 2,
+      currentBorrows: 0,
       finesDue: 0,
       turnstileAccess: "Granted"
     };
@@ -65,6 +73,53 @@ export default function StudentStandaloneApp() {
   const [currentHashUri, setCurrentHashUri] = useState(() => window.location.hash || '#/dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const { isMobile, isTablet, isDesktop, device: deviceMode, changeDeviceMode } = useDeviceType();
+
+  const handleMobileTabSwitch = (t) => {
+    const map = {
+      home: 'dashboard',
+      library_search: 'catalog',
+      library_books: 'catalog',
+      library_ebooks: 'digital',
+      library_digital: 'digital',
+      my_borrowed: 'loans',
+      my_reserved: 'reservations',
+      my_due_soon: 'loans',
+      my_history: 'loans',
+      my_saved: 'reading_lists',
+      research_hnd_projects: 'research-hub',
+      research_papers: 'research',
+      research_journals: 'research',
+      research_topics: 'research-hub',
+      research_references: 'research',
+      profile: 'card',
+      clearance: 'clearance',
+      rooms: 'study_rooms',
+      helpdesk: 'helpdesk',
+      library_discover: 'lms',
+      library_lms: 'lms',
+    };
+    if (t === 'ai_assistant') {
+      setIsAiOpen(true);
+      return;
+    }
+    if (t === 'notifications') {
+      setShowNotificationsModal(true);
+      return;
+    }
+    const target = map[t] || t;
+    navigateToTab(target);
+  };
+
+  const mobileActiveTab = 
+    activeTab === 'dashboard' ? 'home' :
+    activeTab === 'catalog' ? 'library_search' :
+    activeTab === 'loans' ? 'my_borrowed' :
+    activeTab === 'reservations' ? 'my_reserved' :
+    activeTab === 'research' || activeTab === 'research-hub' ? 'research_hnd_projects' :
+    activeTab === 'card' ? 'profile' :
+    activeTab;
   // Database Resources State (Direct from MySQL / API)
   const [books, setBooks] = useState([]);
   const [courses, setCourses] = useState([]);
@@ -92,8 +147,8 @@ export default function StudentStandaloneApp() {
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
 
   // Student Login Fields
-  const [matricInput, setMatricInput] = useState('FCC/CEM/2024/042');
-  const [pinInput, setPinInput] = useState('1234');
+  const [matricInput, setMatricInput] = useState('FCC/CSC/2026/409');
+  const [pinInput, setPinInput] = useState('1236');
   const [authError, setAuthError] = useState('');
 
   // Process Hash Route & Deep Link
@@ -106,7 +161,10 @@ export default function StudentStandaloneApp() {
       return;
     }
 
-    const clean = rawHash.replace(/^#\/?/, '');
+    let clean = rawHash.replace(/^#\/?/, '');
+    if (clean.startsWith('scholar/')) {
+      clean = clean.replace('scholar/', '');
+    }
     const [pathPart, queryPart] = clean.split('?');
     const params = new URLSearchParams(queryPart || '');
 
@@ -495,13 +553,49 @@ export default function StudentStandaloneApp() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex font-sans selection:bg-emerald-500 selection:text-white">
-      {/* 1. COLLAPSIBLE LEFT SIDEBAR (DESKTOP) */}
-      <aside
-        className={`hidden lg:flex flex-col justify-between bg-slate-900 border-r border-slate-800 sticky top-0 h-screen transition-all duration-300 z-40 ${
-          sidebarCollapsed ? 'w-20' : 'w-64'
-        }`}
-      >
+    <div className={`flex flex-col font-sans selection:bg-emerald-500 selection:text-white bg-slate-950 text-slate-100 ${isMobile ? 'min-h-screen pb-dock' : 'h-screen overflow-hidden'}`}>
+      {/* 0. MOBILE ADAPTIVE HEADER & FLOATING DOCK */}
+      {isMobile && (
+        <MobileStudentNavigation
+          user={studentUser}
+          activeTab={mobileActiveTab}
+          onTabSwitch={handleMobileTabSwitch}
+          onOpenAi={() => setIsAiOpen(true)}
+          onLogout={handleStudentLogout}
+          dueSoonCount={loans.filter(l => l.matric === studentUser?.matric).length}
+          isHnd2={Boolean(studentUser?.level?.includes('HND II') || studentUser?.level?.includes('HND2'))}
+          onOpenIdCard={() => setShowIdCardModal(true)}
+          onOpenBiometrics={() => setShowBiometrics(true)}
+          deviceMode={deviceMode}
+          onChangeDeviceMode={changeDeviceMode}
+        />
+      )}
+
+      <div className={`flex-1 min-h-0 flex min-w-0 ${isMobile ? 'overflow-visible' : 'overflow-hidden'}`}>
+        {/* Tablet Left Rail */}
+        {isTablet && (
+          <TabletStudentNavigation
+            user={studentUser}
+            activeTab={mobileActiveTab}
+            onTabSwitch={handleMobileTabSwitch}
+            onOpenAi={() => setIsAiOpen(true)}
+            onLogout={handleStudentLogout}
+            dueSoonCount={loans.filter(l => l.matric === studentUser?.matric).length}
+            isHnd2={Boolean(studentUser?.level?.includes('HND II') || studentUser?.level?.includes('HND2'))}
+            onOpenIdCard={() => setShowIdCardModal(true)}
+            onOpenBiometrics={() => setShowBiometrics(true)}
+            deviceMode={deviceMode}
+            onChangeDeviceMode={changeDeviceMode}
+          />
+        )}
+
+        {/* 1. COLLAPSIBLE LEFT SIDEBAR (DESKTOP) */}
+        {isDesktop && (
+          <aside
+            className={`hidden lg:flex flex-col justify-between bg-slate-900 border-r border-slate-800 shrink-0 h-full overflow-y-auto transition-all duration-300 z-40 ${
+              sidebarCollapsed ? 'w-20' : 'w-64'
+            }`}
+          >
         {/* Sidebar Top: Branding */}
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-3 overflow-hidden">
@@ -578,10 +672,12 @@ export default function StudentStandaloneApp() {
           </button>
         </div>
       </aside>
+      )}
 
       {/* 2. MAIN APPLICATION WORKSPACE CANVAS */}
-      <div className="flex-1 flex flex-col min-w-0 pb-20 lg:pb-8">
+      <div className={`flex-1 min-h-0 flex flex-col min-w-0 ${isMobile ? 'overflow-visible pb-dock' : 'overflow-y-auto overscroll-contain pb-12'}`}>
         {/* Top Navigation Bar */}
+        {!isMobile && (
         <header className="bg-slate-900/90 backdrop-blur-xl border-b border-slate-800 sticky top-0 z-30 px-4 sm:px-8 py-3 flex items-center justify-between gap-4 shadow-xl">
           {/* Mobile Menu Toggle & Brand */}
           <div className="flex items-center gap-3 lg:hidden">
@@ -707,6 +803,7 @@ export default function StudentStandaloneApp() {
             </div>
           </div>
         </header>
+        )}
 
         {/* Mobile Navigation Drawer */}
         {mobileMenuOpen && (
@@ -733,7 +830,7 @@ export default function StudentStandaloneApp() {
         )}
 
         {/* Main Routed Content View */}
-        <main className="flex-1 p-4 sm:p-8 max-w-7xl mx-auto w-full">
+        <main className={`flex-1 ${isMobile ? 'overflow-visible p-3 sm:p-4' : 'p-4 sm:p-8'} max-w-7xl mx-auto w-full touch-scroll`}>
           {activeBookForReader ? (
             <DigitalBookReader
               book={activeBookForReader}
@@ -900,31 +997,7 @@ export default function StudentStandaloneApp() {
           )}
         </main>
       </div>
-
-      {/* 3. MOBILE BOTTOM NAVIGATION */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800 p-2 flex items-center justify-around text-[10px] font-bold">
-        {[
-          { id: 'dashboard', label: 'Home', icon: Sparkles },
-          { id: 'catalog', label: 'Search', icon: Search },
-          { id: 'loans', label: 'My Library', icon: BookOpen },
-          { id: 'research', label: 'Research', icon: Globe },
-          { id: 'card', label: 'Card', icon: QrCode },
-        ].map(bNav => {
-          const Icon = bNav.icon;
-          return (
-            <button
-              key={bNav.id}
-              onClick={() => navigateToTab(bNav.id)}
-              className={`flex flex-col items-center gap-1 p-1.5 rounded-xl transition ${
-                activeTab === bNav.id ? 'text-emerald-400' : 'text-slate-400'
-              }`}
-            >
-              <Icon size={18} />
-              <span>{bNav.label}</span>
-            </button>
-          );
-        })}
-      </div>
+    </div>
 
       {/* 4. MODALS */}
       {/* Book Dossier Modal */}

@@ -27,9 +27,12 @@ class DepartmentUploadController extends Controller
                 ->orWhere('department', 'LIKE', '%' . $deptCode . '%')
                 ->count();
 
-            $patronsCount = \App\Models\Patron::where('department', 'LIKE', '%' . $deptName . '%')
-                ->orWhere('matric', 'LIKE', '%' . $deptCode . '%')
-                ->count();
+            $patronsCount = \App\Models\Patron::where(function ($q) use ($deptName, $deptCode) {
+                $q->where('department', 'like', "%{$deptName}%")
+                  ->orWhere('department', 'like', "%{$deptCode}%")
+                  ->orWhere('matric', 'like', "%/{$deptCode}/%")
+                  ->orWhere('matric', 'like', "%{$deptCode}%");
+            })->count();
 
             $colorPalette = [
                 'CEM' => 'emerald',
@@ -67,12 +70,8 @@ class DepartmentUploadController extends Controller
                 'PAD' => '+234 803 771 9900'
             ];
 
-            $studentTotal = (int) ($dept->student_count ?: 0);
-            if ($studentTotal <= 0 && $patronsCount > 0) {
-                $studentTotal = $patronsCount;
-            } elseif ($studentTotal <= 0) {
-                $studentTotal = 300;
-            }
+            // Real live count of registered scholars and students from the database
+            $studentTotal = $patronsCount;
 
             return [
                 'id' => $dept->id,

@@ -151,23 +151,48 @@ export default function PublicDiscovery({
       setDidYouMeanSuggestion(null);
     }
 
-    // 3. Autocomplete Suggestions
+    // 3. Autocomplete Suggestions (Rich Multi-Field Matches)
     const matchedTitles = books
-      .filter(b => b.title.toLowerCase().includes(q))
-      .slice(0, 4)
-      .map(b => ({ type: 'Title', text: b.title, book: b }));
+      .filter(b => b.title && b.title.toLowerCase().includes(q))
+      .slice(0, 5)
+      .map(b => ({
+        type: 'Title',
+        text: b.title,
+        book: b,
+        subtext: `${b.author || 'Author Unknown'} • ${b.courseCode || b.department || 'General'}`
+      }));
 
     const matchedAuthors = books
-      .filter(b => b.author.toLowerCase().includes(q))
-      .slice(0, 2)
-      .map(b => ({ type: 'Author', text: b.author, book: b }));
+      .filter(b => (b.author && b.author.toLowerCase().includes(q)) || (b.studentNames && b.studentNames.toLowerCase().includes(q)))
+      .slice(0, 3)
+      .map(b => ({
+        type: 'Author',
+        text: b.author || b.studentNames,
+        book: b,
+        subtext: `Author of "${b.title}"`
+      }));
+
+    const matchedCourses = books
+      .filter(b => (b.courseCode && b.courseCode.toLowerCase().includes(q)) || (b.course_code && b.course_code.toLowerCase().includes(q)))
+      .slice(0, 3)
+      .map(b => ({
+        type: 'Course',
+        text: (b.courseCode || b.course_code).toUpperCase(),
+        book: b,
+        subtext: `Curriculum Holding: ${b.title}`
+      }));
 
     const matchedSubjects = books
-      .filter(b => b.subject.toLowerCase().includes(q))
-      .slice(0, 2)
-      .map(b => ({ type: 'Subject', text: b.subject, book: b }));
+      .filter(b => b.subject && b.subject.toLowerCase().includes(q))
+      .slice(0, 3)
+      .map(b => ({
+        type: 'Subject',
+        text: b.subject,
+        book: b,
+        subtext: `Academic Subject Classification`
+      }));
 
-    const combined = [...matchedTitles, ...matchedAuthors, ...matchedSubjects];
+    const combined = [...matchedTitles, ...matchedAuthors, ...matchedCourses, ...matchedSubjects];
     setAutocompleteSuggestions(combined);
     setShowAutocomplete(combined.length > 0);
   }, [searchQuery, books]);
@@ -226,7 +251,10 @@ export default function PublicDiscovery({
 
     try {
       // 1. Fetch from Open Library API (limit 6)
-      const olPromise = fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(term)}&limit=6&fields=key,title,author_name,first_publish_year,cover_i,ia,ebook_access`)
+      const olUrl = searchField === 'author'
+        ? `https://openlibrary.org/search.json?author=${encodeURIComponent(term)}&limit=6&fields=key,title,author_name,first_publish_year,cover_i,ia,ebook_access`
+        : `https://openlibrary.org/search.json?q=${encodeURIComponent(term)}&limit=6&fields=key,title,author_name,first_publish_year,cover_i,ia,ebook_access`;
+      const olPromise = fetch(olUrl)
         .then(res => res.ok ? res.json() : { docs: [] })
         .then(data => data.docs || [])
         .catch(() => []);
@@ -247,7 +275,8 @@ export default function PublicDiscovery({
         .catch(() => []);
 
       // 4. Fetch from Google Books API via backend proxy (limit 6)
-      const gbPromise = fetch(`/api/google-books/search?q=${encodeURIComponent(term)}&maxResults=6`)
+      const gbQuery = searchField === 'author' ? `inauthor:${encodeURIComponent(term)}` : encodeURIComponent(term);
+      const gbPromise = fetch(`/api/google-books/search?q=${gbQuery}&maxResults=6`)
         .then(res => res.ok ? res.json() : { books: [] })
         .then(data => (data.books || []).slice(0, 6))
         .catch(() => []);
@@ -306,6 +335,8 @@ export default function PublicDiscovery({
       if (q) {
         if (searchField === 'title') matchQuery = b.title.toLowerCase().includes(q);
         else if (searchField === 'author') matchQuery = b.author.toLowerCase().includes(q) || (b.studentNames || b.student_names || '').toLowerCase().includes(q);
+        else if (searchField === 'course') matchQuery = (b.courseCode || b.course_code || '').toLowerCase().includes(q);
+        else if (searchField === 'department') matchQuery = (b.department || b.department_name || '').toLowerCase().includes(q);
         else if (searchField === 'isbn') matchQuery = (b.isbn || '').toLowerCase().includes(q) || (b.issn || '').toLowerCase().includes(q);
         else if (searchField === 'subject') matchQuery = (b.subject || '').toLowerCase().includes(q);
         else if (searchField === 'call') matchQuery = (b.callNumber || '').toLowerCase().includes(q);
@@ -401,7 +432,7 @@ export default function PublicDiscovery({
 
   return (
     <div
-      className="min-h-screen bg-[#021810] text-emerald-50 flex flex-col font-sans selection:bg-emerald-500 selection:text-white"
+      className="min-h-screen bg-[#021810] text-emerald-50 flex flex-col font-sans selection:bg-emerald-500 selection:text-white pb-dock md:pb-0"
       style={{ backgroundImage: PATTERNS.opac }}
     >
       {/* 1. INSTITUTIONAL OPAC TOP HEADER & STREAMLINED NAV */}
@@ -422,8 +453,22 @@ export default function PublicDiscovery({
             </div>
           </div>
 
-          {/* Unified Compact Navigation Bar in Exact Sequence */}
-          <nav className="flex items-center gap-1 font-medium text-[11px] overflow-x-auto scrollbar-none py-0.5">
+          {/* Mobile Right Action */}
+          <div className="flex md:hidden items-center gap-2">
+            <button
+              onClick={() => {
+                sounds.playClick();
+                onOpenLogin();
+              }}
+              className="px-2.5 py-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-[11px] font-bold shadow-md flex items-center gap-1 active:scale-95"
+            >
+              <span>Login</span>
+              <ArrowRight size={12} />
+            </button>
+          </div>
+
+          {/* Unified Compact Navigation Bar in Exact Sequence (Desktop & Tablet) */}
+          <nav className="hidden md:flex items-center gap-1 font-medium text-[11px] overflow-x-auto scrollbar-none py-0.5">
             {/* 1. College Catalog */}
             <button
               onClick={() => {
@@ -596,6 +641,48 @@ export default function PublicDiscovery({
           </nav>
         </div>
       </header>
+
+      {/* MOBILE BOTTOM NAVIGATION DOCK FOR PUBLIC OPAC */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 mobile-nav-dock pb-safe px-2 py-1.5 flex items-center justify-around select-none">
+        {[
+          { id: 'home', label: 'Catalog', icon: BookOpen },
+          { id: 'overlay', label: 'Federated', icon: Zap },
+          { id: 'google_books', label: 'Google', icon: Sparkles },
+          { id: 'openlibrary', label: 'Open Lib', icon: Globe },
+          { id: 'login', label: 'Sign In', icon: ArrowRight, isLogin: true }
+        ].map(item => {
+          const Icon = item.icon;
+          const isActive = !item.isLogin && (activeTab === item.id || (item.id === 'home' && activeTab === 'catalog'));
+          return (
+            <button
+              key={item.id}
+              onClick={() => {
+                sounds.playClick();
+                if (item.isLogin) {
+                  onOpenLogin();
+                } else {
+                  setActiveTab(item.id);
+                }
+              }}
+              className={`flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-2xl transition-all relative ${
+                isActive ? 'text-white font-bold' : 'text-emerald-300/70 hover:text-emerald-100'
+              }`}
+            >
+              {isActive && (
+                <div className="absolute inset-0 bg-emerald-600/30 rounded-2xl border border-emerald-500/40 tab-active-glow" />
+              )}
+              <div className="relative z-10">
+                <Icon size={19} className={isActive ? 'text-emerald-400 scale-110' : ''} />
+              </div>
+              <span className={`text-[10px] mt-0.5 tracking-tight relative z-10 ${
+                isActive ? 'text-emerald-200 font-bold' : 'text-emerald-300/70'
+              }`}>
+                {item.label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
 
       {/* 2. MAIN BODY */}
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 sm:p-8 space-y-10">
@@ -1334,8 +1421,40 @@ export default function PublicDiscovery({
                             </h3>
                             {isProject ? (
                               <div className="mt-1 space-y-0.5 text-[11px] text-emerald-300/80">
-                                <p className="truncate">Researcher: <span className="text-emerald-200 font-semibold">{b.studentNames || b.student_names || b.author}</span></p>
-                                {b.supervisor && <p className="truncate text-[10px] text-emerald-400/80">Supervisor: {b.supervisor}</p>}
+                                <p className="truncate">
+                                  Researcher:{' '}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSearchField('author');
+                                      setSearchQuery(b.studentNames || b.student_names || b.author || '');
+                                      sounds.playClick();
+                                    }}
+                                    className="text-emerald-200 font-semibold hover:underline hover:text-emerald-100 transition"
+                                    title="Search by this researcher"
+                                  >
+                                    {b.studentNames || b.student_names || b.author}
+                                  </button>
+                                </p>
+                                {b.supervisor && (
+                                  <p className="truncate text-[10px] text-emerald-400/80">
+                                    Supervisor:{' '}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSearchField('author');
+                                        setSearchQuery(b.supervisor);
+                                        sounds.playClick();
+                                      }}
+                                      className="hover:underline transition"
+                                      title="Search by supervisor"
+                                    >
+                                      {b.supervisor}
+                                    </button>
+                                  </p>
+                                )}
                               </div>
                             ) : isJournal ? (
                               <div className="mt-1 space-y-0.5 text-[11px] text-emerald-300/80">
@@ -1344,7 +1463,20 @@ export default function PublicDiscovery({
                               </div>
                             ) : (
                               <p className="text-[11px] text-emerald-300/80 truncate mt-1">
-                                By <span className="text-emerald-200 font-medium">{b.author}</span>
+                                By{' '}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSearchField('author');
+                                    setSearchQuery(b.author || '');
+                                    sounds.playClick();
+                                  }}
+                                  className="text-emerald-200 font-medium hover:underline hover:text-emerald-100 transition"
+                                  title={`Search by author: ${b.author}`}
+                                >
+                                  {b.author}
+                                </button>
                               </p>
                             )}
                             {b.shelfLocation && (
