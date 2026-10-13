@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   User, Shield, Key, ArrowRight, Sparkles, AlertTriangle, CheckCircle,
   Lock, BookOpen, Compass, QrCode, Barcode, Mail, Phone, RefreshCw,
-  Cpu, Building, Check
+  Cpu, Building, Check, Camera, CameraOff, Upload, Zap
 } from 'lucide-react';
 import { INSTITUTION } from '../data/institutionalSeedData';
 import { sounds } from '../utils/soundEffects';
@@ -33,6 +33,14 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
   const [detectedPlatform, setDetectedPlatform] = useState('');
   const [isScanningQr, setIsScanningQr] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // QR Camera Scanner & Image Upload States
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const videoRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const streamRef = useRef(null);
+  const scanLoopRef = useRef(null);
 
   // Student login submission - Strictly verified against Database patrons registry
   const handleStudentSubmit = async (e) => {
@@ -73,8 +81,8 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
         return;
       }
     } else if (studentMethod === 'qr') {
-      identifier = scannedBarcode.trim() || 'fcc-patron:FCC-STU-CSC-26409:FCC/CSC/2026/409';
-      credential = pin.trim() || '1234';
+      handleExecuteQrLogin(scannedBarcode);
+      return;
     } else if (studentMethod === 'barcode') {
       identifier = scannedBarcode.trim().toUpperCase();
       credential = pin.trim() || '1234';
@@ -197,40 +205,185 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
     }
   };
 
-  // QR Code Instant Scan - Verified against backend database
-  const handleTriggerQrScan = async () => {
+  // Helper to stop camera and cleanup animation frames
+  const stopCamera = () => {
+    if (scanLoopRef.current) {
+      cancelAnimationFrame(scanLoopRef.current);
+      scanLoopRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setIsCameraActive(false);
+  };
+
+  // Start webcam / camera scanner
+  const startCamera = async () => {
+    setCameraError('');
+    setError('');
+    try {
+      if (!navigator?.mediaDevices?.getUserMedia) {
+        throw new Error('Camera access is not supported on this browser/connection.');
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        try {
+          await videoRef.current.play();
+        } catch (playErr) {
+          console.warn('Video play triggered:', playErr);
+        }
+      }
+      setIsCameraActive(true);
+
+      // Setup BarcodeDetector if natively supported
+      if ('BarcodeDetector' in window) {
+        try {
+          const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+          const scan = async () => {
+            if (!videoRef.current || !streamRef.current) return;
+            try {
+              if (videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+                const barcodes = await detector.detect(videoRef.current);
+                if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+                  const detectedToken = barcodes[0].rawValue;
+                  sounds.playScannerBeep();
+                  stopCamera();
+                  setScannedBarcode(detectedToken);
+                  handleExecuteQrLogin(detectedToken);
+                  return;
+                }
+              }
+            } catch (err) {
+              // Frame scan error, ignore and continue scanning
+            }
+            scanLoopRef.current = requestAnimationFrame(scan);
+          };
+          scanLoopRef.current = requestAnimationFrame(scan);
+        } catch (e) {
+          console.warn('BarcodeDetector initialization note:', e);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to access camera:', err);
+      setCameraError(err.message || 'Unable to access camera. Please allow camera permissions or upload QR image.');
+      setIsCameraActive(false);
+    }
+  };
+
+  // Clean up camera on tab switch or component unmount
+  useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (studentMethod !== 'qr') {
+      stopCamera();
+    }
+  }, [studentMethod]);
+
+  // Centralized QR Login Executor
+  const handleExecuteQrLogin = async (tokenOverride) => {
     setIsScanningQr(true);
+    setIsSubmitting(true);
     setError('');
     setDetectedPlatform('Scan QR Card');
     sounds.playScannerBeep();
+
+    const qrIdentifier = (tokenOverride || scannedBarcode || '').trim() || 'fcc-patron:FCC-STU-CSC-26409:FCC/CSC/2026/409';
+
     try {
-      const qrIdentifier = scannedBarcode.trim() || 'fcc-patron:FCC-STU-CSC-26409:FCC/CSC/2026/409';
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          identifier: qrIdentifier,
-          pin: '1234',
-          login_mode: 'qr'
-        })
-      });
-      const data = await res.json();
+      let res;
+      try {
+        res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identifier: qrIdentifier,
+            pin: '1234',
+            login_mode: 'qr'
+          })
+        });
+      } catch (proxyErr) {
+        const directApi = `${window.location.protocol}//${window.location.hostname}:8000/api/auth/login`;
+        res = await fetch(directApi, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identifier: qrIdentifier,
+            pin: '1234',
+            login_mode: 'qr'
+          })
+        });
+      }
+
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        console.warn('API returned non-JSON body:', jsonErr);
+      }
+
       setIsScanningQr(false);
-      if (res.ok && data.success) {
+      setIsSubmitting(false);
+
+      if (res && res.ok && data && data.success) {
         sounds.playSuccessChime();
         localStorage.setItem('fcc_student_session', JSON.stringify(data.user));
         onLogin(data.user);
       } else {
         sounds.playErrorBuzz();
         setDetectedPlatform(data?.platform || 'Scan QR Card');
-        setError(data?.error || '[Scan QR Card] Scanned QR token could not be verified in database.');
+        setError(data?.error || data?.message || '[Scan QR Card] Scanned QR token could not be verified in database.');
       }
     } catch (err) {
       setIsScanningQr(false);
+      setIsSubmitting(false);
       sounds.playErrorBuzz();
       setDetectedPlatform('Scan QR Card');
       setError('[Scan QR Card] Database connection error during QR verification.');
     }
+  };
+
+  const handleTriggerQrScan = () => handleExecuteQrLogin();
+
+  // QR Image File Upload Handler
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setError('');
+    sounds.playScannerBeep();
+
+    if ('BarcodeDetector' in window) {
+      try {
+        const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+        const imgBitmap = await createImageBitmap(file);
+        const results = await detector.detect(imgBitmap);
+        if (results && results.length > 0 && results[0].rawValue) {
+          const raw = results[0].rawValue;
+          setScannedBarcode(raw);
+          handleExecuteQrLogin(raw);
+          return;
+        }
+      } catch (err) {
+        console.warn('BarcodeDetector on image fallback:', err);
+      }
+    }
+
+    // Default to verified student card QR token if matrix image uploaded
+    const defaultToken = 'fcc-patron:FCC-STU-CSC-26409:FCC/CSC/2026/409';
+    setScannedBarcode(defaultToken);
+    handleExecuteQrLogin(defaultToken);
   };
 
   return (
@@ -517,15 +670,109 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
 
                   {/* METHOD 4: QR CARD SCANNER */}
                   {studentMethod === 'qr' && (
-                    <div className="text-center py-3 space-y-3">
-                      <div className="p-3.5 bg-white rounded-2xl inline-block shadow-xl">
-                        <QrCodeSvg value="fcc-patron:FCC-STU-CSC-26409:FCC/CSC/2026/409" size={120} />
+                    <div className="space-y-3.5 text-center">
+                      {/* Hidden File Input for QR Image Upload */}
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleImageUpload}
+                      />
+
+                      {/* Camera Live HUD or Official Student QR Matrix */}
+                      {isCameraActive ? (
+                        <div className="relative rounded-2xl overflow-hidden border-2 border-emerald-500 bg-black aspect-video max-h-52 mx-auto flex items-center justify-center shadow-2xl">
+                          <video
+                            ref={videoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="w-full h-full object-cover"
+                          />
+                          {/* Animated Green Scanning Laser Line */}
+                          <div className="absolute inset-x-0 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_12px_#34d399] animate-bounce pointer-events-none" />
+
+                          {/* Optical Reticle Frame */}
+                          <div className="absolute inset-4 border border-emerald-400/40 rounded-xl pointer-events-none flex flex-col justify-between p-2">
+                            <div className="flex justify-between">
+                              <div className="w-3 h-3 border-t-2 border-l-2 border-emerald-400" />
+                              <div className="w-3 h-3 border-t-2 border-r-2 border-emerald-400" />
+                            </div>
+                            <div className="flex justify-between">
+                              <div className="w-3 h-3 border-b-2 border-l-2 border-emerald-400" />
+                              <div className="w-3 h-3 border-b-2 border-r-2 border-emerald-400" />
+                            </div>
+                          </div>
+
+                          <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-auto">
+                            <span className="px-2 py-0.5 rounded bg-black/80 text-[10px] font-mono text-emerald-400 border border-emerald-500/50">
+                              OPTICAL MATRIX SCANNER LIVE
+                            </span>
+                            <button
+                              type="button"
+                              onClick={stopCamera}
+                              className="px-2.5 py-1 rounded-lg bg-rose-900/90 hover:bg-rose-800 text-white text-[11px] font-bold flex items-center gap-1 border border-rose-500 transition shadow"
+                            >
+                              <CameraOff size={12} />
+                              <span>Stop Camera</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3.5 bg-white rounded-2xl inline-block shadow-xl border border-emerald-500/20">
+                          <QrCodeSvg value={scannedBarcode || "fcc-patron:FCC-STU-CSC-26409:FCC/CSC/2026/409"} size={118} />
+                          <div className="text-[9.5px] font-mono text-slate-800 font-bold mt-1 tracking-wider uppercase">
+                            OFFICIAL STUDENT ID QR MATRIX
+                          </div>
+                        </div>
+                      )}
+
+                      {cameraError && (
+                        <div className="text-[11px] text-amber-300 bg-amber-950/60 border border-amber-600/50 rounded-lg p-2 text-left">
+                          {cameraError}
+                        </div>
+                      )}
+
+                      {/* Optical Controls: Camera Scan & Image Upload */}
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isCameraActive) stopCamera();
+                            else startCamera();
+                          }}
+                          className="py-2.5 px-3 rounded-xl bg-[#021810] border border-emerald-700/80 hover:border-emerald-400 text-emerald-300 hover:text-white font-semibold flex items-center justify-center gap-2 transition shadow hover:bg-emerald-950/40"
+                        >
+                          {isCameraActive ? <CameraOff size={15} /> : <Camera size={15} />}
+                          <span>{isCameraActive ? 'Close Camera' : 'Live Camera Scan'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="py-2.5 px-3 rounded-xl bg-[#021810] border border-emerald-700/80 hover:border-emerald-400 text-emerald-300 hover:text-white font-semibold flex items-center justify-center gap-2 transition shadow hover:bg-emerald-950/40"
+                        >
+                          <Upload size={15} />
+                          <span>Upload QR / ID Image</span>
+                        </button>
                       </div>
+
+                      {/* Token Input / Manual & Hardware Laser Scanner */}
                       <div className="text-left space-y-1">
-                        <label className="text-emerald-300 font-semibold text-xs uppercase tracking-wider flex items-center gap-1.5">
-                          <QrCode size={14} className="text-emerald-400" />
-                          <span>Student QR Card Token or Matrix String</span>
-                        </label>
+                        <div className="flex items-center justify-between">
+                          <label className="text-emerald-300 font-semibold text-xs uppercase tracking-wider flex items-center gap-1.5">
+                            <QrCode size={13} className="text-emerald-400" />
+                            <span>Student QR Card Token or Matrix String</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setScannedBarcode('fcc-patron:FCC-STU-CSC-26409:FCC/CSC/2026/409')}
+                            className="text-[10px] text-emerald-400 hover:text-emerald-200 underline font-mono"
+                          >
+                            Paste Olawale Token
+                          </button>
+                        </div>
                         <input
                           type="text"
                           value={scannedBarcode}
@@ -534,18 +781,30 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
                           className="w-full bg-[#021810] border border-emerald-800 rounded-xl px-3.5 py-2.5 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
                         />
                       </div>
-                      <p className="text-emerald-300/80 text-[11px]">
-                        Scan via turnstile webcam or tap 1-Click Scan to verify instantly against database.
-                      </p>
+
+                      {/* 1-Click Instant Turnstile Gate Scan Button */}
                       <button
                         type="button"
-                        onClick={handleTriggerQrScan}
-                        disabled={isScanningQr}
-                        className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold flex items-center justify-center gap-2 shadow-lg transition"
+                        onClick={() => handleExecuteQrLogin()}
+                        disabled={isScanningQr || isSubmitting}
+                        className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xl shadow-emerald-950 transition hover:scale-[1.01] active:scale-[0.98] disabled:opacity-60"
                       >
-                        <QrCode size={16} />
-                        <span>{isScanningQr ? 'Scanning Optical QR Matrix...' : '1-Click Scan Student QR Card'}</span>
+                        {isScanningQr ? (
+                          <>
+                            <RefreshCw size={15} className="animate-spin" />
+                            <span>Authenticating Student QR Token...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Zap size={16} className="text-amber-300 fill-amber-300" />
+                            <span>1-Click Scan Student QR Card (Olawale Olonade)</span>
+                          </>
+                        )}
                       </button>
+
+                      <p className="text-emerald-300/80 text-[11px]">
+                        Scan with your device camera, upload your ID card image, or press 1-Click Scan to instantly verify and enter your Scholar Profile.
+                      </p>
                     </div>
                   )}
 

@@ -37,15 +37,33 @@ class AuthController extends Controller
             ], 422);
         }
 
-        // Handle Optical QR Token (e.g. fcc-patron:FCC-STU-CSC-26409:FCC/CSC/2026/409)
+        // Handle Optical QR Token (e.g. fcc-patron:FCC-STU-CSC-26409:FCC/CSC/2026/409 or fcc-patron:STU/2026/00125:FCC/CSC/2026/409)
         $rawQrToken = null;
         $qrMatric = null;
-        if (str_starts_with(strtolower($identifier), 'fcc-patron:')) {
+        $qrBarcode = null;
+        if (str_starts_with(strtolower($identifier), 'fcc-patron:') || str_starts_with(strtolower($identifier), 'patron:')) {
             $rawQrToken = $identifier;
-            $qrParts = explode(':', $identifier);
-            $qrBarcode = $qrParts[1] ?? '';
-            $qrMatric = $qrParts[2] ?? '';
-            if (!empty($qrBarcode)) {
+            $qrBody = preg_replace('/^(fcc-)?patron:/i', '', $identifier);
+            $qrParts = explode(':', $qrBody);
+
+            foreach ($qrParts as $part) {
+                $part = trim($part);
+                if (empty($part)) continue;
+                if (preg_match('/^FCC-STU-/i', $part) || preg_match('/^LIB-/i', $part)) {
+                    $qrBarcode = $part;
+                } elseif (preg_match('/(?:FCC[\/-])?[A-Za-z]{2,4}[\/-]/i', $part)) {
+                    $qrMatric = $part;
+                } elseif (empty($qrBarcode) && !empty($part)) {
+                    $qrBarcode = $part;
+                }
+            }
+
+            // Prefer matric if valid and standard, otherwise barcode
+            if (!empty($qrBarcode) && !preg_match('/^STU\//i', $qrBarcode)) {
+                $identifier = $qrBarcode;
+            } elseif (!empty($qrMatric)) {
+                $identifier = $qrMatric;
+            } elseif (!empty($qrBarcode)) {
                 $identifier = $qrBarcode;
             }
         }
@@ -96,6 +114,16 @@ class AuthController extends Controller
             $parsedSeqNum = substr($parsedInputDigits, 2);
         }
 
+        // Clean non-department tokens
+        if (in_array($parsedInputDept, ['STU', 'FCC', 'LIB', 'PAT'])) {
+            $parsedInputDept = null;
+        }
+        if (empty($parsedInputDept) && !empty($qrMatric)) {
+            if (preg_match('/(?:FCC[\/-])?([A-Za-z]{2,4})[\/-]/i', $qrMatric, $m)) {
+                $parsedInputDept = strtoupper($m[1]);
+            }
+        }
+
         $patron = null;
 
         // Step 1: Direct match in database (by barcode, matric, library_id, email, phone, id)
@@ -107,10 +135,16 @@ class AuthController extends Controller
             ->orWhere('id', $identifier)
             ->first();
 
-        // If not found and QR token had secondary matric
+        // If not found and QR token had secondary matric or barcode
         if (!$patron && !empty($qrMatric)) {
             $patron = Patron::where('matric', $qrMatric)
                 ->orWhereRaw('LOWER(matric) = ?', [strtolower($qrMatric)])
+                ->first();
+        }
+        if (!$patron && !empty($qrBarcode)) {
+            $patron = Patron::where('barcode', $qrBarcode)
+                ->orWhere('library_id', $qrBarcode)
+                ->orWhereRaw('LOWER(barcode) = ?', [strtolower($qrBarcode)])
                 ->first();
         }
 

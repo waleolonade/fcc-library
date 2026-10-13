@@ -771,7 +771,9 @@ export default function App() {
                 sounds.playSuccessChime();
                 setCurrentUser(user);
                 setViewMode('student');
-                navigateTo('/scholar/catalog');
+                const hash = window.location.hash;
+                const target = hash.includes('catalog') ? '/scholar/catalog' : '/scholar/profile';
+                navigateTo(target);
               }}
               onOpenPublicOpac={() => {
                 setViewMode('public_opac');
