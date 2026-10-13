@@ -52,64 +52,51 @@ export function BarcodeSvg({ value, height = 48, className = "", showLabel = tru
   );
 }
 
-// High-fidelity algorithmic QR Code Matrix SVG generator
-export function QrCodeSvg({ value, size = 120, className = "" }) {
+import { generateRealQrMatrix } from './realQrGenerator';
+
+// Real ISO/IEC 18004 Standard QR Code Matrix SVG generator
+export function QrCodeSvg({ value, size = 120, className = "", quietZone = 2 }) {
   const text = String(value || 'FCC-LIBRARY-TOKEN');
-  // 17x17 grid algorithm with 3 anchor patterns in corners
-  const gridSize = 21;
-  const matrix = Array.from({ length: gridSize }, () => Array(gridSize).fill(0));
 
-  // Anchor pattern helper
-  const drawAnchor = (startX, startY) => {
-    for (let r = 0; r < 7; r++) {
-      for (let c = 0; c < 7; c++) {
-        if (
-          r === 0 || r === 6 || c === 0 || c === 6 ||
-          (r >= 2 && r <= 4 && c >= 2 && c <= 4)
-        ) {
-          matrix[startY + r][startX + c] = 1;
-        }
-      }
+  const rawMatrix = React.useMemo(() => {
+    try {
+      return generateRealQrMatrix(text);
+    } catch (e) {
+      console.warn('QR Matrix generation note:', e);
+      return [];
     }
-  };
+  }, [text]);
 
-  // 3 standard QR position anchors
-  drawAnchor(0, 0);
-  drawAnchor(gridSize - 7, 0);
-  drawAnchor(0, gridSize - 7);
-
-  // Pseudo-random deterministic fill for payload data
-  let hash = 0;
-  for (let i = 0; i < text.length; i++) {
-    hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  if (!rawMatrix || rawMatrix.length === 0) {
+    return <div style={{ width: size, height: size }} className={`bg-white rounded-lg ${className}`} />;
   }
 
-  for (let r = 0; r < gridSize; r++) {
-    for (let c = 0; c < gridSize; c++) {
-      // Don't overwrite anchors
-      const inTopLeft = r < 8 && c < 8;
-      const inTopRight = r < 8 && c >= gridSize - 8;
-      const inBottomLeft = r >= gridSize - 8 && c < 8;
-      if (!inTopLeft && !inTopRight && !inBottomLeft) {
-        const seed = (r * 13 + c * 37 + hash + (r * c)) % 100;
-        matrix[r][c] = seed < 48 ? 1 : 0;
-      }
-    }
-  }
+  const moduleCount = rawMatrix.length;
+  const totalSize = moduleCount + quietZone * 2;
 
   return (
     <svg
       width={size}
       height={size}
-      viewBox={`0 0 ${gridSize} ${gridSize}`}
+      viewBox={`0 0 ${totalSize} ${totalSize}`}
       className={`rounded-lg ${className}`}
       shapeRendering="crispEdges"
+      role="img"
+      aria-label={`Authentic ISO/IEC 18004 QR Code: ${text}`}
     >
-      <rect width={gridSize} height={gridSize} fill="#ffffff" rx="1" />
-      {matrix.map((row, r) =>
-        row.map((cell, c) =>
-          cell === 1 ? (
-            <rect key={`${r}-${c}`} x={c} y={r} width="1" height="1" fill="#021810" />
+      {/* High-contrast pure white background & quiet zone */}
+      <rect width={totalSize} height={totalSize} fill="#ffffff" />
+      {rawMatrix.map((row, r) =>
+        row.map((isDark, c) =>
+          isDark ? (
+            <rect
+              key={`${r}-${c}`}
+              x={c + quietZone}
+              y={r + quietZone}
+              width="1"
+              height="1"
+              fill="#000000"
+            />
           ) : null
         )
       )}
