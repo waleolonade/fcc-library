@@ -4,8 +4,8 @@ import { QrCodeSvg } from '../common/BarcodeQrStudio';
 import { sounds } from '../utils/soundEffects';
 
 const API = import.meta.env.VITE_API_BASE_URL || '';
-// Public URL the phone should open (e.g. a tunnel / deployed domain) so phones on any network can connect.
-const PUBLIC_APP_URL = import.meta.env.VITE_PUBLIC_APP_URL || '';
+// Public URL the phone should open so phones on any network connect to the official domain.
+const PUBLIC_APP_URL = import.meta.env.VITE_PUBLIC_APP_URL || 'https://fccibadanlibrary.com.ng';
 const POLL_INTERVAL_MS = 1500;
 
 /** JSON request with fallback to the backend port when the dev proxy is unavailable. */

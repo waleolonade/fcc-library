@@ -338,6 +338,8 @@ class AuthController extends Controller
             $lowerId = strtolower($identifier);
             $isAdminIdentifier = in_array($lowerId, [
                 'admin', 'librarian', 'balogun',
+                'librarian@fccibadanlibrary.com.ng', 'admin@fccibadanlibrary.com.ng',
+                'balogun@fccibadanlibrary.com.ng', 'a.balogun@fccibadanlibrary.com.ng',
                 'librarian@fccibadan.edu.ng', 'admin@fccibadan.edu.ng',
                 'balogun@fccibadan.edu.ng', 'a.balogun@fccibadan.edu.ng',
                 'fcc/staff/001'
@@ -359,7 +361,7 @@ class AuthController extends Controller
                         'id' => 'STAFF-001',
                         'name' => 'Dr. Mrs. A. Balogun',
                         'matric' => 'FCC/STAFF/001',
-                        'email' => 'balogun@fccibadan.edu.ng',
+                        'email' => 'librarian@fccibadanlibrary.com.ng',
                         'role' => 'admin',
                         'title' => 'Chief College Librarian & System Architect',
                         'dept' => 'Library Directorate',
@@ -377,16 +379,18 @@ class AuthController extends Controller
             $dept = Department::all()->first(function ($d) use ($lowerId) {
                 $code = strtolower($d->code);
                 $email = strtolower($d->hod_email);
+                $altEmail = str_replace('@fccibadan.edu.ng', '@fccibadanlibrary.com.ng', $email);
                 $hod = strtolower($d->hod_name);
                 $alias = 'hod_' . $code;
 
                 return $code === $lowerId
                     || $alias === $lowerId
                     || $email === $lowerId
+                    || $altEmail === $lowerId
                     || str_starts_with($lowerId, 'hod/' . $code)
                     || str_starts_with($lowerId, 'hod-' . $code)
                     || str_starts_with($lowerId, 'hod ' . $code)
-                    || (!empty($lowerId) && strlen($lowerId) >= 4 && str_contains($email, $lowerId))
+                    || (!empty($lowerId) && strlen($lowerId) >= 4 && (str_contains($email, $lowerId) || str_contains($altEmail, $lowerId)))
                     || (!empty($lowerId) && strlen($lowerId) >= 4 && str_contains($hod, $lowerId));
             });
 

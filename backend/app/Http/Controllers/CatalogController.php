@@ -474,7 +474,7 @@ class CatalogController extends Controller
         try {
             $olUrl = "https://openlibrary.org/search.json?isbn=" . urlencode($cleanIsbn);
             $olRes = \Illuminate\Support\Facades\Http::withHeaders([
-                'User-Agent' => 'FCC-Ibadan-SmartLibrary/5.0 (mailto:librarian@fccibadan.edu.ng)'
+                'User-Agent' => 'FCC-Ibadan-SmartLibrary/5.0 (https://fccibadanlibrary.com.ng; mailto:librarian@fccibadanlibrary.com.ng)'
             ])->timeout(6)->get($olUrl);
 
             if ($olRes->successful() && !empty($olRes->json('docs'))) {

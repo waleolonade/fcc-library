@@ -167,10 +167,10 @@ export const LIBRARY_INFO = {
   contactInfo: {
     address: "Federal Co-operative College, Eleyele Road, Ibadan, Oyo State, Nigeria",
     phone: "+234 (0) 2 241 0183",
-    email: "library@fccibadan.edu.ng",
-    website: "https://library.fccibadan.edu.ng",
+    email: "library@fccibadanlibrary.com.ng",
+    website: "https://fccibadanlibrary.com.ng",
     librarian: "Dr. Mrs. A. Balogun (Chief College Librarian)",
-    librarianEmail: "a.balogun@fccibadan.edu.ng"
+    librarianEmail: "librarian@fccibadanlibrary.com.ng"
   },
   departments: [
     { name: "Circulation & Lending Services", head: "Mr. T. Alabi", location: "Ground Floor, Main Library" },

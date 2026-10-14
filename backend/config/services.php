@@ -44,7 +44,7 @@ return [
     |
     */
     'overlay' => [
-        'contact_email'    => env('OVERLAY_CONTACT_EMAIL', 'librarian@fccibadan.edu.ng'),
+        'contact_email'    => env('OVERLAY_CONTACT_EMAIL', 'librarian@fccibadanlibrary.com.ng'),
         'cache_minutes'    => (int) env('OVERLAY_CACHE_MINUTES', 15),
         'timeout'          => (int) env('OVERLAY_TIMEOUT', 9),
         'google_books_key' => env('GOOGLE_BOOKS_API_KEY'),

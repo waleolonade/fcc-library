@@ -54,9 +54,17 @@ function setStored(key, data, eventType) {
 
 // Universal API Base Resolver for XAMPP Apache, LAN, and Vite Dev Server
 export function getApiBase() {
-  if (typeof window !== 'undefined' && window.location.pathname.includes('/fcclibrary')) {
-    const root = window.location.pathname.substring(0, window.location.pathname.indexOf('/fcclibrary') + '/fcclibrary'.length);
-    return `${root}/backend/public/api`;
+  if (typeof window !== 'undefined') {
+    if (import.meta.env?.VITE_API_BASE_URL) {
+      return import.meta.env.VITE_API_BASE_URL;
+    }
+    if (window.location.hostname.includes('fccibadanlibrary.com.ng')) {
+      return '/api';
+    }
+    if (window.location.pathname.includes('/fcclibrary')) {
+      const root = window.location.pathname.substring(0, window.location.pathname.indexOf('/fcclibrary') + '/fcclibrary'.length);
+      return `${root}/backend/public/api`;
+    }
   }
   return '/api';
 }
@@ -261,7 +269,7 @@ export const libraryApi = {
         matric: patronData.matric || `FCC/${(patronData.department || 'CEM').slice(0, 3).toUpperCase()}/2026/${Math.floor(100 + Math.random() * 900)}`,
         department: patronData.department || 'Co-operative Economics & Management',
         level: patronData.level || 'ND I',
-        email: patronData.email || `${(patronData.name || 'scholar').toLowerCase().replace(/\s+/g, '.')}@fccibadan.edu.ng`,
+        email: patronData.email || `${(patronData.name || 'scholar').toLowerCase().replace(/\s+/g, '.')}@fccibadanlibrary.com.ng`,
         phone: patronData.phone || '+234 800 000 0000',
         pin: patronData.pin || '1234',
         status: 'Active',
@@ -307,7 +315,7 @@ export const libraryApi = {
           matric,
           department: dept,
           level: s.level || defaultLevel,
-          email: s.email || `${name.toLowerCase().replace(/\s+/g, '.')}@fccibadan.edu.ng`,
+          email: s.email || `${name.toLowerCase().replace(/\s+/g, '.')}@fccibadanlibrary.com.ng`,
           phone: s.phone || '+234 800 000 0000',
           pin: s.pin || '1234',
           status: 'Active',

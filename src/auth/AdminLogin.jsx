@@ -120,7 +120,7 @@ export default function AdminLogin({ onLogin }) {
                   value={adminEmail}
                   onChange={(e) => setAdminEmail(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono transition"
-                  placeholder="librarian@fccibadan.edu.ng"
+                  placeholder="librarian@fccibadanlibrary.com.ng"
                 />
               </div>
             </div>
@@ -156,13 +156,13 @@ export default function AdminLogin({ onLogin }) {
             <button
               type="button"
               onClick={() => {
-                setAdminEmail('librarian@fccibadan.edu.ng');
+                setAdminEmail('librarian@fccibadanlibrary.com.ng');
                 setAdminPass('9999');
                 onLogin({
                   role: 'admin',
                   matric: 'FCC/STAFF/001',
                   name: "Dr. Mrs. A. Balogun",
-                  email: 'librarian@fccibadan.edu.ng',
+                  email: 'librarian@fccibadanlibrary.com.ng',
                   title: "Chief College Librarian & System Architect",
                   dept: "Library Directorate",
                   permissions: ["SUPER_ADMIN", "CIRC_OVERRIDE", "MARC_EXPORT", "KBART_SYNC", "ACQ_APPROVE", "API_MANAGEMENT"]

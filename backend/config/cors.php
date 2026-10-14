@@ -19,15 +19,32 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['*'],
+    'allowed_origins' => [
+        'https://fccibadanlibrary.com.ng',
+        'https://www.fccibadanlibrary.com.ng',
+        'https://api.fccibadanlibrary.com.ng',
+        'http://fccibadanlibrary.com.ng',
+        'http://www.fccibadanlibrary.com.ng',
+        'http://api.fccibadanlibrary.com.ng',
+        'http://localhost:5172',
+        'http://localhost:5173',
+        'http://localhost:3000',
+        'http://127.0.0.1:5172',
+        'http://127.0.0.1:5173',
+        'http://localhost',
+        'http://127.0.0.1',
+        '*'
+    ],
 
-    'allowed_origins_patterns' => [],
+    'allowed_origins_patterns' => [
+        '#^https?://.*\.fccibadanlibrary\.com\.ng$#'
+    ],
 
     'allowed_headers' => ['*'],
 
     'exposed_headers' => [],
 
-    'max_age' => 0,
+    'max_age' => 86400,
 
     'supports_credentials' => false,
 

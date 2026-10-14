@@ -148,7 +148,7 @@ class LibraryApiController extends Controller
         }
 
         $headers = [
-            'User-Agent' => 'FCC-Ibadan-SmartLibrary/4.8.0 (Academic Higher Ed; mailto:librarian@fccibadan.edu.ng)'
+            'User-Agent' => 'FCC-Ibadan-SmartLibrary/5.0 (https://fccibadanlibrary.com.ng; mailto:librarian@fccibadanlibrary.com.ng)'
         ];
 
         if ($api->api_key && $api->auth_type === 'Bearer Token') {
@@ -293,7 +293,7 @@ class LibraryApiController extends Controller
                 }
 
                 $headers = [
-                    'User-Agent' => 'FCC-Ibadan-SmartLibrary/4.8.0 (Academic; mailto:librarian@fccibadan.edu.ng)'
+                    'User-Agent' => 'FCC-Ibadan-SmartLibrary/5.0 (https://fccibadanlibrary.com.ng; mailto:librarian@fccibadanlibrary.com.ng)'
                 ];
                 if ($api->api_key && $api->auth_type === 'Bearer Token') {
                     $headers['Authorization'] = 'Bearer ' . $api->api_key;

@@ -3,10 +3,13 @@ import { Platform } from 'react-native';
 // Resolve host URL based on platform
 // Android Emulator uses 10.0.2.2 to reach host machine's localhost:5000
 // iOS Simulator and Web use localhost:5000
+// Production backend API base for FCC Smart Library
+const PRODUCTION_API = 'https://api.fccibadanlibrary.com.ng/api';
+
 const DEFAULT_HOST = Platform.select({
-  android: 'http://10.0.2.2:8000/api',
-  ios: 'http://localhost:8000/api',
-  default: 'http://192.168.1.149:8000/api',
+  android: PRODUCTION_API,
+  ios: PRODUCTION_API,
+  default: PRODUCTION_API,
 });
 
 let currentApiBase = DEFAULT_HOST;

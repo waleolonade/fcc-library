@@ -1,3 +1,4 @@
-/student/*    /student.html    200
-/admin/*      /admin.html      200
-/*            /index.html      200
+/api/*       https://api.fccibadanlibrary.com.ng/api/:splat   200!
+/student/*   /student.html                                    200
+/admin/*     /admin.html                                      200
+/*           /index.html                                      200
