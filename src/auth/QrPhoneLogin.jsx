@@ -150,161 +150,37 @@ export function QrPhoneLogin({ onLogin, onBack }) {
   );
 }
 
+import MobilePassVerificationModal from './MobilePassVerificationModal';
+
 /**
- * Phone verification page (opened by scanning the workstation QR, route: /qr-approve).
- * Verifies College Matriculation Number + 4-digit PIN + phone number against the database.
+ * Phone verification page (opened by scanning the workstation QR, route: /qr-approve or /mobile-pass).
+ * - Verifies if software/pass is already installed on phone -> Animated mark & immediate login!
+ * - If first time -> Pops up dialog to fill in details, verifies against HOD database, prompts to install, and logs in!
  */
 export function QrPhoneApprovalPage({ onLogin, onBackToLogin }) {
   const query = window.location.search || (window.location.hash.split('?')[1] ? `?${window.location.hash.split('?')[1]}` : '');
   const params = new URLSearchParams(query);
   const challengeId = params.get('challenge') || '';
   const scanToken = params.get('token') || '';
+  const matric = params.get('matric') || '';
 
-  const [form, setForm] = useState({ matric: '', pin: '', phone: '' });
-  const [phase, setPhase] = useState('checking'); // checking | form | done | invalid
-  const [error, setError] = useState('');
-  const [phoneMismatch, setPhoneMismatch] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  // Connect to the workstation session immediately after scanning.
-  useEffect(() => {
-    if (!challengeId || !scanToken) {
-      setError('This QR link is incomplete. Scan the QR code shown on the library workstation.');
-      setPhase('invalid');
-      return;
-    }
-    const qs = `challengeId=${encodeURIComponent(challengeId)}&scanToken=${encodeURIComponent(scanToken)}`;
-    apiRequest(`/api/auth/qr-login/phone/details?${qs}`)
-      .then((d) => {
-        if (d.status !== 'waiting') throw new Error('This QR code has already been used. Scan the new code on the workstation.');
-        setPhase('form');
-      })
-      .catch((e) => {
-        setError(e.message);
-        setPhase('invalid');
-      });
-  }, [challengeId, scanToken]);
-
-  const update = (field) => (e) => {
-    const value = field === 'pin' ? e.target.value.replace(/\D/g, '').slice(0, 4) : e.target.value;
-    setForm((f) => ({ ...f, [field]: value }));
-    if (field === 'phone') setPhoneMismatch(false);
-  };
-
-  async function submit(e) {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    setPhoneMismatch(false);
-    try {
-      const res = await apiRequest('/api/auth/qr-login/phone/verify-and-approve', {
-        method: 'POST',
-        body: { challengeId, scanToken, matric: form.matric.trim().toUpperCase(), pin: form.pin, phone: form.phone.trim() },
-      });
-      setForm({ matric: '', pin: '', phone: '' });
-      setPhase('done');
-      sounds.playSuccessChime();
-
-      // Automatically log in on mobile device too
-      if (res && res.user) {
-        localStorage.setItem('fcc_student_session', JSON.stringify(res.user));
-        if (res.accessToken) {
-          localStorage.setItem('fcc_access_token', res.accessToken);
-        }
-        setTimeout(() => {
+  return (
+    <main className="min-h-screen bg-[#021810] px-4 py-8 text-white flex items-center justify-center">
+      <MobilePassVerificationModal
+        isOpen={true}
+        challengeId={challengeId}
+        scanToken={scanToken}
+        prefilledMatric={matric}
+        onClose={onBackToLogin || (() => window.location.assign('/#/login'))}
+        onLoginSuccess={(user) => {
           if (onLogin) {
-            onLogin(res.user, res.accessToken);
+            onLogin(user);
           } else {
             window.location.hash = '#/scholar/profile';
             window.location.reload();
           }
-        }, 1000);
-      }
-    } catch (err) {
-      setError(err.message);
-      setPhoneMismatch(Boolean(err.data?.phoneMismatch));
-      if ([409, 410, 429].includes(err.status) || /expired|already|Too many/i.test(err.message)) setPhase('invalid');
-      sounds.playErrorBuzz();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const goHome = () => (onBackToLogin ? onBackToLogin() : window.location.assign('/#/login'));
-  const inputClass = 'w-full rounded-xl border border-slate-600 bg-slate-950 p-3 text-sm font-mono text-white outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400';
-
-  return (
-    <main className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100 flex items-center justify-center">
-      <section className="w-full max-w-md rounded-3xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-5">
-        <header className="flex items-center gap-3 pb-3 border-b border-slate-800">
-          <div className="rounded-2xl bg-emerald-900/80 p-3 text-emerald-400 border border-emerald-700/60">
-            <ShieldCheck size={26} />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold">Verify Library Sign-in</h1>
-            <p className="text-xs text-emerald-400">Federal Cooperative College Ibadan</p>
-          </div>
-        </header>
-
-        {phase === 'checking' && (
-          <p className="text-sm text-slate-300 flex items-center justify-center gap-2 py-6">
-            <RefreshCw size={16} className="animate-spin" /> Connecting to workstation…
-          </p>
-        )}
-
-        {phase === 'form' && (
-          <form onSubmit={submit} className="space-y-4" autoComplete="off">
-            <div className="space-y-1">
-              <label htmlFor="qr-matric" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">College Matriculation Number</label>
-              <input id="qr-matric" required value={form.matric} onChange={update('matric')} placeholder="e.g. FCC/CEM/2024/042" className={`${inputClass} uppercase`} />
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="qr-pin" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Student 4-Digit Security PIN</label>
-              <input id="qr-pin" required type="password" inputMode="numeric" value={form.pin} onChange={update('pin')} placeholder="••••" className={`${inputClass} text-center tracking-widest`} />
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="qr-phone" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Phone Number on this Device</label>
-              <input id="qr-phone" required type="tel" inputMode="tel" value={form.phone} onChange={update('phone')} placeholder="e.g. 080XXXXXXXX" className={`${inputClass} ${phoneMismatch ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500' : ''}`} />
-              <p className="text-[11px] text-slate-400">Must match the phone number registered for your account.</p>
-            </div>
-            <button
-              id="qr-verify-submit"
-              type="submit"
-              disabled={busy || form.pin.length < 4}
-              className="w-full rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 p-3.5 font-bold text-sm shadow-xl flex items-center justify-center gap-2 transition disabled:opacity-60"
-            >
-              {busy ? <><RefreshCw size={16} className="animate-spin" /> Verifying…</> : <><ShieldCheck size={18} /> Verify &amp; Sign In</>}
-            </button>
-          </form>
-        )}
-
-        {phase === 'done' && (
-          <div className="text-center space-y-3 py-4">
-            <CheckCircle size={56} className="mx-auto text-emerald-400 animate-bounce" />
-            <h2 className="text-lg font-bold">✓ Phone Number Verified!</h2>
-            <p className="text-xs text-slate-300">
-              Access granted. Automatically logging into your Scholar Dashboard on both this phone and the library workstation…
-            </p>
-            <div className="flex items-center justify-center gap-2 text-xs font-mono text-emerald-400 pt-1">
-              <RefreshCw size={13} className="animate-spin" />
-              <span>Entering Scholar Portal…</span>
-            </div>
-          </div>
-        )}
-
-        {error && (
-          <div role="alert" className="flex gap-2 rounded-xl border border-rose-900 bg-rose-950/70 p-3 text-xs text-rose-200 leading-relaxed">
-            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {phase === 'invalid' && (
-          <button type="button" onClick={goHome} className="w-full py-2.5 rounded-xl border border-slate-600 bg-slate-800 hover:bg-slate-700 text-xs font-semibold transition">
-            Return to Library Portal
-          </button>
-        )}
-      </section>
+        }}
+      />
     </main>
   );
 }

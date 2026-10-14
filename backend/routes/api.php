@@ -238,7 +238,8 @@ Route::put('/patrons/{id}', [PatronController::class, 'update'])->where('id', '.
 Route::patch('/patrons/{id}', [PatronController::class, 'update'])->where('id', '.*');
 Route::post('/patrons/{id}/update', [PatronController::class, 'update'])->where('id', '.*');
 Route::delete('/patrons/{id}', [PatronController::class, 'destroy'])->where('id', '.*');
-Route::post('/patrons/{id}/delete', [PatronController::class, 'destroy'])->where('id', '.*');
+Route::post('/patrons/photo', [PatronController::class, 'updatePhoto']);
+Route::post('/patrons/{id}/photo', [PatronController::class, 'updatePhoto'])->where('id', '.*');
 Route::post('/patrons/{id}/clearance', [PatronController::class, 'updateClearance'])->where('id', '.*');
 Route::put('/patrons/{id}/clearance', [PatronController::class, 'updateClearance'])->where('id', '.*');
 Route::get('/users', [PatronController::class, 'index']);

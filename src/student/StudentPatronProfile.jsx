@@ -3,13 +3,17 @@ import {
   User, QrCode, Barcode, Clock, Bookmark, History, Bell,
   CreditCard, ShieldCheck, CheckCircle2, AlertTriangle, Key,
   Mail, Phone, Building, GraduationCap, Edit3, Save, RefreshCw,
-  Printer, ArrowRight, ExternalLink, Sparkles, BookOpen, Layers
+  Printer, ArrowRight, ExternalLink, Sparkles, BookOpen, Layers,
+  Camera, Smartphone, Download, Check
 } from 'lucide-react';
 import { INSTITUTION } from '../data/institutionalSeedData';
 import { sounds } from '../utils/soundEffects';
 import PaymentModal from './PaymentModal';
 import TraceBadge from '../common/TraceBadge';
 import { formatStudentLibraryId } from '../utils/studentIdentity';
+import { QrCodeSvg } from '../common/BarcodeQrStudio';
+import PassportUploadModal from './PassportUploadModal';
+import MobilePassVerificationModal from '../auth/MobilePassVerificationModal';
 
 export default function StudentPatronProfile({
   user,
@@ -22,9 +26,21 @@ export default function StudentPatronProfile({
   const [activeSubTab, setActiveSubTab] = useState('overview');
   // 'overview' | 'loans' | 'reservations' | 'fines' | 'history' | 'saved' | 'reading' | 'notifications' | 'settings'
 
+  // Passport Upload & Mobile Pass Modal State
+  const [isPassportModalOpen, setIsPassportModalOpen] = useState(false);
+  const [isMobilePassModalOpen, setIsMobilePassModalOpen] = useState(false);
+  const [isPassInstalledLocally, setIsPassInstalledLocally] = useState(() => {
+    try {
+      return localStorage.getItem('fcc_mobile_pass_installed') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
+  const [installSuccessToast, setInstallSuccessToast] = useState(false);
+
   // Editable Profile fields
   const [profilePhoto, setProfilePhoto] = useState(
-    user?.photo || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80'
+    user?.photo || user?.photo_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80'
   );
   const [phone, setPhone] = useState(user?.phone || '+234 803 456 7890');
   const [email, setEmail] = useState(user?.email || `${(user?.matric || 'fcc042').toLowerCase().replace(/[^a-z0-9]/g, '')}@student.fccibadan.edu.ng`);
@@ -89,13 +105,20 @@ export default function StudentPatronProfile({
         <div className="flex flex-wrap items-center justify-between gap-6">
           {/* Avatar and Basic Credentials */}
           <div className="flex items-center gap-5">
-            <div className="relative group">
+            <div className="relative group cursor-pointer" onClick={() => setIsPassportModalOpen(true)} title="Upload Passport Photo (AI Background Removal + FCC Watermark)">
               <img
                 src={profilePhoto}
                 alt={user?.name}
-                className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl object-cover border-2 border-emerald-500 shadow-xl"
+                className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl object-cover border-2 border-emerald-500 shadow-xl group-hover:opacity-90 transition"
               />
               <span className="absolute bottom-1 right-1 w-4 h-4 rounded-full bg-emerald-400 border-2 border-[#021810]" />
+              <button
+                type="button"
+                className="absolute inset-0 bg-black/50 backdrop-blur-xs rounded-3xl opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center text-[10px] font-bold text-white p-1 text-center"
+              >
+                <Camera size={18} className="text-emerald-400 mb-0.5" />
+                <span>Upload Passport</span>
+              </button>
             </div>
 
             <div className="space-y-1">
@@ -265,6 +288,130 @@ export default function StudentPatronProfile({
               >
                 View Active Loans & Returns &rarr;
               </button>
+            </div>
+
+            {/* DIGITAL PASS / ID CONNECTED TO PROFILE (FOR FORGOTTEN PASSWORD & PHONE LOGIN) */}
+            <div className="p-6 sm:p-8 rounded-3xl bg-[#021810] border-2 border-emerald-600/70 shadow-2xl space-y-6">
+              <div className="flex flex-wrap items-center justify-between border-b border-emerald-800/80 pb-4 gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-950 border border-emerald-500/70 flex items-center justify-center text-emerald-400">
+                    <Smartphone size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-bold text-white flex items-center gap-2">
+                      <span>Digital Pass / ID & Phone 1-Tap Gateway</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                        Password-Free
+                      </span>
+                    </h4>
+                    <p className="text-emerald-300/70 text-xs mt-0.5">
+                      Forgot your password? You can scan this QR code or use this installed Pass/ID on your phone to log in instantly without a password.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsPassportModalOpen(true)}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-950 hover:bg-emerald-900 border border-emerald-600 text-emerald-300 hover:text-white font-semibold text-xs flex items-center gap-1.5 transition"
+                  >
+                    <Camera size={14} className="text-emerald-400" />
+                    <span>Change Passport Photo</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Pass Content: QR Code + Details + Install Action */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                {/* QR Code */}
+                <div className="md:col-span-4 flex flex-col items-center justify-center p-5 rounded-2xl bg-[#032317] border border-emerald-700/80 text-center space-y-3">
+                  <div className="p-3 bg-white rounded-2xl shadow-xl">
+                    <QrCodeSvg
+                      value={`${window.location.origin}/#/mobile-pass?matric=${encodeURIComponent(user?.matric || 'FCC/CSC/2026/409')}&pass_token=${encodeURIComponent(libraryId)}`}
+                      size={150}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-mono font-bold text-emerald-300 block">
+                      SCAN WITH PHONE CAMERA
+                    </span>
+                    <span className="text-[10px] text-slate-400 block leading-tight">
+                      Instantly verifies with HOD registry &amp; prompts to install Pass
+                    </span>
+                  </div>
+                </div>
+
+                {/* Pass Credentials & 1-Tap Info */}
+                <div className="md:col-span-8 space-y-4">
+                  <div className="p-4 rounded-2xl bg-[#032317] border border-emerald-800/80 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-mono font-bold text-slate-300 uppercase">
+                        Active Mobile Pass Credentials
+                      </span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-500 text-emerald-300">
+                        ✓ Connected to SIS
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-mono block">SCHOLAR NAME</span>
+                        <span className="font-bold text-white">{user?.name || 'OLAWALE AKEEM OLONADE'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-mono block">MATRICULATION NO</span>
+                        <span className="font-mono text-emerald-300 font-bold">{user?.matric || 'FCC/CSC/2026/409'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-mono block">DEPARTMENT</span>
+                        <span className="text-slate-200">{user?.dept || 'Computer Science & Information Technology'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-mono block">PASS SECURITY KEY</span>
+                        <span className="font-mono text-emerald-400 text-[11px]">PASS-{libraryId}-KEY</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Install Status & Buttons */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sounds.playSuccessChime();
+                        localStorage.setItem('fcc_mobile_pass_installed', 'true');
+                        localStorage.setItem('fcc_mobile_pass_user', JSON.stringify({ ...user, photo: profilePhoto, phone, email, pin }));
+                        setIsPassInstalledLocally(true);
+                        setInstallSuccessToast(true);
+                        setTimeout(() => setInstallSuccessToast(false), 4000);
+                      }}
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-950 flex items-center gap-2 transition cursor-pointer"
+                    >
+                      <Download size={15} />
+                      <span>{isPassInstalledLocally ? 'Pass Installed on This Device ✓' : 'Install Pass to this Phone'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsMobilePassModalOpen(true)}
+                      className="px-4 py-2.5 rounded-xl bg-[#032317] hover:bg-emerald-950 border border-emerald-600 text-emerald-300 hover:text-white font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Smartphone size={14} className="text-emerald-400" />
+                      <span>Test Phone QR Dialog</span>
+                    </button>
+                  </div>
+
+                  {installSuccessToast && (
+                    <div className="p-3 rounded-xl bg-emerald-950 border border-emerald-400 text-emerald-200 text-xs flex items-center gap-2 animate-scaleUp">
+                      <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                      <span>
+                        ✓ Pass installed! Whenever you scan the library QR or if you forget your password, you will be verified with the animated mark and logged in automatically!
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -671,6 +818,30 @@ export default function StudentPatronProfile({
           onPaymentSuccess={() => {
             if (onPayFine) onPayFine(selectedLoanForPayment.id);
             setSelectedLoanForPayment(null);
+          }}
+        />
+      )}
+
+      {/* Official Passport Upload Modal (AI Background Removal + FCC Watermark) */}
+      <PassportUploadModal
+        isOpen={isPassportModalOpen}
+        onClose={() => setIsPassportModalOpen(false)}
+        currentUser={user}
+        currentPhoto={profilePhoto}
+        onPhotoUpdated={(newPhotoUrl) => {
+          setProfilePhoto(newPhotoUrl);
+        }}
+      />
+
+      {/* Mobile Pass QR Verification Dialog (Animated Checkmark & Install Flow) */}
+      {isMobilePassModalOpen && (
+        <MobilePassVerificationModal
+          isOpen={isMobilePassModalOpen}
+          onClose={() => setIsMobilePassModalOpen(false)}
+          prefilledMatric={user?.matric || 'FCC/CSC/2026/409'}
+          onLoginSuccess={(verifiedUser) => {
+            setIsMobilePassModalOpen(false);
+            sounds.playSuccessChime();
           }}
         />
       )}

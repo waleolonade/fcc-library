@@ -543,7 +543,7 @@ export default function App() {
           setViewMode('login');
           navigateTo('/login');
         }
-      } else if (path === '/qr-approve' || path.startsWith('/qr-approve') || path === '/qr-login' || path.startsWith('/qr-login') || (typeof window !== 'undefined' && window.location.pathname.includes('/qr-approve'))) {
+      } else if (path === '/qr-approve' || path.startsWith('/qr-approve') || path === '/qr-login' || path.startsWith('/qr-login') || path === '/mobile-pass' || path.startsWith('/mobile-pass') || (typeof window !== 'undefined' && window.location.pathname.includes('/qr-approve'))) {
         setViewMode('qr_approval');
       } else if (!currentUser) {
         if (path.startsWith('/opac')) {

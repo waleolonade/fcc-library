@@ -28,6 +28,27 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
   const [error, setError] = useState('');
   const [detectedPlatform, setDetectedPlatform] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [animatingPassLogin, setAnimatingPassLogin] = useState(false);
+  const [installedUser, setInstalledUser] = useState(() => {
+    try {
+      const isInst = localStorage.getItem('fcc_mobile_pass_installed') === 'true';
+      const usr = localStorage.getItem('fcc_mobile_pass_user') || localStorage.getItem('fcc_student_session');
+      if (isInst && usr) {
+        return JSON.parse(usr);
+      }
+    } catch (e) {}
+    return null;
+  });
+
+  const handle1TapPassLogin = () => {
+    if (!installedUser) return;
+    setAnimatingPassLogin(true);
+    sounds.playSuccessChime();
+    setTimeout(() => {
+      localStorage.setItem('fcc_student_session', JSON.stringify(installedUser));
+      onLogin(installedUser);
+    }, 1200);
+  };
 
   // Student login submission - Strictly verified against Database patrons registry
   const handleStudentSubmit = async (e) => {
@@ -389,6 +410,41 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
                           className="w-full bg-[#021810] border border-emerald-800 rounded-xl px-3.5 py-2.5 text-white font-mono text-center tracking-widest text-base focus:outline-none focus:border-emerald-500"
                         />
                       </div>
+
+                      <div className="flex justify-between items-center text-[11px] pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setStudentMethod('qr')}
+                          className="text-emerald-400 hover:text-emerald-200 underline font-semibold flex items-center gap-1.5 transition"
+                        >
+                          <Smartphone size={13} />
+                          <span>Forgot Password / PIN? Sign in with Mobile Pass / QR</span>
+                        </button>
+                      </div>
+
+                      {installedUser && (
+                        <div className="p-3.5 rounded-2xl bg-[#021810] border-2 border-emerald-500/80 shadow-lg flex items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white shrink-0 shadow-md">
+                              <Check size={16} className="stroke-[3]" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-bold text-white text-[11px] truncate flex items-center gap-1">
+                                <span>Installed Pass: {installedUser?.name || 'Scholar'}</span>
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              </div>
+                              <div className="text-[10px] text-emerald-400 font-mono truncate">{installedUser?.matric}</div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handle1TapPassLogin}
+                            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md shrink-0 transition"
+                          >
+                            1-Tap Sign In &rarr;
+                          </button>
+                        </div>
+                      )}
                     </>
                   )}
 
@@ -557,6 +613,37 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
         </div>
 
       </div>
+
+      {/* 1-Tap Mobile Pass Verified Modal Animation */}
+      {animatingPassLogin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="bg-[#032317] border-2 border-emerald-500 rounded-3xl p-8 text-center space-y-4 max-w-sm w-full text-white shadow-2xl animate-scaleUp">
+            <div className="relative w-20 h-20 mx-auto">
+              <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping" />
+              <div className="relative w-20 h-20 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-xl shadow-emerald-950 border-2 border-emerald-300">
+                <Check size={44} className="stroke-[3] animate-bounce" />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="inline-block px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-950 border border-emerald-500 text-emerald-300">
+                ✓ PASS VERIFIED ON DEVICE
+              </div>
+              <h3 className="text-lg font-black text-white">
+                Welcome back, {installedUser?.name || 'Scholar'}!
+              </h3>
+              <p className="text-xs text-emerald-300/80 font-mono">
+                {installedUser?.matric || 'Authenticated Scholar'}
+              </p>
+            </div>
+
+            <div className="text-xs text-emerald-400 flex items-center justify-center gap-2 pt-2">
+              <RefreshCw size={14} className="animate-spin" />
+              <span>Logging in directly to Scholar Portal...</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

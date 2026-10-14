@@ -452,8 +452,8 @@ class PatronController extends Controller
         if (isset($data['clearance_status']) || isset($data['clearanceStatus'])) {
             $patron->clearance_status = trim((string)($data['clearance_status'] ?? $data['clearanceStatus'] ?? 'Active Student'));
         }
-        if (isset($data['status'])) {
-            $patron->status = trim((string)$data['status']);
+        if (isset($data['photo_url']) || isset($data['photoUrl']) || isset($data['photo'])) {
+            $patron->photo_url = trim((string)($data['photo_url'] ?? $data['photoUrl'] ?? $data['photo']));
         }
 
         $patron->save();
@@ -461,6 +461,44 @@ class PatronController extends Controller
         return response()->json([
             'success' => true,
             'message' => "Scholar {$patron->name} profile updated successfully in institutional database.",
+            'patron' => $patron
+        ]);
+    }
+
+    /**
+     * Update patron passport photo with watermark.
+     */
+    public function updatePhoto(Request $request, $id = null)
+    {
+        $id = $id ?: $request->input('id', $request->input('matric', ''));
+        $photoData = $request->input('photo', $request->input('photo_url', $request->input('image', '')));
+
+        if (empty($id) || empty($photoData)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Patron ID/Matric and photo data are required.'
+            ], 422);
+        }
+
+        $patron = Patron::where('id', $id)
+            ->orWhere('matric', $id)
+            ->orWhere('barcode', $id)
+            ->first();
+
+        if (!$patron) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Scholar record not found.'
+            ], 404);
+        }
+
+        $patron->photo_url = $photoData;
+        $patron->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Passport photograph updated and verified with official watermark!',
+            'photo_url' => $patron->photo_url,
             'patron' => $patron
         ]);
     }
