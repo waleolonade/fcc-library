@@ -31,7 +31,7 @@ export default function TabletStudentNavigation({
     { id: 'research_hnd_projects', label: 'Research', icon: FileText, badge: isHnd2 ? 'HND2' : null },
     { id: 'library_discover', label: 'APIs', icon: Zap },
     { id: 'ai_assistant', label: 'AI Desk', icon: Bot, isAi: true },
-    { id: 'profile', label: 'Pass', icon: User },
+    { id: 'profile', label: 'Profile', icon: User },
   ];
 
   const handleSelectTab = (tabId) => {

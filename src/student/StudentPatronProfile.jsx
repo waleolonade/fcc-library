@@ -6,12 +6,10 @@ import {
   Printer, ArrowRight, ExternalLink, Sparkles, BookOpen, Layers
 } from 'lucide-react';
 import { INSTITUTION } from '../data/institutionalSeedData';
-import { BarcodeSvg, QrCodeSvg } from '../common/BarcodeQrStudio';
 import { sounds } from '../utils/soundEffects';
 import PaymentModal from './PaymentModal';
 import TraceBadge from '../common/TraceBadge';
-import { formatStudentLibraryId, formatStudentBarcode } from '../utils/studentIdentity';
-import OfficialStudentIdCard from './OfficialStudentIdCard';
+import { formatStudentLibraryId } from '../utils/studentIdentity';
 
 export default function StudentPatronProfile({
   user,
@@ -64,9 +62,6 @@ export default function StudentPatronProfile({
     : (user?.barcode && String(user.barcode).startsWith('FCC-STU-'))
       ? user.barcode
       : formatStudentLibraryId(user?.matric);
-  const barcodeValue = (user?.barcode && String(user.barcode).startsWith('FCC-STU-'))
-    ? user.barcode
-    : libraryId;
   const totalFines = loans.reduce((acc, l) => acc + (l.fine || 0), 0);
   const activeLoans = loans.filter(l => l.matric === user?.matric && l.status !== 'Returned');
 
@@ -160,7 +155,7 @@ export default function StudentPatronProfile({
       {/* 2. TABBED PATRON DOSSIER NAVIGATION */}
       <div className="flex items-center gap-1.5 overflow-x-auto p-1.5 rounded-2xl bg-[#021810] border border-emerald-900/80 no-scrollbar text-xs">
         {[
-          { id: 'overview', label: '1. Identity & Card', icon: User },
+          { id: 'overview', label: '1. Academic Profile', icon: User },
           { id: 'loans', label: `2. Current Loans (${activeLoans.length})`, icon: Clock, badge: activeLoans.length },
           { id: 'reservations', label: `3. Holds (${reservations.length})`, icon: Layers, badge: reservations.length },
           { id: 'fines', label: `4. Fines & Clearances (₦${totalFines})`, icon: CreditCard },
@@ -198,59 +193,78 @@ export default function StudentPatronProfile({
       </div>
 
       {/* =======================================================
-          TAB 1: PATRON IDENTITY & MOBILE DIGITAL CARD
+          TAB 1: PATRON ACADEMIC RECORD & SIS SYNCHRONIZATION
       ======================================================= */}
       {activeSubTab === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left: Restructured Official CR80 ISO/IEC 7810 ID Card with Print & 300 DPI PDF Export */}
-          <div className="lg:col-span-6">
-            <OfficialStudentIdCard user={user} />
-          </div>
-
-          {/* Right: Academic Profile & SIS Verification */}
-          <div className="lg:col-span-6 p-6 rounded-3xl bg-[#032317] border border-emerald-800/80 shadow-xl space-y-4 text-xs">
-            <div className="flex items-center justify-between border-b border-emerald-800/60 pb-3">
-              <h3 className="font-bold text-white text-sm flex items-center gap-2">
-                <GraduationCap size={16} className="text-emerald-400" />
-                <span>Student Academic Record & SIS Sync</span>
-              </h3>
-              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
-                SIS Linked
+        <div className="space-y-6">
+          <div className="p-6 sm:p-8 rounded-3xl bg-[#032317] border border-emerald-800/80 shadow-xl space-y-6 text-xs">
+            <div className="flex flex-wrap items-center justify-between border-b border-emerald-800/60 pb-4 gap-3">
+              <div>
+                <h3 className="font-bold text-white text-base flex items-center gap-2">
+                  <GraduationCap size={18} className="text-emerald-400" />
+                  <span>Student Academic Record & SIS Verification</span>
+                </h3>
+                <p className="text-emerald-300/70 text-[11px] mt-0.5">
+                  Verified college profile synchronized with the central Student Information System (SIS).
+                </p>
+              </div>
+              <span className="text-[11px] font-mono font-bold text-emerald-300 bg-emerald-950 px-3 py-1 rounded-full border border-emerald-700/80">
+                ✓ SIS Synchronized & Active
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-emerald-200">
-              <div className="p-3 rounded-xl bg-[#021810] border border-emerald-900">
-                <span className="text-[10px] text-slate-400 block mb-0.5">Faculty</span>
-                <span className="font-bold text-white">Faculty of Co-operative Economics</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-emerald-200">
+              <div className="p-4 rounded-2xl bg-[#021810] border border-emerald-900/80">
+                <span className="text-[10px] text-slate-400 uppercase font-mono block mb-1">Faculty</span>
+                <span className="font-bold text-white text-sm">Faculty of Co-operative Economics</span>
               </div>
-              <div className="p-3 rounded-xl bg-[#021810] border border-emerald-900">
-                <span className="text-[10px] text-slate-400 block mb-0.5">Department</span>
-                <span className="font-bold text-white">{user?.dept || 'Co-operative Economics & Management'}</span>
+              <div className="p-4 rounded-2xl bg-[#021810] border border-emerald-900/80">
+                <span className="text-[10px] text-slate-400 uppercase font-mono block mb-1">Department</span>
+                <span className="font-bold text-white text-sm">{user?.dept || 'Co-operative Economics & Management'}</span>
               </div>
-              <div className="p-3 rounded-xl bg-[#021810] border border-emerald-900">
-                <span className="text-[10px] text-slate-400 block mb-0.5">Programme</span>
-                <span className="font-bold text-white">Higher National Diploma (HND)</span>
+              <div className="p-4 rounded-2xl bg-[#021810] border border-emerald-900/80">
+                <span className="text-[10px] text-slate-400 uppercase font-mono block mb-1">Programme</span>
+                <span className="font-bold text-white text-sm">Higher National Diploma (HND)</span>
               </div>
-              <div className="p-3 rounded-xl bg-[#021810] border border-emerald-900">
-                <span className="text-[10px] text-slate-400 block mb-0.5">Academic Level</span>
-                <span className="font-bold text-white">{user?.level || 'HND II (Final Year)'}</span>
+              <div className="p-4 rounded-2xl bg-[#021810] border border-emerald-900/80">
+                <span className="text-[10px] text-slate-400 uppercase font-mono block mb-1">Academic Level</span>
+                <span className="font-bold text-white text-sm">{user?.level || 'HND II (Final Year)'}</span>
               </div>
             </div>
 
-            <div className="space-y-2 pt-2 text-slate-300">
-              <div className="flex justify-between p-2 rounded-lg bg-[#021810]">
-                <span className="text-slate-400">Institutional Email:</span>
-                <span className="font-mono text-emerald-300">{email}</span>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 rounded-2xl bg-[#021810] border border-emerald-900/80 space-y-1">
+                <span className="text-slate-400 text-[11px] block">Institutional Email</span>
+                <span className="font-mono text-emerald-300 text-xs font-semibold block truncate">{email}</span>
               </div>
-              <div className="flex justify-between p-2 rounded-lg bg-[#021810]">
-                <span className="text-slate-400">Telephone / SMS Contact:</span>
-                <span className="font-mono text-white">{phone}</span>
+              <div className="p-4 rounded-2xl bg-[#021810] border border-emerald-900/80 space-y-1">
+                <span className="text-slate-400 text-[11px] block">Telephone / SMS Contact</span>
+                <span className="font-mono text-white text-xs font-semibold block">{phone}</span>
               </div>
-              <div className="flex justify-between p-2 rounded-lg bg-[#021810]">
-                <span className="text-slate-400">Borrowing Privileges:</span>
-                <span className="text-emerald-400 font-bold">Standard Patron (5 Books • 14 Days)</span>
+              <div className="p-4 rounded-2xl bg-[#021810] border border-emerald-900/80 space-y-1">
+                <span className="text-slate-400 text-[11px] block">Borrowing Privileges</span>
+                <span className="text-emerald-400 text-xs font-bold block">Standard Scholar (5 Books • 14 Days)</span>
               </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-emerald-950/60 border border-emerald-800/60 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-900/60 flex items-center justify-center text-emerald-300 shrink-0">
+                  <ShieldCheck size={22} />
+                </div>
+                <div>
+                  <div className="font-bold text-white text-xs">Library Patron Standing: Good Standing</div>
+                  <div className="text-[11px] text-emerald-300/80">
+                    Full circulation access to physical stacks, e-library repository, journal subscriptions, and thesis archive.
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveSubTab('loans')}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition"
+              >
+                View Active Loans & Returns &rarr;
+              </button>
             </div>
           </div>
         </div>

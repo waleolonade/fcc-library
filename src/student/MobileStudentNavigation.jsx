@@ -54,7 +54,7 @@ export default function MobileStudentNavigation({
     },
     {
       id: 'profile',
-      label: 'Pass / ID',
+      label: 'Profile',
       icon: User,
       badge: null
     }
