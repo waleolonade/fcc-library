@@ -1,0 +1,68 @@
+# =========================================================================
+# Apache / cPanel / LiteSpeed Production Configuration
+# Domain: fccibadanlibrary.com.ng
+# Handles: React Frontend (dist/) + Laravel Backend (backend/)
+# =========================================================================
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # Security: Block sensitive files (.env, .git, sqlite databases)
+    RewriteRule ^\.env - [F,L,NC]
+    RewriteRule ^\.git - [F,L,NC]
+    RewriteRule ^backend/\.env - [F,L,NC]
+    RewriteRule ^backend/database/.*\.sqlite$ - [F,L,NC]
+
+    # Handle Authorization Headers for REST API Bearer Tokens
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # 1. API Gateway: Route all /api/* requests to Laravel backend
+    RewriteRule ^api(/.*)?$ backend/public/index.php [L,QSA]
+    RewriteRule ^backend/public/api(/.*)?$ backend/public/index.php [L,QSA]
+
+    # 2. Student Portal Multi-Page Route
+    RewriteCond %{REQUEST_URI} ^/student(/.*)?$
+    RewriteCond %{DOCUMENT_ROOT}/dist/student.html -f
+    RewriteRule ^student(/.*)?$ dist/student.html [L]
+
+    # 3. Admin / Staff Portal Multi-Page Route
+    RewriteCond %{REQUEST_URI} ^/admin(/.*)?$
+    RewriteCond %{DOCUMENT_ROOT}/dist/admin.html -f
+    RewriteRule ^admin(/.*)?$ dist/admin.html [L]
+
+    # 4. Serve real existing files and directories directly
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # 5. Serve dist/ static assets (e.g. /assets/index.js -> /dist/assets/index.js)
+    RewriteCond %{DOCUMENT_ROOT}/dist%{REQUEST_URI} -f
+    RewriteRule ^(.*)$ dist/$1 [L]
+
+    # 6. Primary Landing & OPAC SPA Fallback
+    RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
+    RewriteRule ^ dist/index.html [L]
+</IfModule>
+
+# MIME Types & Caching for Production
+<IfModule mod_mime.c>
+    AddType application/javascript .js
+    AddType text/css .css
+    AddType image/svg+xml .svg
+    AddType font/woff2 .woff2
+</IfModule>
+
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType image/png "access plus 1 month"
+    ExpiresByType image/jpeg "access plus 1 month"
+    ExpiresByType image/svg+xml "access plus 1 month"
+    ExpiresByType text/css "access plus 1 week"
+    ExpiresByType application/javascript "access plus 1 week"
+    ExpiresByType font/woff2 "access plus 1 month"
+</IfModule>
+
+# Disable Directory Browsing
+Options -Indexes
