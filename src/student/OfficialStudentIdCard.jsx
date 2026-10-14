@@ -341,17 +341,24 @@ export default function OfficialStudentIdCard({ user, className = "" }) {
               />
             </div>
 
-            {/* OPTICAL QR CODE TURNSTILE TOKEN */}
+            {/* OPTICAL QR CODE TURNSTILE TOKEN & DIRECT PHONE AUTO-LOGIN */}
             <div className="flex items-center justify-center gap-3 pt-0.5">
               <div className="p-1.5 bg-white rounded-xl shadow-md shrink-0">
-                <QrCodeSvg value={`fcc-patron:${libraryId}:${matricNo}`} size={74} />
+                <QrCodeSvg
+                  value={
+                    typeof window !== 'undefined'
+                      ? `${window.location.origin}/#/login?qr_auth=fcc-patron:${libraryId}:${matricNo}`
+                      : `fcc-patron:${libraryId}:${matricNo}`
+                  }
+                  size={74}
+                />
               </div>
               <div className="text-left text-[8px] font-mono text-emerald-400/90 leading-snug space-y-0.5">
                 <p className="font-bold text-white flex items-center gap-1">
                   <Shield size={10} className="text-emerald-400" />
                   <span>SIS Verified Token</span>
                 </p>
-                <p>Turnstile & Kiosk Access</p>
+                <p>Scan to Auto-Login on Phone</p>
                 <p className="text-[7.5px] text-slate-400">EXP: {validThru}</p>
               </div>
             </div>

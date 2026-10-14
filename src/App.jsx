@@ -1,28 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { Volume2, VolumeX, Shield, Award, Sparkles, Copy, Check, Share2, Link2 } from 'lucide-react';
+import { Link2, Volume2, VolumeX } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import {
-  INITIAL_BOOKS,
-  INITIAL_LOANS,
-  INITIAL_PARTNER_LIBRARIES,
-  INSTITUTION
+    INSTITUTION
 } from './data/institutionalSeedData';
 
-import WorldClassLogin from './auth/WorldClassLogin';
 import AdminLogin from './auth/AdminLogin';
 import HodLogin from './auth/HodLogin';
-import PublicDiscovery from './public_opac/PublicDiscovery';
-import StudentPortal from './student/StudentPortal';
-import HodDashboard from './hod/HodDashboard';
-import FccAdminLibrary from './fcc_admin_library/FccAdminLibrary';
+import { QrPhoneApprovalPage } from './auth/QrPhoneLogin';
+import WorldClassLogin from './auth/WorldClassLogin';
 import BookDetailsModal from './common/BookDetailsModal';
 import BookDossierView from './common/BookDossierView';
-import DigitalBookReader from './student/DigitalBookReader';
+import HardwareBarcodeListener from './common/HardwareBarcodeListener';
 import RouteTracerHUD from './common/RouteTracerHUD';
 import SelfServiceKiosk from './common/SelfServiceKiosk';
-import HardwareBarcodeListener from './common/HardwareBarcodeListener';
-import { sounds } from './utils/soundEffects';
-import { parseCurrentRoute, navigateTo, copyToClipboardWithFeedback } from './utils/router';
+import FccAdminLibrary from './fcc_admin_library/FccAdminLibrary';
+import HodDashboard from './hod/HodDashboard';
+import PublicDiscovery from './public_opac/PublicDiscovery';
+import DigitalBookReader from './student/DigitalBookReader';
+import StudentPortal from './student/StudentPortal';
 import { PATTERNS } from './utils/backgroundPatterns';
+import { getBookCoverUrl } from './utils/bookCoverResolver';
+import { copyToClipboardWithFeedback, navigateTo, parseCurrentRoute } from './utils/router';
+import { sounds } from './utils/soundEffects';
 
 export default function App() {
   // Navigation & Authentication State (Strictly Session-Based, No Arbitrary Auto-Logins)
@@ -64,8 +63,10 @@ export default function App() {
   });
 
   const [viewMode, setViewMode] = useState(() => {
-    if (typeof window !== 'undefined' && window.location.hash) {
-      const h = window.location.hash;
+    if (typeof window !== 'undefined') {
+      const h = window.location.hash || '';
+      const p = window.location.pathname || '';
+      if (p.includes('/qr-approve') || h.includes('/qr-approve') || h.includes('/qr-login')) return 'qr_approval';
       if (h.includes('/kiosk')) return 'kiosk';
       if (h.includes('/book')) return 'book_dossier';
       if (h.includes('/admin/login')) return 'admin_login';
@@ -234,6 +235,8 @@ export default function App() {
               fileDataUrl: b.file_data_url || b.fileDataUrl || '',
               externalUrl: b.external_url || b.externalUrl || '',
               abstract: b.abstract || '',
+              cover_image: getBookCoverUrl(b),
+              coverImage: getBookCoverUrl(b),
               isDigital: b.is_digital !== undefined ? Boolean(b.is_digital) : (b.isDigital !== undefined ? Boolean(b.isDigital) : true),
               chapters: (() => { const v = typeof b.chapters === 'string' ? (() => { try { return JSON.parse(b.chapters); } catch { return []; } })() : b.chapters; return Array.isArray(v) ? v : []; })(),
               reviews: (() => { const v = typeof b.reviews === 'string' ? (() => { try { return JSON.parse(b.reviews); } catch { return []; } })() : b.reviews; return Array.isArray(v) ? v : []; })()
@@ -286,6 +289,10 @@ export default function App() {
   // Master Hash Route Listener & Direct URL Deep-Linking
   useEffect(() => {
     const handleHashChange = () => {
+      if (window.location.href.includes('qr_auth=') || window.location.href.includes('qr_token=')) {
+        checkIncomingQrAuth();
+        return;
+      }
       const { path, params } = parseCurrentRoute();
       setCurrentHash(window.location.hash);
 
@@ -536,6 +543,8 @@ export default function App() {
           setViewMode('login');
           navigateTo('/login');
         }
+      } else if (path === '/qr-approve' || path.startsWith('/qr-approve') || path === '/qr-login' || path.startsWith('/qr-login') || (typeof window !== 'undefined' && window.location.pathname.includes('/qr-approve'))) {
+        setViewMode('qr_approval');
       } else if (!currentUser) {
         if (path.startsWith('/opac')) {
           setViewMode('public_opac');
@@ -545,13 +554,83 @@ export default function App() {
       }
     };
 
-    window.addEventListener('hashchange', handleHashChange);
-    // Initial Route Check
-    if (!window.location.hash) {
-      navigateTo('/opac');
-    } else {
-      handleHashChange();
-    }
+    // Auto-login when opened via phone camera QR scan URL (e.g. #/login?qr_auth=...)
+    const checkIncomingQrAuth = async () => {
+      const href = window.location.href;
+      const match = href.match(/[?&](?:qr_auth|qr_token|auth_qr|token)=([^&#]+)/i);
+      const claimMatch = href.match(/[?&](?:claim_session|session_id)=([^&#]+)/i);
+
+      if (match) {
+        const rawToken = decodeURIComponent(match[1]);
+        const sessionId = claimMatch ? decodeURIComponent(claimMatch[1]) : null;
+
+        try {
+          // If a cross-device session is attached, authorize it so the desktop logs in too
+          if (sessionId) {
+            try {
+              fetch('/api/auth/qr-session-claim', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: sessionId, identifier: rawToken })
+              }).catch(() => {});
+            } catch (claimErr) {
+              const directClaim = `${window.location.protocol}//${window.location.hostname}:8000/api/auth/qr-session-claim`;
+              fetch(directClaim, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: sessionId, identifier: rawToken })
+              }).catch(() => {});
+            }
+          }
+
+          // Immediately log in on this device
+          let res;
+          try {
+            res = await fetch('/api/auth/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ identifier: rawToken, login_mode: 'qr' })
+            });
+          } catch (proxyErr) {
+            const directApi = `${window.location.protocol}//${window.location.hostname}:8000/api/auth/login`;
+            res = await fetch(directApi, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ identifier: rawToken, login_mode: 'qr' })
+            });
+          }
+
+          let data = null;
+          try {
+            data = await res.json();
+          } catch (jsonErr) {}
+
+          if (res && res.ok && data && data.success && data.user) {
+            sounds.playSuccessChime();
+            localStorage.setItem('fcc_student_session', JSON.stringify(data.user));
+            setCurrentUser(data.user);
+            setViewMode('student');
+            window.history.replaceState(null, '', window.location.pathname + '#/scholar/profile');
+            navigateTo('/scholar/profile');
+            return true;
+          }
+        } catch (err) {
+          console.warn('QR auto-login note:', err);
+        }
+      }
+      return false;
+    };
+
+    checkIncomingQrAuth().then(didAutoLogin => {
+      if (!didAutoLogin) {
+        window.addEventListener('hashchange', handleHashChange);
+        if (!window.location.hash) {
+          navigateTo('/opac');
+        } else {
+          handleHashChange();
+        }
+      }
+    });
 
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [books, currentUser]);
@@ -749,6 +828,19 @@ export default function App() {
             onBackToPublic={() => {
               setViewMode('public_opac');
               navigateTo('/opac');
+            }}
+          />
+        ) : viewMode === 'qr_approval' ? (
+          <QrPhoneApprovalPage
+            onLogin={(user) => {
+              sounds.playSuccessChime();
+              setCurrentUser(user);
+              setViewMode('student');
+              navigateTo('/scholar/profile');
+            }}
+            onBackToLogin={() => {
+              setViewMode('login');
+              navigateTo('/login');
             }}
           />
         ) : !currentUser ? (

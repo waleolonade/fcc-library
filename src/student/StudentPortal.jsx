@@ -42,6 +42,8 @@ import InternetArchiveExplorer from './InternetArchiveExplorer';
 import GoogleBooksExplorer from './GoogleBooksExplorer';
 import ApiOverlayDiscovery from './ApiOverlayDiscovery';
 import LmsApiExplorer from './LmsApiExplorer';
+import OpenAlexExplorer from './OpenAlexExplorer';
+import AcademicJournalsDirectory from './AcademicJournalsDirectory';
 import SmartCatalogSearch from './SmartCatalogSearch';
 import { useDeviceType } from '../utils/useDeviceType';
 import MobileStudentNavigation from './MobileStudentNavigation';
@@ -148,6 +150,9 @@ export default function StudentPortal({
           'syllabus': 'course_reserves',
           'google_books': 'library_google_books',
           'google': 'library_google_books',
+          'openalex': 'library_openalex',
+          'scholar_openalex': 'library_openalex',
+          'scholarly': 'library_openalex',
           'discover': 'library_discover',
           'overlay': 'library_discover',
           'federated': 'library_discover'
@@ -156,7 +161,7 @@ export default function StudentPortal({
         const resolved = routeAliasMap[sub] || sub;
         const validTabs = [
           'home',
-          'library_discover', 'library_search', 'library_books', 'library_ebooks', 'library_journals', 'library_digital',
+          'library_discover', 'library_search', 'library_openalex', 'library_books', 'library_ebooks', 'library_journals', 'library_digital',
           'course_reserves',
           'my_borrowed', 'my_reserved', 'my_due_soon', 'my_history', 'my_saved',
           'research_hnd_projects', 'research_papers', 'research_journals', 'research_topics', 'research_references',
@@ -263,6 +268,7 @@ export default function StudentPortal({
     helpdesk: { label: 'Ask a Librarian', category: 'FACILITIES', icon: MessageSquare },
     partner_libs: { label: 'Linked Libraries', category: 'FACILITIES', icon: Building2 },
     library_discover: { label: 'Federated API Overlay & Discover', category: 'LIBRARY', icon: Zap },
+    library_openalex: { label: 'OpenAlex Scholarly Graph (250M+ Papers)', category: 'LIBRARY', icon: Sparkles },
     library_lms: { label: 'Thetechguy44 Library API', category: 'LIBRARY', icon: Database },
     library_google_books: { label: 'Google Books (Recommended)', category: 'LIBRARY', icon: Sparkles },
     library_gutendex: { label: 'Project Gutenberg eBooks', category: 'LIBRARY', icon: BookOpen },
@@ -535,6 +541,7 @@ export default function StudentPortal({
                     <div className="pl-4 pr-1.5 pb-1.5 space-y-0.5 border-t border-emerald-900/50">
                       {[
                         { id: 'library_discover', label: 'API Overlay Discover', icon: Zap, prefix: '├──', badgeText: 'LIVE APIS' },
+                        { id: 'library_openalex', label: 'OpenAlex Scholarly Graph', icon: Sparkles, prefix: '├──', badgeText: '250M+ PAPERS' },
                         { id: 'library_search', label: 'Catalog Search', icon: Search, prefix: '├──' },
                         { id: 'library_books', label: 'Books', icon: BookOpen, prefix: '├──', badge: physicalBooks.length },
                         { id: 'library_ebooks', label: 'eBooks', icon: BookOpen, prefix: '├──', badge: digitalEbooks.length },
@@ -987,28 +994,18 @@ export default function StudentPortal({
             </div>
           ) : activeTab === 'library_journals' ? (
             /* ============================================================== */
-            /* 2. LIBRARY ├── Journals                                        */
+            /* 2. LIBRARY ├── Academic Journals Directory                     */
             /* ============================================================== */
-            <div className="space-y-6 animate-fadeIn">
-              <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/40 p-6 rounded-3xl border border-slate-800 shadow-xl space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-2xl bg-indigo-950 text-indigo-400 border border-indigo-800/80">
-                    <Layers size={24} />
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-black text-white">Academic Journals Directory</h2>
-                    <p className="text-slate-400 text-xs sm:text-sm">
-                      Peer-reviewed periodicals, quarterly institutional journals, and indexed scholarly publications.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Trove Journals & Archives */}
-              <div className="h-[750px]">
-                <TroveExplorer />
-              </div>
-            </div>
+            <AcademicJournalsDirectory
+              user={user}
+              onOpenReader={(b) => {
+                setActiveBookDetails(null);
+                setActiveBookForReader(b);
+              }}
+              onNavigateToOpenAlex={(filterParam) => {
+                setActiveTab('library_openalex');
+              }}
+            />
           ) : activeTab === 'library_digital' ? (
             /* ============================================================== */
             /* 2. LIBRARY └── Digital Resources                               */
@@ -1046,6 +1043,10 @@ export default function StudentPortal({
                   ]);
                 }}
               />
+            </div>
+          ) : activeTab === 'library_openalex' ? (
+            <div className="h-full">
+              <OpenAlexExplorer user={user} onOpenReader={(b) => setActiveBookForReader(b)} />
             </div>
           ) : activeTab === 'library_google_books' ? (
             <div className="h-full">

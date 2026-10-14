@@ -16,6 +16,7 @@ use App\Http\Controllers\GutenbergController;
 use App\Http\Controllers\InternetArchiveController;
 use App\Http\Controllers\GoogleBooksController;
 use App\Http\Controllers\OverlayController;
+use App\Http\Controllers\OpenAlexController;
 use App\Http\Controllers\Api\FineController;
 use App\Http\Controllers\Api\ReservationController;
 use App\Http\Controllers\Api\ReviewController;
@@ -95,6 +96,64 @@ Route::prefix('external/google-books')->group(function () {
     Route::post('/save',                 [GoogleBooksController::class, 'saveBook']);
 });
 
+// 0e. OpenAlex Official Academic Graph API Integration
+Route::prefix('openalex')->group(function () {
+    Route::get('/works',             [OpenAlexController::class, 'works']);
+    Route::get('/works/{id}',        [OpenAlexController::class, 'show']);
+    Route::get('/aggregate',         [OpenAlexController::class, 'aggregate']);
+    Route::get('/authors',           [OpenAlexController::class, 'authors']);
+    Route::get('/sources',           [OpenAlexController::class, 'sources']);
+    Route::get('/institutions',       [OpenAlexController::class, 'institutions']);
+    Route::get('/topics',            [OpenAlexController::class, 'topics']);
+    Route::get('/publishers',        [OpenAlexController::class, 'publishers']);
+    Route::get('/funders',           [OpenAlexController::class, 'funders']);
+    Route::get('/resolve',           [OpenAlexController::class, 'resolve']);
+    Route::get('/saved',             [OpenAlexController::class, 'savedWorks']);
+    Route::post('/save',             [OpenAlexController::class, 'saveWork']);
+    Route::delete('/saved/{id}',     [OpenAlexController::class, 'removeSavedWork']);
+    Route::get('/rate-limit',        [OpenAlexController::class, 'rateLimit']);
+
+    // OpenAlex Query Language (OQL) & Query Translation APIs
+    Route::match(['get', 'post'], '/oql', [OpenAlexController::class, 'executeOql']);
+    Route::match(['get', 'post'], '/execute', [OpenAlexController::class, 'executeOql']);
+    Route::get('/query/oql/{query}', [OpenAlexController::class, 'translateOql'])->where('query', '.*');
+    Route::get('/query/oxurl/{query}', [OpenAlexController::class, 'translateOxurl'])->where('query', '.*');
+    Route::get('/query/oqo/{query}', [OpenAlexController::class, 'translateOqo'])->where('query', '.*');
+    Route::post('/query',            [OpenAlexController::class, 'translateQuery']);
+    Route::get('/properties/{entity?}', [OpenAlexController::class, 'properties']);
+    Route::get('/validate',          [OpenAlexController::class, 'validateOql']);
+    Route::get('/parse-context',     [OpenAlexController::class, 'parseContext']);
+
+    // Special-Purpose Endpoints
+    Route::get('/autocomplete/{entity}', [OpenAlexController::class, 'autocomplete']);
+    Route::match(['get', 'post'], '/text', [OpenAlexController::class, 'tagText']);
+
+    // Component & Aboutness Endpoints
+    Route::get('/awards/{id?}',         fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'awards', $id))->where('id', '.*');
+    Route::get('/locations/{id?}',      fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'locations', $id))->where('id', '.*');
+    Route::get('/subfields/{id?}',      fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'subfields', $id))->where('id', '.*');
+    Route::get('/fields/{id?}',         fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'fields', $id))->where('id', '.*');
+    Route::get('/domains/{id?}',        fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'domains', $id))->where('id', '.*');
+    Route::get('/keywords/{id?}',       fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'keywords', $id))->where('id', '.*');
+    Route::get('/sdgs/{id?}',           fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'sdgs', $id))->where('id', '.*');
+    Route::get('/study-designs/{id?}',  fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'study-designs', $id))->where('id', '.*');
+    Route::get('/countries/{id?}',      fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'countries', $id))->where('id', '.*');
+    Route::get('/languages/{id?}',      fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'languages', $id))->where('id', '.*');
+    Route::get('/work-types/{id?}',     fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'work-types', $id))->where('id', '.*');
+    Route::get('/source-types/{id?}',   fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'source-types', $id))->where('id', '.*');
+    Route::get('/institution-types/{id?}', fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'institution-types', $id))->where('id', '.*');
+    Route::get('/continents/{id?}',     fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'continents', $id))->where('id', '.*');
+    Route::get('/licenses/{id?}',       fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'licenses', $id))->where('id', '.*');
+    Route::get('/indexes/{id?}',        fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'indexes', $id))->where('id', '.*');
+    Route::get('/source-lists/{id?}',   fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'source-lists', $id))->where('id', '.*');
+    Route::get('/collections/{id?}',    fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'collections', $id))->where('id', '.*');
+    Route::get('/saved-searches/{id?}', fn(\Illuminate\Http\Request $req, ?string $id = null) => app(\App\Http\Controllers\OpenAlexController::class)->entity($req, 'saved-searches', $id))->where('id', '.*');
+
+    // Universal Entity & Catalog Route (Proxy & Cache Any OpenAlex Endpoint)
+    Route::get('/entity/{endpoint}/{id?}', [OpenAlexController::class, 'entity'])->where('id', '.*');
+    Route::get('/catalog/{endpoint}/{id?}', [OpenAlexController::class, 'entity'])->where('id', '.*');
+});
+
 // 1. Telemetry & Health Check
 Route::get('/health', [LibrarySystemController::class, 'health']);
 
@@ -105,6 +164,21 @@ Route::prefix('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/refresh', [AuthController::class, 'refresh']);
     Route::get('/me', [AuthController::class, 'me']);
+    Route::get('/qr-session', [AuthController::class, 'createQrSession']);
+    Route::get('/qr-session-status', [AuthController::class, 'checkQrSession']);
+    Route::post('/qr-session-claim', [AuthController::class, 'claimQrSession']);
+
+    // Dedicated Cross-Device Phone QR Login (Phone-Number Matching)
+    Route::post('/qr-login/create', [AuthController::class, 'createQrLogin']);
+    Route::get('/qr-login/status/{id?}', [AuthController::class, 'getQrLoginStatus']);
+    Route::get('/qr-login/phone/details', [AuthController::class, 'getPhoneChallengeDetails']);
+    Route::post('/qr-login/phone/verify-and-approve', [AuthController::class, 'phoneVerifyAndApprove']);
+    Route::post('/qr-login/phone/send-otp', [AuthController::class, 'sendPhoneOtp']);
+    Route::post('/qr-login/phone/verify-otp', [AuthController::class, 'verifyPhoneOtp']);
+    Route::post('/qr-login/phone/app-session', [AuthController::class, 'phoneAppSession']);
+    Route::post('/qr-login/phone/approve', [AuthController::class, 'phoneApprove']);
+    Route::post('/qr-login/phone/deny', [AuthController::class, 'phoneDeny']);
+    Route::post('/qr-login/consume', [AuthController::class, 'consumeQrLogin']);
 });
 Route::post('/hod/login', [AuthController::class, 'login']);
 

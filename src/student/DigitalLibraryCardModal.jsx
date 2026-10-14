@@ -103,7 +103,14 @@ export default function DigitalLibraryCardModal({ user, onClose }) {
 
             {/* QR Code Container */}
             <div className="p-1.5 bg-white rounded-xl shadow-lg shrink-0 cursor-pointer" onClick={() => setShowQrExpanded(!showQrExpanded)}>
-              <QrCodeSvg value={`fcc-patron:${libraryId}:${user?.matric || 'FCC/CSC/2026/409'}`} size={42} />
+              <QrCodeSvg
+                value={
+                  typeof window !== 'undefined'
+                    ? `${window.location.origin}/#/login?qr_auth=fcc-patron:${libraryId}:${user?.matric || 'FCC/CSC/2026/409'}`
+                    : `fcc-patron:${libraryId}:${user?.matric || 'FCC/CSC/2026/409'}`
+                }
+                size={42}
+              />
             </div>
           </div>
         </div>

@@ -31,6 +31,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { filterCatalogByNlp, parseNaturalLanguageQuery } from '../utils/nlpSearch';
 import { sounds } from '../utils/soundEffects';
 import { useDeviceType } from '../utils/useDeviceType';
+import { getBookCoverUrl, DEFAULT_BOOK_COVER, OFFLINE_BOOK_COVER_SVG } from '../utils/bookCoverResolver';
 
 const DEFAULT_RECENT_SEARCHES = [
   'computer science',
@@ -403,7 +404,9 @@ export default function SmartCatalogSearch({
             fileDataUrl: b.file_data_url || b.fileDataUrl || '',
             externalUrl: b.external_url || b.externalUrl || '',
             isDigital: b.is_digital !== undefined ? Boolean(b.is_digital) : (b.isDigital !== undefined ? Boolean(b.isDigital) : true),
-            abstract: b.abstract || ''
+            abstract: b.abstract || '',
+            cover_image: getBookCoverUrl(b),
+            coverImage: getBookCoverUrl(b)
           })).filter(b => !isDemoOrExcluded(b) && !isPendingOrUnapproved(b));
           setBackendBooks(norm);
         }
@@ -477,8 +480,8 @@ export default function SmartCatalogSearch({
         uploaded_by_hod_id: item.uploaded_by_hod_id || `HOD-${normalizeDeptCode(item.department_name)}`,
         hod_name: item.hod_name,
         status: 'approved',
-        cover_image: item.cover_image || item.coverImage || '',
-        coverImage: item.cover_image || item.coverImage || ''
+        cover_image: getBookCoverUrl(item),
+        coverImage: getBookCoverUrl(item)
       };
     });
 
@@ -506,8 +509,8 @@ export default function SmartCatalogSearch({
       shelfLocation: 'Postgraduate Archive & Repository',
       uploaded_by_hod_id: `HOD-${normalizeDeptCode(t.department)}`,
       status: 'approved',
-      cover_image: t.cover_image || t.coverImage || '',
-      coverImage: t.cover_image || t.coverImage || ''
+      cover_image: getBookCoverUrl(t),
+      coverImage: getBookCoverUrl(t)
     }));
 
     // 3. Central books strictly from backend database
@@ -524,6 +527,8 @@ export default function SmartCatalogSearch({
       const normKey = (b.title || '').trim().toLowerCase().replace(/[-_]/g, ' ').replace(/\.pdf$/i, '').replace(/[^\w\s]/g, '').trim();
       const key = (b.isbn && !b.isbn.startsWith('978-978-000') ? b.isbn : null) || normKey || b.id;
       if (!seenMap.has(key)) {
+        b.cover_image = getBookCoverUrl(b);
+        b.coverImage = b.cover_image;
         seenMap.set(key, b);
       }
     }
@@ -1740,33 +1745,20 @@ export default function SmartCatalogSearch({
                   }}
                   className="w-full aspect-[2/3] rounded-xl overflow-hidden relative shadow-lg shadow-black/70 border border-slate-800 bg-slate-950 group-hover:border-slate-600 transition cursor-pointer select-none"
                 >
-                  {book.cover_image || book.coverImage ? (
-                    <img
-                      src={book.cover_image || book.coverImage}
-                      alt={`Cover of ${book.title}`}
-                      className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
-                    />
-                  ) : (
-                    <div
-                      className="w-full h-full p-2.5 flex flex-col justify-between text-left relative overflow-hidden"
-                      style={{
-                        background: `linear-gradient(145deg, ${currentStudentDept.accentHex}40 0%, #032317 60%, #01140e 100%)`
-                      }}
-                    >
-                      <div className="space-y-1 relative z-10">
-                        <div className="text-[7.5px] font-mono font-bold tracking-wider uppercase text-emerald-400/90 truncate">
-                          FCC • {book.department || currentStudentDept.code}
-                        </div>
-                        <div className="h-0.5 w-4 bg-teal-400 rounded-full" />
-                        <h4 className="text-[10px] sm:text-[11px] font-bold text-white line-clamp-3 leading-snug font-serif">
-                          {book.title}
-                        </h4>
-                      </div>
-                      <div className="relative z-10 text-[8px] text-slate-300 font-mono truncate">
-                        {book.author}
-                      </div>
-                    </div>
-                  )}
+                  <img
+                    src={getBookCoverUrl(book)}
+                    alt={`Cover of ${book.title}`}
+                    onError={(e) => {
+                      if (e.currentTarget.src !== DEFAULT_BOOK_COVER && e.currentTarget.src !== OFFLINE_BOOK_COVER_SVG) {
+                        e.currentTarget.src = DEFAULT_BOOK_COVER;
+                      } else {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = OFFLINE_BOOK_COVER_SVG;
+                      }
+                    }}
+                    className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                    loading="lazy"
+                  />
 
                   {/* 3D Book Spine Shadow & Glossy Sheen */}
                   <div className="absolute top-0 bottom-0 left-0 w-2.5 bg-gradient-to-r from-black/70 to-transparent pointer-events-none" />
@@ -1968,33 +1960,20 @@ export default function SmartCatalogSearch({
                   <div className="flex flex-col sm:flex-row gap-4 items-start pt-1">
                     {/* FRONT COVER ARTWORK CANVAS */}
                     <div className="w-24 sm:w-28 h-36 sm:h-40 rounded-xl overflow-hidden shrink-0 relative shadow-xl shadow-black/60 border border-slate-700/80 bg-slate-950 group-hover:border-teal-500/60 transition group self-center sm:self-start">
-                      {book.cover_image || book.coverImage ? (
-                        <img
-                          src={book.cover_image || book.coverImage}
-                          alt={`Cover of ${book.title}`}
-                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                        />
-                      ) : (
-                        <div
-                          className="w-full h-full p-2.5 flex flex-col justify-between text-left relative overflow-hidden"
-                          style={{
-                            background: `linear-gradient(145deg, ${currentStudentDept.accentHex}40 0%, #032317 60%, #01140e 100%)`
-                          }}
-                        >
-                          <div className="space-y-1 relative z-10">
-                            <div className="text-[7.5px] font-mono font-bold tracking-wider uppercase text-emerald-400/90 truncate">
-                              FCC • {book.department || currentStudentDept.code}
-                            </div>
-                            <div className="h-0.5 w-4 bg-teal-400 rounded-full" />
-                            <h4 className="text-[9.5px] font-bold text-white line-clamp-3 leading-snug font-serif">
-                              {book.title}
-                            </h4>
-                          </div>
-                          <div className="relative z-10 text-[7.5px] text-slate-300 font-mono truncate">
-                            {book.author}
-                          </div>
-                        </div>
-                      )}
+                      <img
+                        src={getBookCoverUrl(book)}
+                        alt={`Cover of ${book.title}`}
+                        onError={(e) => {
+                          if (e.currentTarget.src !== DEFAULT_BOOK_COVER && e.currentTarget.src !== OFFLINE_BOOK_COVER_SVG) {
+                            e.currentTarget.src = DEFAULT_BOOK_COVER;
+                          } else {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = OFFLINE_BOOK_COVER_SVG;
+                          }
+                        }}
+                        className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                        loading="lazy"
+                      />
                       {/* Book spine line overlay */}
                       <div className="absolute top-0 bottom-0 left-0 w-2.5 bg-gradient-to-r from-black/70 to-transparent pointer-events-none" />
                       {/* Glossy lighting sheen */}

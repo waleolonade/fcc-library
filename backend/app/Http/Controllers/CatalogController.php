@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Book;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class CatalogController extends Controller
@@ -45,13 +46,15 @@ class CatalogController extends Controller
             $query->where('is_digital', 1);
         }
 
-        // Exclude any pending or unapproved books from the master student catalog
-        $query->where(function ($q) {
-            $q->whereNull('status')
-              ->orWhere('status', 'approved')
-              ->orWhere('status', 'Published')
-              ->orWhere('status', 'active');
-        });
+        // Exclude any pending or unapproved books from the master student catalog if column exists
+        if (Schema::hasColumn('books', 'status')) {
+            $query->where(function ($q) {
+                $q->whereNull('status')
+                  ->orWhere('status', 'approved')
+                  ->orWhere('status', 'Published')
+                  ->orWhere('status', 'active');
+            });
+        }
 
         $books = $query->orderBy('uploaded_at', 'desc')->get()->map(function ($book) {
             $data = $book->toArray();

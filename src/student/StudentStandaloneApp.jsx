@@ -33,6 +33,7 @@ import StudentCardAndLoans from './StudentCardAndLoans';
 import GraduationClearance from './GraduationClearance';
 import StudentReservations from './StudentReservations';
 import LmsApiExplorer from './LmsApiExplorer';
+import AcademicJournalsDirectory from './AcademicJournalsDirectory';
 import { useDeviceType } from '../utils/useDeviceType';
 import MobileStudentNavigation from './MobileStudentNavigation';
 import TabletStudentNavigation from './TabletStudentNavigation';
@@ -256,10 +257,14 @@ export default function StudentStandaloneApp() {
       'research_hnd_projects': 'research',
       'research_topics': 'research',
       'research_papers': 'research',
-      'research_journals': 'research',
+      'research_journals': 'journals',
       'research_references': 'research',
       'topics': 'research',
       'references': 'research',
+      'journals': 'journals',
+      'library_journals': 'journals',
+      'scholar/library_journals': 'journals',
+      'academic_journals': 'journals',
       'help': 'helpdesk',
       'my-loans': 'loans',
       'loans_card': 'loans',
@@ -274,7 +279,7 @@ export default function StudentStandaloneApp() {
     const validTabs = [
       'dashboard', 'catalog', 'loans', 'courses', 'reading_lists',
       'reservations', 'digital', 'study_rooms', 'theses', 'past_questions',
-      'research', 'card', 'partner_libs', 'events', 'clearance', 'helpdesk'
+      'research', 'card', 'partner_libs', 'events', 'clearance', 'helpdesk', 'journals'
     ];
 
     if (validTabs.includes(resolvedTab)) {
@@ -968,6 +973,12 @@ export default function StudentStandaloneApp() {
               user={studentUser}
               onOpenReader={openBookReader}
               onOpenAi={() => setIsAiOpen(true)}
+            />
+          ) : activeTab === 'journals' || activeTab === 'library_journals' ? (
+            <AcademicJournalsDirectory
+              user={studentUser}
+              onOpenReader={openBookReader}
+              onNavigateToOpenAlex={() => navigateToTab('catalog')}
             />
           ) : activeTab === 'card' ? (
             <div className="space-y-6">

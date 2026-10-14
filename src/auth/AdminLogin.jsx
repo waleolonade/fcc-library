@@ -15,6 +15,7 @@ import {
 import { INSTITUTION } from '../data/institutionalSeedData';
 import { navigateTo } from '../utils/router';
 import { PATTERNS } from '../utils/backgroundPatterns';
+import { FCC_LOGO } from '../assets/logo';
 
 export default function AdminLogin({ onLogin }) {
   const [adminEmail, setAdminEmail] = useState('');
@@ -68,7 +69,7 @@ export default function AdminLogin({ onLogin }) {
       <div className="relative z-10 flex items-center justify-between max-w-5xl mx-auto w-full">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-indigo-500/40 p-0.5 flex items-center justify-center shadow-lg shadow-indigo-950 shrink-0 overflow-hidden">
-            <img src="/assets/fcc-logo.png" alt="FCC Logo" className="w-full h-full object-cover rounded-xl" />
+            <img src={FCC_LOGO} alt="FCC Logo" className="w-full h-full object-cover rounded-xl" />
           </div>
           <div>
             <div className="text-sm font-bold text-white">{INSTITUTION.shortName}</div>
@@ -90,7 +91,7 @@ export default function AdminLogin({ onLogin }) {
         <div className="bg-slate-900/90 backdrop-blur-2xl border border-indigo-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl shadow-black/80 space-y-6">
           <div className="text-center space-y-2">
             <div className="w-16 h-16 rounded-2xl bg-slate-950 border border-indigo-500/40 p-1 flex items-center justify-center mx-auto shadow-xl shadow-indigo-950/60 overflow-hidden">
-              <img src="/assets/fcc-logo.png" alt="FCC Logo" className="w-full h-full object-cover rounded-xl" />
+              <img src={FCC_LOGO} alt="FCC Logo" className="w-full h-full object-cover rounded-xl" />
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
               Administrative Gateway

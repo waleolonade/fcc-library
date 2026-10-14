@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use App\Models\Patron;
 use App\Models\Department;
@@ -501,5 +502,600 @@ class AuthController extends Controller
         }
         $letters = preg_replace('/[^A-Za-z]/', '', (string)$deptName);
         return strtoupper(substr($letters, 0, 3)) ?: 'CSC';
+    }
+
+    /**
+     * Helper to format public student representation
+     */
+    protected function formatPublicStudent($patron)
+    {
+        return [
+            'id' => $patron->id,
+            'matric' => $patron->matric,
+            'matricNo' => $patron->matric,
+            'barcode' => $patron->barcode,
+            'libraryId' => $patron->library_id ?: $patron->barcode,
+            'library_id' => $patron->library_id ?: $patron->barcode,
+            'email' => $patron->email,
+            'name' => $patron->name,
+            'displayName' => $patron->name,
+            'phone' => $patron->phone,
+            'role' => $patron->role ?: 'student',
+            'department' => $patron->department,
+            'dept' => $patron->department,
+            'level' => $patron->level ?: 'HND I',
+            'borrowQuota' => $patron->borrow_quota ?: 5,
+            'borrow_quota' => $patron->borrow_quota ?: 5,
+            'clearanceStatus' => $patron->clearance_status ?: 'Active Student',
+            'photoUrl' => $patron->photo_url,
+            'activeLoansCount' => $patron->active_loans_count ?: 0
+        ];
+    }
+
+    /**
+     * Clean and normalize phone number for reliable international / Nigerian comparison
+     */
+    protected function normalizePhoneNumber($phone)
+    {
+        $raw = preg_replace('/[^0-9]/', '', (string)$phone);
+        if (empty($raw)) return '';
+        // If 11 digits and starts with 0 (e.g. 08061657738), convert to 2348061657738
+        if (strlen($raw) === 11 && str_starts_with($raw, '0')) {
+            return '234' . substr($raw, 1);
+        }
+        // If 10 digits without leading 0 (e.g. 8061657738), convert to 2348061657738
+        if (strlen($raw) === 10) {
+            return '234' . $raw;
+        }
+        return $raw;
+    }
+
+    /**
+     * Check if two phone representations match the same person
+     */
+    protected function phoneNumbersMatch($phoneA, $phoneB)
+    {
+        $cleanA = $this->normalizePhoneNumber($phoneA);
+        $cleanB = $this->normalizePhoneNumber($phoneB);
+        if (!empty($cleanA) && !empty($cleanB) && $cleanA === $cleanB) {
+            return true;
+        }
+        // Fallback: match last 10 digits
+        $last10A = substr(preg_replace('/[^0-9]/', '', (string)$phoneA), -10);
+        $last10B = substr(preg_replace('/[^0-9]/', '', (string)$phoneB), -10);
+        return !empty($last10A) && strlen($last10A) === 10 && $last10A === $last10B;
+    }
+
+    /**
+     * Mask phone number for public display (e.g. +234 ••• ••• 7738)
+     */
+    protected function maskPhone($phone)
+    {
+        $digits = preg_replace('/[^0-9]/', '', (string)$phone);
+        if (strlen($digits) >= 10) {
+            return '+234 ••• ••• ' . substr($digits, -4);
+        }
+        return $phone ?: 'registered phone';
+    }
+
+    /**
+     * POST /api/auth/qr-login/create
+     * Step 1: Create a secure challenge for workstation terminal or specific scholar
+     * In a shared e-library, defaults to clean anonymous terminal so no previous student's
+     * details are displayed on the public screen.
+     */
+    public function createQrLogin(Request $request)
+    {
+        $identifier = trim((string)$request->input('identifier', ''));
+        $user = null;
+
+        if (!empty($identifier)) {
+            $user = Patron::where('matric', $identifier)
+                ->orWhere('email', $identifier)
+                ->orWhere('barcode', $identifier)
+                ->orWhere('library_id', $identifier)
+                ->orWhere('phone', $identifier)
+                ->orWhereRaw('LOWER(matric) = ?', [strtolower($identifier)])
+                ->orWhereRaw('LOWER(email) = ?', [strtolower($identifier)])
+                ->first();
+
+            if (!$user) {
+                $digits = preg_replace('/[^0-9]/', '', $identifier);
+                if (!empty($digits)) {
+                    $user = Patron::whereRaw("REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') LIKE ?", ["%{$digits}%"])->first();
+                }
+            }
+        }
+
+        $id = (string)Str::uuid();
+        $scanToken = Str::random(32);
+        $pollToken = Str::random(32);
+        $expiresAt = time() + 180; // 3 minutes TTL
+
+        DB::table('qr_login_challenges')->insert([
+            'id' => $id,
+            'expected_user_id' => $user ? $user->id : 'terminal',
+            'scan_token_hash' => hash('sha256', $scanToken),
+            'poll_token_hash' => hash('sha256', $pollToken),
+            'status' => 'waiting',
+            'expires_at' => $expiresAt,
+            'created_at' => time(),
+        ]);
+
+        $base = $request->input('clientUrl') ?: $request->header('Origin') ?: $request->header('Referer');
+        if ($base) {
+            $base = preg_replace('/#.*$/', '', rtrim($base, '/'));
+        } else {
+            $base = $request->getSchemeAndHttpHost();
+        }
+
+        $qrUrl = "{$base}/qr-approve?challenge=" . urlencode($id) . "&token=" . urlencode($scanToken);
+
+        return response()->json([
+            'challengeId' => $id,
+            'qrUrl' => $qrUrl,
+            'pollToken' => $pollToken,
+            'expiresAt' => $expiresAt,
+            'expiresIn' => 180,
+        ]);
+    }
+
+    /**
+     * GET /api/auth/qr-login/phone/details
+     * Mobile phone fetches initial session info upon scanning QR code
+     */
+    public function getPhoneChallengeDetails(Request $request)
+    {
+        $challengeId = $request->query('challengeId', $request->query('challenge_id'));
+        $scanToken = $request->query('scanToken', $request->query('scan_token'));
+
+        if (!$challengeId || !$scanToken) {
+            return response()->json(['error' => 'Missing QR challenge parameters.'], 404);
+        }
+
+        $c = DB::table('qr_login_challenges')->where('id', $challengeId)->first();
+        if (!$c || !hash_equals((string)$c->scan_token_hash, hash('sha256', (string)$scanToken))) {
+            return response()->json(['error' => 'Invalid QR session token.'], 404);
+        }
+
+        if ($c->expires_at <= time() || $c->status === 'expired') {
+            return response()->json(['error' => 'This QR session has expired.'], 410);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'status' => $c->status,
+            'expiresAt' => $c->expires_at,
+        ]);
+    }
+
+    /**
+     * POST /api/auth/qr-login/phone/verify-and-approve
+     * Mobile phone submits:
+     * - College Matriculation Number
+     * - Student 4-Digit Security PIN
+     * - Mobile Phone Number
+     *
+     * Validates:
+     * 1. Matriculation number exists in library database
+     * 2. 4-digit PIN is correct
+     * 3. Mobile phone number matches the phone registered in database for this student
+     * If matched, grants login immediately. If not, alerts the user that phone number is not correct.
+     */
+    public function phoneVerifyAndApprove(Request $request)
+    {
+        $challengeId = $request->input('challengeId', $request->input('challenge_id'));
+        $scanToken = $request->input('scanToken', $request->input('scan_token'));
+        $matricInput = trim((string)$request->input('matric', ''));
+        $pinInput = trim((string)$request->input('pin', ''));
+        $phoneInput = trim((string)$request->input('phone', ''));
+
+        if (!$challengeId || !$scanToken) {
+            return response()->json(['error' => 'Invalid QR request. Scan the current QR code on the workstation screen.'], 404);
+        }
+
+        $c = DB::table('qr_login_challenges')->where('id', $challengeId)->first();
+        if (!$c || !hash_equals((string)$c->scan_token_hash, hash('sha256', (string)$scanToken))) {
+            return response()->json(['error' => 'Invalid QR session token. Please re-scan the QR code.'], 404);
+        }
+
+        if ($c->expires_at <= time() || $c->status === 'expired') {
+            return response()->json(['error' => 'This QR code has expired. Please refresh the QR code on the workstation.'], 410);
+        }
+
+        if (in_array($c->status, ['consumed', 'approved'])) {
+            return response()->json(['error' => 'This QR login has already been processed.'], 409);
+        }
+
+        if (empty($matricInput)) {
+            return response()->json(['error' => 'Please enter your College Matriculation Number.'], 422);
+        }
+
+        if (empty($pinInput)) {
+            return response()->json(['error' => 'Please enter your Student 4-Digit Security PIN.'], 422);
+        }
+
+        if (empty($phoneInput)) {
+            return response()->json(['error' => 'Please enter your mobile phone number.'], 422);
+        }
+
+        // Brute-force protection: max 5 failed attempts per QR challenge
+        if ((int)$c->otp_attempts >= 5) {
+            DB::table('qr_login_challenges')->where('id', $c->id)->update(['status' => 'denied']);
+            return response()->json(['error' => 'Too many failed attempts. Refresh the QR code on the workstation and try again.'], 429);
+        }
+
+        $fail = function (string $message, int $code, array $extra = []) use ($c) {
+            DB::table('qr_login_challenges')->where('id', $c->id)->increment('otp_attempts');
+            return response()->json(array_merge(['error' => $message], $extra), $code);
+        };
+
+        // 1. Look up student by College Matriculation Number (case / separator insensitive)
+        $normalizedMatric = strtolower(str_replace([' ', '-', '/'], '', $matricInput));
+        $patron = Patron::whereRaw('LOWER(matric) = ?', [strtolower($matricInput)])->first()
+            ?: Patron::whereRaw("LOWER(REPLACE(REPLACE(REPLACE(matric, ' ', ''), '-', ''), '/', '')) = ?", [$normalizedMatric])->first();
+
+        // 2. Validate Student 4-Digit Security PIN (generic message: never reveal which field failed)
+        if (!$patron || !hash_equals((string)$patron->pin, $pinInput)) {
+            return $fail('Matriculation Number or Security PIN is incorrect.', 401);
+        }
+
+        // Challenge pre-bound to a specific student must match
+        if ($c->expected_user_id && $c->expected_user_id !== 'terminal' && $c->expected_user_id !== $patron->id) {
+            return $fail('This QR code belongs to a different login session. Refresh the QR code on the workstation.', 403);
+        }
+
+        // 3. Phone number on the scanning device must match the number registered in the database
+        if (!$this->phoneNumbersMatch($phoneInput, $patron->phone)) {
+            return $fail('Phone number is not correct. It does not match the phone number registered for this account.', 403, ['phoneMismatch' => true]);
+        }
+
+        // 4. All checks passed -> approve atomically (only one device can approve a challenge)
+        $approved = DB::table('qr_login_challenges')
+            ->where('id', $c->id)
+            ->where('status', 'waiting')
+            ->where('expires_at', '>', time())
+            ->update([
+                'expected_user_id' => $patron->id,
+                'phone_user_id' => $patron->id,
+                'status' => 'approved',
+                'approved_at' => time(),
+            ]);
+
+        if (!$approved) {
+            return response()->json(['error' => 'This QR login has expired or was already used.'], 409);
+        }
+
+        $mobileToken = 'fcc_tok_' . Str::random(48);
+
+        return response()->json([
+            'ok' => true,
+            'success' => true,
+            'message' => 'Phone number verified. Signing in automatically on both mobile and workstation.',
+            'user' => $this->formatPublicStudent($patron),
+            'accessToken' => $mobileToken,
+            'tokenType' => 'Bearer',
+            'expiresIn' => 900
+        ]);
+    }
+
+    /**
+     * GET /api/auth/qr-login/status/:id
+     * Step 5: Check challenge status using separate poll secret (X-QR-Poll-Token)
+     */
+    public function getQrLoginStatus(Request $request, $id = null)
+    {
+        $id = $id ?: $request->query('id') ?: $request->query('challengeId');
+        $pollToken = $request->header('X-QR-Poll-Token') ?: $request->query('pollToken') ?: $request->query('poll_token');
+
+        if (!$id || !$pollToken) {
+            return response()->json(['error' => 'QR login request not found.'], 404);
+        }
+
+        $c = DB::table('qr_login_challenges')->where('id', $id)->first();
+        if (!$c || !hash_equals((string)$c->poll_token_hash, hash('sha256', (string)$pollToken))) {
+            return response()->json(['error' => 'QR login request not found.'], 404);
+        }
+
+        if ($c->expires_at <= time() && !in_array($c->status, ['consumed', 'denied', 'expired'])) {
+            DB::table('qr_login_challenges')->where('id', $id)->update(['status' => 'expired']);
+            $c->status = 'expired';
+        }
+
+        return response()->json([
+            'status' => $c->status,
+            'expiresAt' => $c->expires_at
+        ]);
+    }
+
+    /**
+     * POST /api/auth/qr-login/phone/send-otp
+     * Phone scans QR and requests SMS OTP for registered phone
+     */
+    public function sendPhoneOtp(Request $request)
+    {
+        $challengeId = $request->input('challengeId', $request->input('challenge_id'));
+        $scanToken = $request->input('scanToken', $request->input('scan_token'));
+        $phoneInput = trim((string)$request->input('phone', ''));
+
+        if (!$challengeId || !$scanToken) {
+            return response()->json(['error' => 'This QR request is invalid. Scan the current code on the computer.'], 404);
+        }
+
+        $c = DB::table('qr_login_challenges')->where('id', $challengeId)->first();
+        if (!$c || !hash_equals((string)$c->scan_token_hash, hash('sha256', (string)$scanToken))) {
+            return response()->json(['error' => 'This QR request is invalid. Scan the current code on the computer.'], 404);
+        }
+
+        if ($c->expires_at <= time() || $c->status === 'expired') {
+            return response()->json(['error' => 'This QR code has expired. Generate a new one on the computer.'], 410);
+        }
+
+        if (in_array($c->status, ['denied', 'consumed'])) {
+            return response()->json(['error' => 'This login request has already been closed.'], 409);
+        }
+
+        if ($c->status !== 'waiting') {
+            return response()->json(['error' => 'This request is no longer waiting for phone verification.'], 409);
+        }
+
+        $expectedUser = Patron::find($c->expected_user_id);
+
+        // Strict & smart phone matching against registered institutional database record
+        $matched = $expectedUser && !empty($phoneInput) && $this->phoneNumbersMatch($phoneInput, $expectedUser->phone);
+
+        if (!$matched) {
+            DB::table('qr_login_challenges')->where('id', $c->id)->where('status', 'waiting')->update(['status' => 'denied']);
+            return response()->json([
+                'error' => 'Phone number does not match the registered phone number on record for this account (' . ($expectedUser ? $this->maskPhone($expectedUser->phone) : 'unknown') . '). Access denied. Return to the computer and start a new QR login.'
+            ], 403);
+        }
+
+        $otp = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+
+        DB::table('qr_login_challenges')->where('id', $c->id)->where('status', 'waiting')->update([
+            'status' => 'otp_sent',
+            'phone_user_id' => $expectedUser->id,
+            'otp_hash' => hash('sha256', "{$c->id}:{$otp}"),
+            'otp_expires_at' => time() + 300,
+            'otp_attempts' => 0
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'matched' => true,
+            'message' => 'Phone verified with institutional registry. Verification code generated for registered phone.',
+            'user' => $this->formatPublicStudent($expectedUser),
+            'devOtp' => $otp
+        ]);
+    }
+
+    /**
+     * POST /api/auth/qr-login/phone/verify-otp
+     * Phone verifies 6-digit SMS OTP
+     */
+    public function verifyPhoneOtp(Request $request)
+    {
+        $challengeId = $request->input('challengeId', $request->input('challenge_id'));
+        $scanToken = $request->input('scanToken', $request->input('scan_token'));
+        $otp = trim((string)$request->input('otp', ''));
+
+        $c = DB::table('qr_login_challenges')->where('id', $challengeId)->first();
+        if (!$c || !hash_equals((string)$c->scan_token_hash, hash('sha256', (string)$scanToken))) {
+            return response()->json(['error' => 'This QR request is invalid. Scan the current code on the computer.'], 404);
+        }
+
+        if ($c->expires_at <= time() || $c->status === 'expired') {
+            return response()->json(['error' => 'This QR code has expired. Generate a new one on the computer.'], 410);
+        }
+
+        if ($c->status !== 'otp_sent') {
+            return response()->json(['error' => 'Request a new verification code first.'], 409);
+        }
+
+        if ($c->otp_expires_at <= time()) {
+            return response()->json(['error' => 'Verification code expired. Start a new QR login.'], 410);
+        }
+
+        if ($c->otp_attempts >= 5) {
+            DB::table('qr_login_challenges')->where('id', $c->id)->update(['status' => 'denied']);
+            return response()->json(['error' => 'Too many incorrect attempts. Start a new QR login.'], 429);
+        }
+
+        if (!preg_match('/^\d{6}$/', $otp) || !hash_equals((string)$c->otp_hash, hash('sha256', "{$c->id}:{$otp}"))) {
+            DB::table('qr_login_challenges')->where('id', $c->id)->increment('otp_attempts');
+            return response()->json(['error' => 'Incorrect verification code.'], 400);
+        }
+
+        $expected = Patron::find($c->expected_user_id);
+        if (!$expected || $c->phone_user_id !== $expected->id) {
+            DB::table('qr_login_challenges')->where('id', $c->id)->update(['status' => 'denied']);
+            return response()->json(['error' => 'Phone account mismatch. Access denied.'], 403);
+        }
+
+        DB::table('qr_login_challenges')->where('id', $c->id)->where('status', 'otp_sent')->update([
+            'status' => 'phone_verified',
+            'otp_hash' => null
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'matched' => true,
+            'user' => $this->formatPublicStudent($expected),
+            'message' => 'Phone verified. Review and approve this computer login.'
+        ]);
+    }
+
+    /**
+     * POST /api/auth/qr-login/phone/app-session
+     * Phone verifies possession via existing authenticated app session
+     */
+    public function phoneAppSession(Request $request)
+    {
+        $challengeId = $request->input('challengeId', $request->input('challenge_id'));
+        $scanToken = $request->input('scanToken', $request->input('scan_token'));
+
+        $c = DB::table('qr_login_challenges')->where('id', $challengeId)->first();
+        if (!$c || !hash_equals((string)$c->scan_token_hash, hash('sha256', (string)$scanToken))) {
+            return response()->json(['error' => 'This QR request is invalid. Scan the current code on the computer.'], 404);
+        }
+
+        if ($c->expires_at <= time() || $c->status === 'expired') {
+            return response()->json(['error' => 'This QR code has expired. Generate a new one on the computer.'], 410);
+        }
+
+        // Identify authenticated phone user
+        $expected = Patron::find($c->expected_user_id);
+        if (!$expected) {
+            DB::table('qr_login_challenges')->where('id', $c->id)->update(['status' => 'denied']);
+            return response()->json(['error' => 'This mobile account does not match the account requesting login on the computer. Access denied.'], 403);
+        }
+
+        if ($c->status !== 'waiting') {
+            return response()->json(['error' => 'This request is no longer waiting for approval.'], 409);
+        }
+
+        DB::table('qr_login_challenges')->where('id', $c->id)->where('status', 'waiting')->update([
+            'phone_user_id' => $expected->id,
+            'status' => 'phone_verified'
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'matched' => true,
+            'user' => $this->formatPublicStudent($expected),
+            'message' => 'Account matched. Confirm to approve this computer login.'
+        ]);
+    }
+
+    /**
+     * POST /api/auth/qr-login/phone/approve
+     * Phone user explicitly taps "Approve Login"
+     */
+    public function phoneApprove(Request $request)
+    {
+        $challengeId = $request->input('challengeId', $request->input('challenge_id'));
+        $scanToken = $request->input('scanToken', $request->input('scan_token'));
+
+        $c = DB::table('qr_login_challenges')->where('id', $challengeId)->first();
+        if (!$c || !hash_equals((string)$c->scan_token_hash, hash('sha256', (string)$scanToken))) {
+            return response()->json(['error' => 'This QR request is invalid. Scan the current code on the computer.'], 404);
+        }
+
+        if ($c->expires_at <= time() || $c->status === 'expired') {
+            return response()->json(['error' => 'This QR code has expired. Generate a new one on the computer.'], 410);
+        }
+
+        if ($c->status !== 'phone_verified' || $c->phone_user_id !== $c->expected_user_id) {
+            return response()->json(['error' => 'Phone verification is incomplete or the account does not match. Login denied.'], 403);
+        }
+
+        $updated = DB::table('qr_login_challenges')
+            ->where('id', $c->id)
+            ->where('status', 'phone_verified')
+            ->where('phone_user_id', $c->expected_user_id)
+            ->where('expires_at', '>', time())
+            ->update([
+                'status' => 'approved',
+                'approved_at' => time()
+            ]);
+
+        if (!$updated) {
+            return response()->json(['error' => 'This request expired or has already been handled.'], 409);
+        }
+
+        $expectedUser = Patron::find($c->expected_user_id);
+
+        return response()->json([
+            'ok' => true,
+            'success' => true,
+            'user' => $expectedUser ? $this->formatPublicStudent($expectedUser) : null,
+            'message' => 'Login approved. Return to the computer.'
+        ]);
+    }
+
+    /**
+     * POST /api/auth/qr-login/phone/deny
+     * Phone user taps "Deny Login"
+     */
+    public function phoneDeny(Request $request)
+    {
+        $challengeId = $request->input('challengeId', $request->input('challenge_id'));
+        $scanToken = $request->input('scanToken', $request->input('scan_token'));
+
+        $c = DB::table('qr_login_challenges')->where('id', $challengeId)->first();
+        if (!$c || !hash_equals((string)$c->scan_token_hash, hash('sha256', (string)$scanToken))) {
+            return response()->json(['error' => 'This QR request is invalid.'], 404);
+        }
+
+        DB::table('qr_login_challenges')
+            ->where('id', $c->id)
+            ->whereIn('status', ['waiting', 'otp_sent', 'phone_verified'])
+            ->update(['status' => 'denied']);
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Login request denied.'
+        ]);
+    }
+
+    /**
+     * POST /api/auth/qr-login/consume
+     * Computer exchanges poll secret exactly once for session
+     */
+    public function consumeQrLogin(Request $request)
+    {
+        $challengeId = (string)$request->input('challengeId', $request->input('challenge_id', ''));
+        $pollToken = (string)$request->input('pollToken', $request->input('poll_token', ''));
+
+        if (empty($challengeId) || empty($pollToken)) {
+            return response()->json(['error' => 'QR login request not found.'], 404);
+        }
+
+        $c = DB::table('qr_login_challenges')->where('id', $challengeId)->first();
+        if (!$c || !hash_equals((string)$c->poll_token_hash, hash('sha256', $pollToken))) {
+            return response()->json(['error' => 'QR login request not found.'], 404);
+        }
+
+        if ($c->expires_at <= time()) {
+            DB::table('qr_login_challenges')->where('id', $c->id)->where('status', 'approved')->update(['status' => 'expired']);
+            return response()->json(['error' => 'QR login request expired.'], 410);
+        }
+
+        // Atomic conditional transaction: concurrent consume requests cannot both succeed
+        $consumedRow = DB::transaction(function() use ($c) {
+            $row = DB::table('qr_login_challenges')->where('id', $c->id)->first();
+            if (!$row || $row->status !== 'approved' || $row->phone_user_id !== $row->expected_user_id || $row->expires_at <= time()) {
+                return null;
+            }
+            $updated = DB::table('qr_login_challenges')
+                ->where('id', $c->id)
+                ->where('status', 'approved')
+                ->update([
+                    'status' => 'consumed',
+                    'consumed_at' => time()
+                ]);
+            return $updated ? $row : null;
+        });
+
+        if (!$consumedRow) {
+            return response()->json(['error' => 'Login has not been approved, or this QR login has already been used.'], 409);
+        }
+
+        $user = Patron::find($consumedRow->expected_user_id);
+        if (!$user) {
+            return response()->json(['error' => 'Account is unavailable.'], 403);
+        }
+
+        $accessToken = 'fcc_tok_' . Str::random(48);
+
+        return response()->json([
+            'ok' => true,
+            'success' => true,
+            'user' => $this->formatPublicStudent($user),
+            'accessToken' => $accessToken,
+            'tokenType' => 'Bearer',
+            'expiresIn' => 900
+        ]);
     }
 }

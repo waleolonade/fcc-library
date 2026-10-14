@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { Barcode, CheckCircle2, AlertTriangle, X, BookOpen, MapPin, Printer, ArrowRight } from 'lucide-react';
-import { BarcodeSvg, QrCodeSvg } from './BarcodeQrStudio';
-import { sounds } from '../utils/soundEffects';
+import { AlertTriangle, ArrowRight, Barcode, Printer, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { navigateTo } from '../utils/router';
+import { sounds } from '../utils/soundEffects';
+import { BarcodeSvg } from './BarcodeQrStudio';
 
 /**
  * Global Hardware Barcode Wedge Scanner Listener & Copy Identification Engine

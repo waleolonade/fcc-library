@@ -768,6 +768,29 @@ export default function StudentResearchHub({
       {/* 5. SUB-TAB 2: RESEARCH PAPERS (OPEN ACCESS & CROSSREF) */}
       {subTab === 'papers' && (
         <div className="space-y-4">
+          {/* Prominent OpenAlex Dedicated Gateway Banner */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-teal-950/80 via-slate-900 to-indigo-950/80 border border-teal-600/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-xs font-mono font-bold text-teal-300">OPENALEX SCIENTIFIC GRAPH GATEWAY</span>
+              </div>
+              <h4 className="text-sm sm:text-base font-bold text-white">
+                Live OpenAlex Institutional Search & Database Cache
+              </h4>
+              <p className="text-xs text-slate-300">
+                Search 250M+ global works, reconstruct abstracts, and bookmark papers into the library database.
+              </p>
+            </div>
+            <a
+              href="#/scholar/library_openalex"
+              className="px-4 py-2 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 shadow-md shadow-teal-950 shrink-0 active:scale-95"
+            >
+              <span>Launch OpenAlex Explorer</span>
+              <span>→</span>
+            </a>
+          </div>
+
           <div className="flex items-center justify-between text-xs text-slate-400 px-1">
             <span>Peer-Reviewed Open Access Research Papers (OpenAlex Index)</span>
             <span className="font-mono text-indigo-400">Live Scholarly Harvesting</span>

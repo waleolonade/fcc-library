@@ -52,10 +52,20 @@ function setStored(key, data, eventType) {
   }
 }
 
+// Universal API Base Resolver for XAMPP Apache, LAN, and Vite Dev Server
+export function getApiBase() {
+  if (typeof window !== 'undefined' && window.location.pathname.includes('/fcclibrary')) {
+    const root = window.location.pathname.substring(0, window.location.pathname.indexOf('/fcclibrary') + '/fcclibrary'.length);
+    return `${root}/backend/public/api`;
+  }
+  return '/api';
+}
+
 // Resilient Fetch Helper for SQL API
 async function fetchApi(endpoint, options = {}) {
   try {
-    const res = await fetch(`/api${endpoint}`, {
+    const base = getApiBase();
+    const res = await fetch(`${base}${endpoint}`, {
       headers: {
         'Content-Type': 'application/json',
         ...(options.headers || {})

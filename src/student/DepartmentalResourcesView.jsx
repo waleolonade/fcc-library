@@ -3,6 +3,7 @@ import {
   GraduationCap, BookOpen, Download, Eye, FileText, Search,
   CheckCircle, Sparkles, Filter, ExternalLink, ShieldAlert, Tag, MapPin, User, X
 } from 'lucide-react';
+import { getBookCoverUrl, DEFAULT_BOOK_COVER, OFFLINE_BOOK_COVER_SVG } from '../utils/bookCoverResolver';
 
 export default function DepartmentalResourcesView({ user, onOpenReader }) {
   const [uploads, setUploads] = useState([]);
@@ -231,28 +232,20 @@ export default function DepartmentalResourcesView({ user, onOpenReader }) {
                 <div className="flex flex-col sm:flex-row gap-3.5 items-start">
                   {/* FRONT COVER ARTWORK CANVAS */}
                   <div className="w-20 sm:w-24 h-28 sm:h-32 rounded-xl overflow-hidden shrink-0 relative shadow-xl shadow-black/60 border border-slate-700/80 bg-slate-950 group-hover:border-teal-500/60 transition self-center sm:self-start">
-                    {item.cover_image || item.coverImage ? (
-                      <img
-                        src={item.cover_image || item.coverImage}
-                        alt={`Cover of ${item.title}`}
-                        className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                      />
-                    ) : (
-                      <div className="w-full h-full p-2 flex flex-col justify-between text-left relative overflow-hidden bg-gradient-to-br from-teal-950 via-slate-900 to-black">
-                        <div className="space-y-1 relative z-10">
-                          <div className="text-[7px] font-mono font-bold tracking-wider uppercase text-teal-400 truncate">
-                            FCC • {item.department_name || 'DEPT'}
-                          </div>
-                          <div className="h-0.5 w-3 bg-teal-400 rounded-full" />
-                          <h4 className="text-[8.5px] font-bold text-white line-clamp-3 leading-snug font-serif">
-                            {item.title}
-                          </h4>
-                        </div>
-                        <div className="relative z-10 text-[7px] text-slate-300 font-mono truncate">
-                          {item.author}
-                        </div>
-                      </div>
-                    )}
+                    <img
+                      src={getBookCoverUrl(item)}
+                      alt={`Cover of ${item.title}`}
+                      onError={(e) => {
+                        if (e.currentTarget.src !== DEFAULT_BOOK_COVER && e.currentTarget.src !== OFFLINE_BOOK_COVER_SVG) {
+                          e.currentTarget.src = DEFAULT_BOOK_COVER;
+                        } else {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = OFFLINE_BOOK_COVER_SVG;
+                        }
+                      }}
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                      loading="lazy"
+                    />
                     {/* Spine overlay */}
                     <div className="absolute top-0 bottom-0 left-0 w-2 bg-gradient-to-r from-black/70 to-transparent pointer-events-none" />
                     {/* Sheen */}
