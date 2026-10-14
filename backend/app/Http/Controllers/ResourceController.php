@@ -44,7 +44,13 @@ class ResourceController extends Controller
         $page = max(1, (int)$request->query('page', 1));
         $offset = ($page - 1) * $limit;
 
-        $query = DB::table('books');
+        $query = DB::table('books')->select([
+            'id', 'title', 'subtitle', 'author', 'author_credentials', 'author_affiliation',
+            'subject', 'department', 'course_code', 'target_level', 'branch', 'shelf_location',
+            'call_number', 'isbn', 'publisher', 'year', 'edition', 'pdf_pages', 'file_size',
+            'file_name', 'external_url', 'is_digital', 'copies_total', 'copies_available',
+            'uploaded_at', 'uploaded_by', 'status', 'rating', 'citations', 'cover_image'
+        ]);
 
         // 1. Text Search Filter with Multi-field support
         if (!empty($q)) {

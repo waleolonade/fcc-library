@@ -27,12 +27,15 @@ class Book extends Model
         'rating' => 'float',
     ];
 
+    protected $hidden = [
+        'file_data_url',
+    ];
+
     protected $appends = [
         'isDigital',
         'pdfPages',
         'fileSize',
         'fileName',
-        'fileDataUrl',
         'externalUrl',
         'authorCredentials',
         'authorAffiliation',
@@ -57,7 +60,7 @@ class Book extends Model
     public function getPdfPagesAttribute() { return (int) ($this->attributes['pdf_pages'] ?? 0); }
     public function getFileSizeAttribute() { return $this->attributes['file_size'] ?? null; }
     public function getFileNameAttribute() { return $this->attributes['file_name'] ?? null; }
-    public function getFileDataUrlAttribute() { return $this->attributes['file_data_url'] ?? null; }
+    public function getFileDataUrlAttribute() { return ''; }
     public function getExternalUrlAttribute() { return $this->attributes['external_url'] ?? null; }
     public function getAuthorCredentialsAttribute() { return $this->attributes['author_credentials'] ?? null; }
     public function getAuthorAffiliationAttribute() { return $this->attributes['author_affiliation'] ?? null; }

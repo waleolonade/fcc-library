@@ -306,4 +306,175 @@ class LibrarySystemController extends Controller
             'timestamp' => Carbon::now()->toIso8601String()
         ]);
     }
+
+    // -------------------------------------------------------------
+    // Continue Reading Progress
+    // -------------------------------------------------------------
+    public function getContinueReading(Request $request)
+    {
+        $matric = $request->query('matric', '');
+        $query = DB::table('continue_reading');
+        if (!empty($matric)) {
+            $query->where('matric', 'like', "%{$matric}%");
+        }
+        $records = $query->orderBy('updated_at', 'desc')->get();
+        return response()->json($records);
+    }
+
+    public function saveContinueReading(Request $request)
+    {
+        $matric = $request->input('matric', 'FCC/CSC/2026/409');
+        $bookId = $request->input('book_id', $request->input('bookId'));
+        $page = (int)$request->input('page', 1);
+        $totalPages = (int)$request->input('totalPages', $request->input('total_pages', 100));
+        $title = $request->input('title', 'Unknown Title');
+        $author = $request->input('author', 'Unknown Author');
+        $progress = $totalPages > 0 ? (int)round(($page / $totalPages) * 100) : 0;
+
+        $id = "CR-" . substr(md5($matric . $bookId), 0, 12);
+
+        DB::table('continue_reading')->updateOrInsert(
+            ['matric' => $matric, 'book_id' => $bookId],
+            [
+                'id' => $id,
+                'title' => $title,
+                'author' => $author,
+                'last_page' => $page,
+                'total_pages' => $totalPages,
+                'progress' => $progress,
+                'last_opened' => Carbon::now()->toIso8601String(),
+                'updated_at' => Carbon::now(),
+            ]
+        );
+
+        $record = DB::table('continue_reading')->where('matric', $matric)->where('book_id', $bookId)->first();
+        return response()->json(['success' => true, 'record' => $record]);
+    }
+
+    // -------------------------------------------------------------
+    // Room Bookings
+    // -------------------------------------------------------------
+    public function getRoomBookings(Request $request)
+    {
+        $matric = $request->query('matric');
+        $query = DB::table('room_bookings');
+        if (!empty($matric)) {
+            $query->where('matric', 'like', "%{$matric}%");
+        }
+        $bookings = $query->orderBy('date', 'desc')->get();
+        return response()->json($bookings);
+    }
+
+    public function saveRoomBooking(Request $request)
+    {
+        $id = 'RB-' . strtoupper(Str::random(8));
+        $matric = $request->input('matric', 'FCC/CSC/2026/409');
+        $roomId = $request->input('roomId', $request->input('room_id', 'ROOM-01'));
+        $roomName = $request->input('roomName', $request->input('room_name', 'Research Carrel 1'));
+        $date = $request->input('date', date('Y-m-d'));
+        $timeSlot = $request->input('timeSlot', $request->input('time_slot', '10:00 AM - 12:00 PM'));
+
+        DB::table('room_bookings')->insert([
+            'id' => $id,
+            'matric' => $matric,
+            'room_id' => $roomId,
+            'room_name' => $roomName,
+            'branch' => $request->input('branch', 'Main Campus Library'),
+            'date' => $date,
+            'time_slot' => $timeSlot,
+            'duration_hours' => (int)$request->input('duration', 2),
+            'purpose' => $request->input('purpose', 'Academic Research & Study'),
+            'status' => 'Confirmed',
+            'check_in_code' => strtoupper(Str::random(6)),
+            'created_at' => Carbon::now(),
+        ]);
+
+        $booking = DB::table('room_bookings')->where('id', $id)->first();
+        return response()->json(['success' => true, 'booking' => $booking], 201);
+    }
+
+    public function cancelRoomBooking($id)
+    {
+        DB::table('room_bookings')->where('id', $id)->update(['status' => 'Cancelled']);
+        return response()->json(['success' => true, 'message' => "Booking {$id} cancelled."]);
+    }
+
+    // -------------------------------------------------------------
+    // Reading Lists
+    // -------------------------------------------------------------
+    public function getReadingLists(Request $request)
+    {
+        $matric = $request->query('matric');
+        $query = DB::table('reading_lists');
+        if (!empty($matric)) {
+            $query->where('matric', 'like', "%{$matric}%");
+        }
+        $lists = $query->orderBy('created_at', 'desc')->get()->map(function ($l) {
+            $l->items = is_string($l->items) ? json_decode($l->items, true) : ($l->items ?: []);
+            return $l;
+        });
+        return response()->json($lists);
+    }
+
+    public function saveReadingList(Request $request)
+    {
+        $id = 'LIST-' . strtoupper(Str::random(8));
+        $matric = $request->input('matric', 'FCC/CSC/2026/409');
+        $title = $request->input('title', 'My Syllabus Reading List');
+        $items = $request->input('items', []);
+
+        DB::table('reading_lists')->insert([
+            'id' => $id,
+            'matric' => $matric,
+            'title' => $title,
+            'description' => $request->input('description', ''),
+            'is_public' => $request->boolean('is_public') ? 1 : 0,
+            'item_count' => count($items),
+            'items' => json_encode($items),
+            'created_at' => Carbon::now(),
+            'updated_at' => Carbon::now(),
+        ]);
+
+        $list = DB::table('reading_lists')->where('id', $id)->first();
+        if ($list) {
+            $list->items = json_decode($list->items, true);
+        }
+        return response()->json(['success' => true, 'list' => $list], 201);
+    }
+
+    public function deleteReadingList($id)
+    {
+        DB::table('reading_lists')->where('id', $id)->delete();
+        DB::table('reading_list_items')->where('reading_list_id', $id)->delete();
+        return response()->json(['success' => true, 'message' => "Reading list {$id} deleted."]);
+    }
+
+    // -------------------------------------------------------------
+    // Notifications & Announcements
+    // -------------------------------------------------------------
+    public function getNotifications(Request $request)
+    {
+        $matric = $request->query('matric');
+        $query = DB::table('notifications');
+        if (!empty($matric)) {
+            $query->where('matric', 'like', "%{$matric}%");
+        }
+        $notifications = $query->orderBy('date', 'desc')->get();
+        return response()->json($notifications);
+    }
+
+    public function getAnnouncements()
+    {
+        $announcements = DB::table('announcements')->orderBy('date', 'desc')->get();
+        return response()->json($announcements);
+    }
+
+    public function getDigitalResources()
+    {
+        $res = DB::table('digital_resources')
+            ->join('books', 'digital_resources.book_id', '=', 'books.id')
+            ->select('digital_resources.*', 'books.title', 'books.author', 'books.cover_image')
+            ->get();
+        return response()->json($res);
+    }
 }

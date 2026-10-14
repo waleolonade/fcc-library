@@ -213,6 +213,9 @@ Route::patch('/rbac/users/{id}/role', [PolicyController::class, 'updateUserRole'
 
 // 6. Backward Compatibility Catalog API
 Route::get('/catalog', [CatalogController::class, 'index']);
+Route::get('/catalog/categories', [CatalogController::class, 'categories']);
+Route::get('/catalog/departments', [CatalogController::class, 'departments']);
+Route::get('/catalog/locations', [CatalogController::class, 'locations']);
 Route::get('/catalog/lookup-isbn', [CatalogController::class, 'lookupIsbn']);
 Route::get('/catalog/{id}/file', [CatalogController::class, 'file']);
 Route::get('/catalog/{id}', [CatalogController::class, 'show']);
@@ -263,6 +266,48 @@ Route::delete('/theses/{id}', [ThesisController::class, 'destroy']);
 Route::get('/course-reserves', [\App\Http\Controllers\Api\CourseReserveController::class, 'index']);
 Route::post('/course-reserves', [\App\Http\Controllers\Api\CourseReserveController::class, 'store']);
 Route::delete('/course-reserves/{id}', [\App\Http\Controllers\Api\CourseReserveController::class, 'destroy']);
+
+// System Health & Diagnostics
+Route::get('/health', [LibrarySystemController::class, 'health']);
+Route::get('/system/health', [LibrarySystemController::class, 'health']);
+Route::get('/system/status', [LibrarySystemController::class, 'health']);
+
+// Physical Copy Inventory & Barcode Scanner Tracking
+Route::prefix('copies')->group(function () {
+    Route::get('/', [CopiesBarcodeController::class, 'index']);
+    Route::get('/stats', [CopiesBarcodeController::class, 'stats']);
+    Route::get('/barcode/{barcode}', [CopiesBarcodeController::class, 'lookupBarcode'])->where('barcode', '.*');
+    Route::get('/book/{bookId}', [CopiesBarcodeController::class, 'byBook']);
+    Route::post('/generate', [CopiesBarcodeController::class, 'generateCopies']);
+    Route::post('/', [CopiesBarcodeController::class, 'store']);
+    Route::put('/{id}', [CopiesBarcodeController::class, 'update']);
+    Route::delete('/{id}', [CopiesBarcodeController::class, 'destroy']);
+});
+Route::get('/barcode/lookup', function (\Illuminate\Http\Request $request) {
+    $barcode = $request->query('barcode', $request->query('code', ''));
+    return app(CopiesBarcodeController::class)->lookupBarcode($barcode);
+});
+Route::get('/barcode/lookup/{barcode}', [CopiesBarcodeController::class, 'lookupBarcode'])->where('barcode', '.*');
+
+// Student Continue Reading Progress
+Route::get('/continue-reading', [LibrarySystemController::class, 'getContinueReading']);
+Route::post('/continue-reading', [LibrarySystemController::class, 'saveContinueReading']);
+
+// Student Reading Lists
+Route::get('/reading-lists', [LibrarySystemController::class, 'getReadingLists']);
+Route::post('/reading-lists', [LibrarySystemController::class, 'saveReadingList']);
+Route::delete('/reading-lists/{id}', [LibrarySystemController::class, 'deleteReadingList']);
+
+// Study Room Bookings
+Route::get('/room-bookings', [LibrarySystemController::class, 'getRoomBookings']);
+Route::post('/room-bookings', [LibrarySystemController::class, 'saveRoomBooking']);
+Route::delete('/room-bookings/{id}', [LibrarySystemController::class, 'cancelRoomBooking']);
+
+// Notifications & Institutional Announcements
+Route::get('/notifications', [LibrarySystemController::class, 'getNotifications']);
+Route::get('/announcements', [LibrarySystemController::class, 'getAnnouncements']);
+Route::get('/digital-resources', [LibrarySystemController::class, 'getDigitalResources']);
+Route::get('/digital/materials', [LibrarySystemController::class, 'getDigitalResources']);
 
 // 10. Consortia, Serials, Study Rooms & Facilities API
 Route::get('/partner-libraries', [LibrarySystemController::class, 'getPartnerLibrariesFull']);

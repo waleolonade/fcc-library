@@ -590,5 +590,38 @@ class CatalogController extends Controller
             'favorites' => $allFavorites
         ]);
     }
+
+    public function categories()
+    {
+        $categories = Book::select('subject')
+            ->whereNotNull('subject')
+            ->distinct()
+            ->pluck('subject')
+            ->filter()
+            ->values();
+        return response()->json($categories);
+    }
+
+    public function departments()
+    {
+        $departments = Book::select('department')
+            ->whereNotNull('department')
+            ->distinct()
+            ->pluck('department')
+            ->filter()
+            ->values();
+        return response()->json($departments);
+    }
+
+    public function locations()
+    {
+        $locations = Book::select('branch')
+            ->whereNotNull('branch')
+            ->distinct()
+            ->pluck('branch')
+            ->filter()
+            ->values();
+        return response()->json($locations);
+    }
 }
 
