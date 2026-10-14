@@ -1,0 +1,26 @@
+# =========================================================================
+# Netlify Configuration for FCC Smart Library Platform
+# =========================================================================
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Redirect rules for Multi-Page SPA entry points
+[[redirects]]
+  from = "/student/*"
+  to = "/student.html"
+  status = 200
+
+[[redirects]]
+  from = "/admin/*"
+  to = "/admin.html"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
