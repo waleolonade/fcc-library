@@ -291,7 +291,7 @@ export default function AdminLogin({ onLogin }) {
                       value={adminEmail}
                       onChange={(e) => setAdminEmail(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:bg-white font-mono transition shadow-inner"
-                      placeholder="admin@****** or chief_librarian"
+                      placeholder="admin@****** or chief_*****"
                     />
                   </div>
                 </div>

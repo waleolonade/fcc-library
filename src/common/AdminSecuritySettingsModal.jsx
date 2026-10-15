@@ -272,7 +272,7 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
                   disabled={isLocked}
                   value={username}
                   onChange={e => setUsername(e.target.value)}
-                  placeholder="e.g. chief_librarian"
+                  placeholder="e.g. chief_****"
                   className="w-full bg-[#030913] border border-slate-700 rounded-xl px-3.5 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>
