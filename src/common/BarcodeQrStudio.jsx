@@ -54,8 +54,16 @@ export function BarcodeSvg({ value, height = 48, className = "", showLabel = tru
 
 import { generateRealQrMatrix } from './realQrGenerator';
 
-// Real ISO/IEC 18004 Standard QR Code Matrix SVG generator
-export function QrCodeSvg({ value, size = 120, className = "", quietZone = 2 }) {
+// Real ISO/IEC 18004 Standard QR Code Matrix SVG generator with optional Center Crest Logo
+export function QrCodeSvg({
+  value,
+  size = 120,
+  className = "",
+  quietZone = 2,
+  logo = null,
+  showLogo = Boolean(logo),
+  logoRatio = 0.22
+}) {
   const text = String(value || 'FCC-LIBRARY-TOKEN');
 
   const rawMatrix = React.useMemo(() => {
@@ -73,6 +81,8 @@ export function QrCodeSvg({ value, size = 120, className = "", quietZone = 2 }) 
 
   const moduleCount = rawMatrix.length;
   const totalSize = moduleCount + quietZone * 2;
+  const center = totalSize / 2;
+  const logoBoxSize = Math.max(5, Math.round(moduleCount * logoRatio));
 
   return (
     <svg
@@ -99,6 +109,29 @@ export function QrCodeSvg({ value, size = 120, className = "", quietZone = 2 }) 
             />
           ) : null
         )
+      )}
+      {/* School Crest Logo Embedded in the Middle of QR Code */}
+      {(showLogo && logo) && (
+        <g>
+          <rect
+            x={center - logoBoxSize / 2}
+            y={center - logoBoxSize / 2}
+            width={logoBoxSize}
+            height={logoBoxSize}
+            rx={logoBoxSize * 0.22}
+            fill="#ffffff"
+            stroke="#059669"
+            strokeWidth="0.5"
+          />
+          <image
+            href={logo}
+            x={center - (logoBoxSize * 0.82) / 2}
+            y={center - (logoBoxSize * 0.82) / 2}
+            width={logoBoxSize * 0.82}
+            height={logoBoxSize * 0.82}
+            preserveAspectRatio="xMidYMid meet"
+          />
+        </g>
       )}
     </svg>
   );

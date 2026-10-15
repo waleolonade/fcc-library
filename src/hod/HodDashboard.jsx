@@ -19,6 +19,7 @@ import { PATTERNS } from '../utils/backgroundPatterns';
 import { departmentService } from '../services/departmentService';
 import { sounds } from '../utils/soundEffects';
 import { HOD_DIRECTORY } from '../auth/HodLogin';
+import { institutionalConfigService } from '../services/institutionalConfigService';
 
 export const HOD_DEPARTMENT_THEMES = {
   CSC: {
@@ -278,6 +279,57 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
     };
   }, [departments, currentDeptCode]);
 
+  // Institutional Parameters & Delegation State
+  const [instConfig, setInstConfig] = useState(() => institutionalConfigService.getInstitution());
+  const [instPerms, setInstPerms] = useState(() => institutionalConfigService.getPermissions());
+  const [instSaving, setInstSaving] = useState(false);
+  const [instMsg, setInstMsg] = useState('');
+
+  useEffect(() => {
+    const handleInstSync = (e) => {
+      if (e.detail?.institution) setInstConfig(e.detail.institution);
+      if (e.detail?.permissions) setInstPerms(e.detail.permissions);
+    };
+    window.addEventListener('fcc-institution-updated', handleInstSync);
+    institutionalConfigService.fetchFromApi().then(res => {
+      if (res?.institution) setInstConfig(res.institution);
+      if (res?.permissions) setInstPerms(res.permissions);
+    });
+    return () => window.removeEventListener('fcc-institution-updated', handleInstSync);
+  }, []);
+
+  const isDeptAllowedInst = useMemo(() => {
+    const code = (currentDept?.code || '').toUpperCase();
+    const allowed = (instPerms?.allowed_hod_depts || []).map(d => (d || '').toUpperCase());
+    return allowed.includes(code);
+  }, [currentDept, instPerms]);
+
+  const handleSaveHodInst = async (e) => {
+    if (e) e.preventDefault();
+    if (!isDeptAllowedInst) return;
+    setInstSaving(true);
+    setInstMsg('');
+    sounds.playClick();
+    try {
+      const res = await institutionalConfigService.saveInstitution(
+        instConfig,
+        currentDept.hod_name || currentDept.hod || 'HOD',
+        'hod',
+        currentDept.code
+      );
+      if (res.success) {
+        sounds.playSuccessChime();
+        setInstMsg('Academic session & campus hours updated successfully and broadcast across the college!');
+        setTimeout(() => setInstMsg(''), 5000);
+      }
+    } catch (err) {
+      sounds.playErrorBuzz();
+      setInstMsg('Failed to update academic session.');
+    } finally {
+      setInstSaving(false);
+    }
+  };
+
   // Active Tab
   // 'overview' | 'courses' | 'upload' | 'submissions' | 'dissertations' | 'reserves' | 'scholars' | 'communication' | 'settings'
   const [activeTab, setActiveTab] = useState('overview');
@@ -340,12 +392,19 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
 
   // Settings profile form
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMsg, setProfileMsg] = useState({ type: '', text: '' });
+  const [profileLocked, setProfileLocked] = useState(false);
+  const [profileLockedUntil, setProfileLockedUntil] = useState(null);
+  const [profileDaysRemaining, setProfileDaysRemaining] = useState(0);
+  const [showHodPass, setShowHodPass] = useState(false);
   const [profileForm, setProfileForm] = useState({
     hod: '',
     hodEmail: '',
     hodPhone: '',
     office: 'Block B, Room 14 (Faculty Annex)',
-    consultationHours: 'Tuesdays & Thursdays, 10:00 AM - 2:00 PM'
+    consultationHours: 'Tuesdays & Thursdays, 10:00 AM - 2:00 PM',
+    password: ''
   });
 
   // Quick Book/PDF Upload State (Directly on Overview Page)
@@ -526,8 +585,11 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
         hodEmail: currentDept.hod_email || currentDept.hodEmail || '',
         hodPhone: currentDept.hodPhone || '+234 803 234 5678',
         office: 'Block B, Room 14 (Faculty Annex)',
-        consultationHours: 'Tuesdays & Thursdays, 10:00 AM - 2:00 PM'
+        consultationHours: 'Tuesdays & Thursdays, 10:00 AM - 2:00 PM',
+        password: ''
       });
+
+      checkHodProfileLock(currentDept.code);
 
       setQuickUploadForm(prev => ({
         ...prev,
@@ -536,6 +598,93 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
       }));
     }
   }, [currentDept?.id, currentDept?.code]);
+
+  const checkHodProfileLock = async (code) => {
+    try {
+      const deptCode = code || currentDept?.code;
+      if (!deptCode) return;
+      const res = await fetch(`/api/admin/profile?dept_code=${encodeURIComponent(deptCode)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setProfileLocked(Boolean(data.is_locked));
+        setProfileLockedUntil(data.profile_locked_until || null);
+        setProfileDaysRemaining(data.days_remaining || 0);
+      }
+    } catch (e) {}
+  };
+
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    setProfileMsg({ type: '', text: '' });
+
+    if (profileLocked) {
+      setProfileMsg({
+        type: 'error',
+        text: `Security Lock Active: Under institutional policy, credential updates are restricted to once every 30 days (${profileDaysRemaining} days left). Contact Master Developer at #/developer to override.`
+      });
+      sounds.playErrorBuzz();
+      return;
+    }
+
+    setProfileSaving(true);
+    sounds.playClick();
+
+    try {
+      const payload = {
+        name: profileForm.hod.trim(),
+        email: profileForm.hodEmail.trim().toLowerCase(),
+        phone: profileForm.hodPhone.trim(),
+        designation: `Head of Department (${currentDept.code})`,
+        dept_code: currentDept.code
+      };
+      if (profileForm.password && profileForm.password.trim()) {
+        payload.password = profileForm.password.trim();
+      }
+
+      const res = await fetch('/api/admin/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        sounds.playSuccessChime();
+        setProfileLocked(true);
+        setProfileLockedUntil(data.profile_locked_until);
+        setProfileDaysRemaining(data.days_remaining || 30);
+        setProfileMsg({
+          type: 'success',
+          text: '✓ Official HOD credentials updated in database! Mandatory 30-day security lock is now active.'
+        });
+
+        // Update local state
+        setCurrentDept(prev => ({
+          ...prev,
+          hod_name: payload.name,
+          hod: payload.name,
+          hod_email: payload.email,
+          hodEmail: payload.email,
+          hodPhone: payload.phone
+        }));
+
+        setTimeout(() => setIsEditingProfile(false), 2200);
+      } else {
+        if (data.is_locked) {
+          setProfileLocked(true);
+          setProfileLockedUntil(data.profile_locked_until);
+          setProfileDaysRemaining(data.days_remaining || 30);
+        }
+        setProfileMsg({ type: 'error', text: data.error || 'Failed to update HOD profile in database.' });
+        sounds.playErrorBuzz();
+      }
+    } catch (err) {
+      setProfileMsg({ type: 'error', text: 'Error connecting to database API.' });
+      sounds.playErrorBuzz();
+    } finally {
+      setProfileSaving(false);
+    }
+  };
 
   // Sync activeTab with URL Hash
   useEffect(() => {
@@ -945,37 +1094,6 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
     }
   };
 
-  // Save HOD Profile in Backend Database
-  const handleSaveProfile = async (e) => {
-    e.preventDefault();
-    try {
-      const deptId = currentDept.id || `DEP-${currentDept.code}`;
-      const res = await fetch(`/api/departments/${deptId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: currentDept.name,
-          code: currentDept.code,
-          hod_name: profileForm.hod,
-          hod_email: profileForm.hodEmail,
-          hod_pin: currentDept.hod_pin || '1234',
-          student_count: Number(scholarsList.length),
-          faculty_count: Number(currentDept.faculty_count || 8)
-        })
-      });
-      if (res.ok) {
-        sounds.playSuccessChime();
-        setIsEditingProfile(false);
-        setSuccessMsg('Department profile & HOD credentials updated in backend database!');
-        setTimeout(() => setSuccessMsg(''), 3500);
-        fetchDepartments();
-      } else {
-        alert('Could not update profile in database.');
-      }
-    } catch (err) {
-      alert('Error updating profile in backend database.');
-    }
-  };
 
   // Filter scholars
   const filteredScholars = scholarsList.filter(s => {
@@ -2886,15 +3004,57 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
 
               {isEditingProfile ? (
                 <form onSubmit={handleSaveProfile} className="p-6 rounded-3xl bg-slate-900 border border-teal-500/50 shadow-2xl space-y-4 text-xs">
-                  <h4 className="text-sm font-bold text-white">Update Official HOD Information (Database)</h4>
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Shield size={16} className="text-teal-400" />
+                      <span>Update Official HOD Information &amp; Password (Database)</span>
+                    </h4>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-950 text-teal-400 border border-slate-700">
+                      SEC-30D-LOCK ENFORCED
+                    </span>
+                  </div>
+
+                  {profileLocked && (
+                    <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/90 via-red-950/80 to-amber-950/90 border-2 border-amber-600/80 text-amber-200 text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 font-bold text-amber-300">
+                          <Lock size={16} className="text-amber-400 shrink-0" />
+                          <span>30-Day Institutional Security Lock Active</span>
+                        </div>
+                        <span className="px-2.5 py-0.5 rounded-full font-mono text-[11px] bg-amber-900/90 text-amber-300 border border-amber-500 font-bold">
+                          {profileDaysRemaining} {profileDaysRemaining === 1 ? 'Day' : 'Days'} Remaining
+                        </span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-amber-200/90">
+                        Under College Security Protocol, HOD credential updates are restricted to once every 30 days. You must wait until <strong className="text-white">{profileLockedUntil ? new Date(profileLockedUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'next month'}</strong> before modifying credentials again.
+                      </p>
+                      <div className="text-[10px] text-amber-300/80 flex items-center justify-between pt-1 border-t border-amber-900/60">
+                        <span>Emergency changes require Developer Override clearance at <code className="text-white bg-black/40 px-1 py-0.5 rounded font-mono">#/developer</code></span>
+                        <span className="font-mono text-amber-400">Rule: 30D-LOCK</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {profileMsg.text && (
+                    <div className={`p-3 rounded-xl text-xs flex items-center gap-2 font-medium ${
+                      profileMsg.type === 'success'
+                        ? 'bg-emerald-950 border border-emerald-500 text-emerald-200'
+                        : 'bg-rose-950 border border-rose-800 text-rose-200'
+                    }`}>
+                      {profileMsg.type === 'success' ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
+                      <span>{profileMsg.text}</span>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block font-semibold text-slate-300 mb-1">Head of Department (HOD) Name *</label>
                       <input
                         type="text"
+                        disabled={profileLocked}
                         value={profileForm.hod}
                         onChange={e => setProfileForm({ ...profileForm, hod: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:border-teal-500 focus:outline-none font-medium"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:border-teal-500 focus:outline-none font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                         required
                       />
                     </div>
@@ -2902,9 +3062,10 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                       <label className="block font-semibold text-slate-300 mb-1">Official Institutional Email *</label>
                       <input
                         type="email"
+                        disabled={profileLocked}
                         value={profileForm.hodEmail}
                         onChange={e => setProfileForm({ ...profileForm, hodEmail: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:border-teal-500 focus:outline-none"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:border-teal-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                         required
                       />
                     </div>
@@ -2912,36 +3073,84 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                       <label className="block font-semibold text-slate-300 mb-1">Official Phone Line</label>
                       <input
                         type="text"
+                        disabled={profileLocked}
                         value={profileForm.hodPhone}
                         onChange={e => setProfileForm({ ...profileForm, hodPhone: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:border-teal-500 focus:outline-none"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:border-teal-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                       />
                     </div>
                     <div>
                       <label className="block font-semibold text-slate-300 mb-1">Office Location</label>
                       <input
                         type="text"
+                        disabled={profileLocked}
                         value={profileForm.office}
                         onChange={e => setProfileForm({ ...profileForm, office: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:border-teal-500 focus:outline-none"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:border-teal-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block font-semibold text-slate-300">
+                          HOD Authorization Password / PIN (Leave blank to keep current)
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowHodPass(!showHodPass)}
+                          className="text-[11px] text-teal-400 hover:text-white cursor-pointer"
+                        >
+                          {showHodPass ? 'Hide' : 'Reveal'}
+                        </button>
+                      </div>
+                      <input
+                        type={showHodPass ? 'text' : 'password'}
+                        disabled={profileLocked}
+                        value={profileForm.password}
+                        onChange={e => setProfileForm({ ...profileForm, password: e.target.value })}
+                        placeholder="Enter new HOD login password/PIN..."
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-teal-300 font-mono focus:border-teal-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                       />
                     </div>
                     <div className="sm:col-span-2">
                       <label className="block font-semibold text-slate-300 mb-1">Consultation Hours</label>
                       <input
                         type="text"
+                        disabled={profileLocked}
                         value={profileForm.consultationHours}
                         onChange={e => setProfileForm({ ...profileForm, consultationHours: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:border-teal-500 focus:outline-none"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:border-teal-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                       />
                     </div>
                   </div>
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button type="button" onClick={() => setIsEditingProfile(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300">
+                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                    <button type="button" onClick={() => setIsEditingProfile(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 cursor-pointer">
                       Cancel
                     </button>
-                    <button type="submit" className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold shadow">
-                      Save Profile Changes to Database
+                    <button
+                      type="submit"
+                      disabled={profileSaving || profileLocked}
+                      className={`px-5 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow transition cursor-pointer ${
+                        profileLocked
+                          ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60'
+                          : 'bg-teal-600 hover:bg-teal-500 text-white'
+                      }`}
+                    >
+                      {profileSaving ? (
+                        <>
+                          <RefreshCw size={13} className="animate-spin" />
+                          <span>Saving to Database...</span>
+                        </>
+                      ) : profileLocked ? (
+                        <>
+                          <Lock size={13} className="text-amber-400" />
+                          <span>Locked for 30 Days ({profileDaysRemaining}d remaining)</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save size={13} />
+                          <span>Save Changes &amp; Sync</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>
@@ -2975,6 +3184,89 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                   </div>
                 </div>
               )}
+
+              {/* INSTITUTIONAL ACADEMIC CALENDAR & HOURS (ASSIGNED HOD CLEARANCE) */}
+              <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                        isDeptAllowedInst
+                          ? 'bg-emerald-950 text-emerald-300 border-emerald-600'
+                          : 'bg-slate-800 text-slate-400 border-slate-700'
+                      }`}>
+                        {isDeptAllowedInst ? '✓ DEVELOPER ASSIGNED HOD AUTHORITY' : 'RESTRICTED CLEARANCE'}
+                      </span>
+                      <span className="text-[11px] text-teal-400 font-mono">export const INSTITUTION</span>
+                    </div>
+                    <h4 className="text-base font-bold text-white mt-1">
+                      Institutional Academic Session &amp; Operating Hours
+                    </h4>
+                    <p className="text-xs text-slate-400 font-sans mt-0.5">
+                      {isDeptAllowedInst
+                        ? 'Your department has been granted developer clearance to modify academic sessions, semesters, and library hours for the institution.'
+                        : 'Modification authority for this module is restricted. The Developer Master Portal (/#/developer) can grant editing privileges to this HOD.'}
+                    </p>
+                  </div>
+
+                  {isDeptAllowedInst && (
+                    <button
+                      type="button"
+                      onClick={handleSaveHodInst}
+                      disabled={instSaving}
+                      className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow transition disabled:opacity-50 cursor-pointer"
+                    >
+                      <Save size={14} />
+                      <span>{instSaving ? 'Saving...' : 'Update College Calendar'}</span>
+                    </button>
+                  )}
+                </div>
+
+                {instMsg && (
+                  <div className="p-3 rounded-xl bg-emerald-950/90 border border-emerald-600 text-emerald-200 text-xs font-bold flex items-center gap-2">
+                    <CheckCircle size={15} />
+                    <span>{instMsg}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1">Current Academic Session</label>
+                    <input
+                      type="text"
+                      disabled={!isDeptAllowedInst}
+                      value={instConfig.currentSession || ''}
+                      onChange={e => setInstConfig({ ...instConfig, currentSession: e.target.value })}
+                      placeholder="2026/2027 Academic Session"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-teal-300 font-bold focus:border-teal-500 focus:outline-none disabled:opacity-50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1">Current Semester</label>
+                    <input
+                      type="text"
+                      disabled={!isDeptAllowedInst}
+                      value={instConfig.currentSemester || ''}
+                      onChange={e => setInstConfig({ ...instConfig, currentSemester: e.target.value })}
+                      placeholder="Second Semester"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-teal-300 font-bold focus:border-teal-500 focus:outline-none disabled:opacity-50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1">Library / Virtual Hub Hours</label>
+                    <input
+                      type="text"
+                      disabled={!isDeptAllowedInst}
+                      value={instConfig.todayHours || ''}
+                      onChange={e => setInstConfig({ ...instConfig, todayHours: e.target.value })}
+                      placeholder="08:00 AM – 08:00 PM (24/7 Virtual Hub)"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:border-teal-500 focus:outline-none disabled:opacity-50"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </main>

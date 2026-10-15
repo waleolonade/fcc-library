@@ -4,17 +4,23 @@
 // All data records are loaded dynamically from the SQLite/Laravel Database
 // =========================================================================
 
-export const INSTITUTION = {
-  name: "Federal Co-operative College, Ibadan",
-  shortName: "FCC Ibadan",
-  motto: "Pioneering Co-operative Excellence & Technological Advancement",
-  established: 1943,
-  campus: "Eleyele, Ibadan, Oyo State, Nigeria",
-  systemVersion: "v4.8-LSP Enterprise (Localhost Edition)",
-  currentSession: "2026/2027 Academic Session",
-  currentSemester: "Second Semester",
-  todayHours: "08:00 AM – 08:00 PM (Extended Exam Hours: 24/7 Virtual Hub)"
-};
+import { institutionalConfigService, DEFAULT_INSTITUTION } from '../services/institutionalConfigService';
+
+export const INSTITUTION = new Proxy(DEFAULT_INSTITUTION, {
+  get(target, prop) {
+    if (typeof window !== 'undefined' && institutionalConfigService) {
+      const current = institutionalConfigService.getInstitution();
+      if (prop in current) {
+        return current[prop];
+      }
+    }
+    return target[prop];
+  },
+  set(target, prop, value) {
+    target[prop] = value;
+    return true;
+  }
+});
 
 // =========================================================================
 // 1. MULTI-BRANCH CAMPUS LIBRARIES CONFIG

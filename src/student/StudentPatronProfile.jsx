@@ -374,42 +374,21 @@ export default function StudentPatronProfile({
                     </div>
                   </div>
 
-                  {/* Install Status & Buttons */}
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        sounds.playSuccessChime();
-                        localStorage.setItem('fcc_mobile_pass_installed', 'true');
-                        localStorage.setItem('fcc_mobile_pass_user', JSON.stringify({ ...user, photo: profilePhoto, phone, email, pin }));
-                        setIsPassInstalledLocally(true);
-                        setInstallSuccessToast(true);
-                        setTimeout(() => setInstallSuccessToast(false), 4000);
-                      }}
-                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-950 flex items-center gap-2 transition cursor-pointer"
-                    >
-                      <Download size={15} />
-                      <span>{isPassInstalledLocally ? 'Pass Installed on This Device ✓' : 'Install Pass to this Phone'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setIsMobilePassModalOpen(true)}
-                      className="px-4 py-2.5 rounded-xl bg-[#032317] hover:bg-emerald-950 border border-emerald-600 text-emerald-300 hover:text-white font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer"
-                    >
-                      <Smartphone size={14} className="text-emerald-400" />
-                      <span>Test Phone QR Dialog</span>
-                    </button>
-                  </div>
-
-                  {installSuccessToast && (
-                    <div className="p-3 rounded-xl bg-emerald-950 border border-emerald-400 text-emerald-200 text-xs flex items-center gap-2 animate-scaleUp">
-                      <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-                      <span>
-                        ✓ Pass installed! Whenever you scan the library QR or if you forget your password, you will be verified with the animated mark and logged in automatically!
-                      </span>
+                  {/* Institutional Mobile Pass Security Clearance */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/70 to-[#032317] border border-emerald-800/80 flex items-center gap-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-900/60 border border-emerald-500/50 flex items-center justify-center text-emerald-300 shrink-0">
+                      <Smartphone size={20} />
                     </div>
-                  )}
+                    <div className="text-xs space-y-0.5">
+                      <div className="font-bold text-emerald-300 flex items-center gap-1.5">
+                        <CheckCircle2 size={14} className="text-emerald-400" />
+                        <span>Official Mobile QR Pass Active</span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        To access the library or authenticate without typing your password, scan the QR code above using your smartphone camera.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

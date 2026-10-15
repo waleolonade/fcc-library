@@ -1,0 +1,51 @@
+{
+  "name": "Federal Co-operative College Smart Library",
+  "short_name": "FCC Library",
+  "description": "Federal Co-operative College, Ibadan - Smart Integrated Library & Digital Repository Services Platform",
+  "id": "/?pwa=true",
+  "start_url": "./#/mobile-pass",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#021810",
+  "theme_color": "#047857",
+  "orientation": "any",
+  "categories": ["education", "books", "productivity"],
+  "icons": [
+    {
+      "src": "./assets/fcc-logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/fcc-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./fcc-logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./fcc-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "FCC Mobile Pass",
+      "url": "./#/mobile-pass",
+      "description": "Digital library pass & workstation authenticator"
+    },
+    {
+      "name": "Library Catalog (OPAC)",
+      "url": "./#/opac",
+      "description": "Search library collection and e-resources"
+    }
+  ]
+}

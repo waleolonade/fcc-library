@@ -1,18 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck, CheckCircle2, Download, Smartphone, AlertTriangle,
-  RefreshCw, Key, User, Phone, Check, ArrowRight, Lock
+  RefreshCw, Key, User, Phone, Check, ArrowRight, Lock, Monitor, Camera, QrCode
 } from 'lucide-react';
 import { sounds } from '../utils/soundEffects';
+import InstitutionalFooter from '../common/InstitutionalFooter';
 
 /**
  * MobilePassVerificationModal
  * Handles the QR code scanning dialog on mobile:
  * 1. Checks if user has already logged in before & if software/pass is installed on this phone.
- *    - IF YES: Shows animated checkmark and immediately logs into user's page.
+ *    - IF YES: Shows animated checkmark and approves workstation (does NOT redirect mobile).
  * 2. IF NO: Pops up dialog to fill in details (Matric, PIN, Phone matching HOD record).
- *    - When matched: Shows animated checkmark, asks user to install pass, and logs in!
+ *    - When matched: Shows animated checkmark, prompts to install pass with official FCC logo,
+ *      and signs in the library computer workstation automatically!
  */
+/** Check if the FCC Pass / App is already installed on this phone */
+export function isAppAlreadyInstalled() {
+  if (typeof window === 'undefined') return false;
+  const isLocalStored = localStorage.getItem('fcc_mobile_pass_installed') === 'true' ||
+                        localStorage.getItem('fcc_app_installed') === 'true' ||
+                        localStorage.getItem('pwa_installed') === 'true';
+  const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+                       (window.matchMedia && window.matchMedia('(display-mode: fullscreen)').matches) ||
+                       (window.matchMedia && window.matchMedia('(display-mode: minimal-ui)').matches);
+  const isIosStandalone = window.navigator && window.navigator.standalone === true;
+  const isAndroidReferrer = typeof document !== 'undefined' && document.referrer && document.referrer.includes('android-app://');
+  return Boolean(isLocalStored || isStandalone || isIosStandalone || isAndroidReferrer || window.__fccAppInstalled);
+}
+
 export default function MobilePassVerificationModal({
   isOpen = true,
   onClose,
@@ -21,7 +37,7 @@ export default function MobilePassVerificationModal({
   scanToken = null,
   prefilledMatric = ''
 }) {
-  const [phase, setPhase] = useState('checking'); // 'checking' | 'installed_verified' | 'fill_details' | 'match_install' | 'logging_in'
+  const [phase, setPhase] = useState('checking'); // 'checking' | 'installed_verified' | 'fill_details' | 'match_install' | 'workstation_approved' | 'logging_in'
   const [matric, setMatric] = useState(prefilledMatric || '');
   const [pin, setPin] = useState('');
   const [phone, setPhone] = useState('');
@@ -48,37 +64,65 @@ export default function MobilePassVerificationModal({
       setError('');
 
       try {
-        const isInstalled = localStorage.getItem('fcc_mobile_pass_installed') === 'true';
+        const isInstalled = isAppAlreadyInstalled();
         const savedPassUser = localStorage.getItem('fcc_mobile_pass_user') || localStorage.getItem('fcc_student_session');
 
         if (isInstalled && savedPassUser) {
           const user = JSON.parse(savedPassUser);
           if (user && (user.matric || user.barcode)) {
             setVerifiedUser(user);
-            setPhase('installed_verified');
-            sounds.playSuccessChime();
 
-            // If a workstation challenge is attached, approve it automatically
+            // If a workstation challenge is attached, approve it automatically for the computer
             if (challengeId && scanToken) {
+              const approvalPayload = {
+                challengeId,
+                scanToken,
+                matric: user.matric || user.barcode,
+                pin: user.pin || '',
+                phone: user.phone || '',
+                passToken: user.passToken || '',
+                isInstalledPass: true
+              };
+
+              let res;
               try {
-                await fetch('/api/auth/qr-login/phone/verify-and-approve', {
+                res = await fetch('/api/auth/qr-login/phone/verify-and-approve', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    challengeId,
-                    scanToken,
-                    matric: user.matric || user.barcode,
-                    pin: user.pin || '1234',
-                    phone: user.phone || '+234 803 456 7890'
-                  })
+                  body: JSON.stringify(approvalPayload)
                 });
-              } catch (e) {}
+              } catch (e) {
+                const directApi = `${window.location.protocol}//${window.location.hostname}:8000/api/auth/qr-login/phone/verify-and-approve`;
+                res = await fetch(directApi, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(approvalPayload)
+                }).catch(() => null);
+              }
+
+              const data = res ? await res.json().catch(() => ({})) : {};
+
+              if (res && res.ok && (data.ok || data.success)) {
+                if (data.passToken) {
+                  user.passToken = data.passToken;
+                  localStorage.setItem('fcc_mobile_pass_user', JSON.stringify(user));
+                }
+                localStorage.setItem('fcc_mobile_pass_installed', 'true');
+                sounds.playSuccessChime();
+                // Keep mobile on confirmation screen alone (do NOT redirect mobile!)
+                setPhase('workstation_approved');
+                return;
+              } else {
+                console.warn('Auto approval returned non-ok:', data.error);
+                setError(data.error || 'Challenge expired or credentials need confirmation. Please confirm your details below.');
+                setPhase('fill_details');
+                return;
+              }
             }
 
-            // Immediately redirect to user's scholar page
-            setTimeout(() => {
-              proceedLogin(user);
-            }, 1400);
+            // Direct standalone mobile pass check -> Display ready pass card
+            sounds.playSuccessChime();
+            setPhase('pass_card');
             return;
           }
         }
@@ -93,6 +137,82 @@ export default function MobilePassVerificationModal({
 
     checkInstalledPass();
   }, [challengeId, scanToken]);
+
+  const approveWorkstationChallenge = async (cId, sTok, user) => {
+    setIsSubmitting(true);
+    setError('');
+    const targetUser = user || verifiedUser || {};
+    const approvalPayload = {
+      challengeId: cId,
+      scanToken: sTok,
+      matric: targetUser.matric || matric || targetUser.barcode,
+      pin: targetUser.pin || '',
+      phone: targetUser.phone || '',
+      passToken: targetUser.passToken || '',
+      isInstalledPass: true
+    };
+
+    let res;
+    try {
+      res = await fetch('/api/auth/qr-login/phone/verify-and-approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(approvalPayload)
+      });
+    } catch (e) {
+      const directApi = `${window.location.protocol}//${window.location.hostname}:8000/api/auth/qr-login/phone/verify-and-approve`;
+      res = await fetch(directApi, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(approvalPayload)
+      }).catch(() => null);
+    }
+
+    setIsSubmitting(false);
+    const data = res ? await res.json().catch(() => ({})) : {};
+
+    if (res && res.ok && (data.ok || data.success)) {
+      if (data.passToken && targetUser) {
+        targetUser.passToken = data.passToken;
+        localStorage.setItem('fcc_mobile_pass_user', JSON.stringify(targetUser));
+      }
+      localStorage.setItem('fcc_mobile_pass_installed', 'true');
+      sounds.playSuccessChime();
+      setPhase('workstation_approved');
+    } else {
+      sounds.playErrorBuzz();
+      setError(data.error || 'Failed to approve computer workstation. Please ensure the computer screen QR code is active.');
+    }
+  };
+
+  const handleQrImageCapture = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try {
+      if ('BarcodeDetector' in window) {
+        const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+        const img = await createImageBitmap(file);
+        const codes = await detector.detect(img);
+        if (codes && codes.length > 0) {
+          const rawUrl = codes[0].rawValue;
+          const matchChallenge = rawUrl.match(/[?&]challenge=([^&#]+)/i);
+          const matchToken = rawUrl.match(/[?&]token=([^&#]+)/i);
+          if (matchChallenge && matchToken) {
+            await approveWorkstationChallenge(
+              decodeURIComponent(matchChallenge[1]),
+              decodeURIComponent(matchToken[1]),
+              verifiedUser
+            );
+            return;
+          }
+        }
+      }
+      setError('Please point your device camera at the QR code displayed on the screen.');
+    } catch (err) {
+      console.warn('Barcode detect error:', err);
+      setError('Please point your phone camera at the screen QR code to unlock.');
+    }
+  };
 
   const handleVerifyDetails = async (e) => {
     e.preventDefault();
@@ -126,14 +246,18 @@ export default function MobilePassVerificationModal({
         phone: phone.trim()
       };
 
+      const endpoint = (challengeId && challengeId !== 'mobile-direct')
+        ? '/api/auth/qr-login/phone/verify-and-approve'
+        : '/api/auth/mobile-pass/verify';
+
       try {
-        res = await fetch('/api/auth/qr-login/phone/verify-and-approve', {
+        res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
       } catch (proxyErr) {
-        const directApi = `${window.location.protocol}//${window.location.hostname}:8000/api/auth/qr-login/phone/verify-and-approve`;
+        const directApi = `${window.location.protocol}//${window.location.hostname}:8000${endpoint}`;
         res = await fetch(directApi, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -144,40 +268,44 @@ export default function MobilePassVerificationModal({
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || (!data.success && !data.ok && !data.user)) {
-        // Fallback: Check local patron record in case backend is offline
-        const matchedLocal = checkLocalHodRecord(matric, pin, phone);
-        if (matchedLocal) {
-          handleSuccessfulMatch(matchedLocal);
-          return;
-        }
-
         sounds.playErrorBuzz();
-        const msg = data.error || data.message || 'Details do not match the institutional HOD registry. Please check your Matric No and phone number.';
+        const msg = data.error || data.message || 'Invalid credentials: The details entered do not match institutional records in the HOD database. Please enter the correct Matric No, PIN and Phone Number.';
         setError(msg);
-        setPhoneMismatch(Boolean(data?.phoneMismatch));
+        setPhoneMismatch(Boolean(data?.field === 'phone' || data?.phoneMismatch));
         setIsSubmitting(false);
         return;
       }
 
       // Success
-      const user = data.user || {
+      const user = {
+        ...(data.user || {}),
         role: 'student',
-        matric: matric.trim().toUpperCase(),
+        matric: (data.user?.matric || matric).trim().toUpperCase(),
         name: data.user?.name || 'Verified Scholar',
-        phone: phone.trim(),
-        pin: pin.trim()
+        dept: data.user?.dept || data.user?.department || 'Institutional Scholar',
+        phone: (phone || data.user?.phone || '').trim(),
+        pin: (pin || data.user?.pin || '').trim(),
+        passToken: data.passToken || '',
+        installed: true,
+        installedAt: Date.now()
       };
 
+      // Always save credentials & token so subsequent scans authenticate seamlessly
+      localStorage.setItem('fcc_mobile_pass_installed', 'true');
+      localStorage.setItem('fcc_mobile_pass_user', JSON.stringify(user));
+      setVerifiedUser(user);
       handleSuccessfulMatch(user);
     } catch (err) {
-      console.error('Verification error:', err);
-      // Fallback check
+      console.error('Verification network error:', err);
+      // Fallback check ONLY on network failure if student is recorded offline
       const matchedLocal = checkLocalHodRecord(matric, pin, phone);
       if (matchedLocal) {
+        localStorage.setItem('fcc_mobile_pass_installed', 'true');
+        localStorage.setItem('fcc_mobile_pass_user', JSON.stringify(matchedLocal));
         handleSuccessfulMatch(matchedLocal);
       } else {
         sounds.playErrorBuzz();
-        setError('Could not verify with college database. Please verify library server is connected.');
+        setError('Connection failed: Could not reach the library server database. Please ensure you are connected to the campus network.');
         setIsSubmitting(false);
       }
     }
@@ -186,18 +314,68 @@ export default function MobilePassVerificationModal({
   const checkLocalHodRecord = (m, p, ph) => {
     try {
       const cleanM = m.replace(/[^A-Za-z0-9]/g, '').toLowerCase();
-      // Test against default verified scholar or stored patrons
-      if (cleanM.includes('409') || cleanM.includes('csc2026') || cleanM.includes('042') || cleanM.includes('fcc')) {
-        return {
-          role: 'student',
-          matric: m.toUpperCase(),
+      const stored = localStorage.getItem('fcc_registered_patrons') || localStorage.getItem('fcc_db_patrons');
+      let patrons = [];
+      if (stored) {
+        try { patrons = JSON.parse(stored); } catch (e) {}
+      }
+
+      const defaultKnown = [
+        {
+          matric: 'FCC/CSC/2026/409',
           name: 'OLAWALE AKEEM OLONADE',
           dept: 'Computer Science & Information Technology',
           level: 'HND II (Final Year)',
-          phone: ph,
-          pin: p
-        };
+          pin: '1236',
+          phone: '+2348061657738'
+        },
+        {
+          matric: 'FCC/CEM/2024/011',
+          name: 'Ibrahim Adekunle',
+          dept: 'Co-operative Economics & Management',
+          level: 'HND I',
+          pin: '5678',
+          phone: '+2348123456789'
+        },
+        {
+          matric: 'FCC/BNF/2024/077',
+          name: 'Amina Bello',
+          dept: 'Banking & Finance',
+          level: 'ND II',
+          pin: '2468',
+          phone: '+2348067779900'
+        }
+      ];
+
+      const all = [...patrons, ...defaultKnown];
+      const match = all.find(s => {
+        const sm = (s.matric || '').replace(/[^A-Za-z0-9]/g, '').toLowerCase();
+        return sm === cleanM;
+      });
+
+      if (!match) return null;
+
+      // Check PIN strictly
+      if (match.pin && String(match.pin) !== String(p)) {
+        return null;
       }
+
+      // Check phone strictly (matching last 10 digits)
+      if (match.phone && ph) {
+        const last10A = ph.replace(/[^0-9]/g, '').slice(-10);
+        const last10B = String(match.phone).replace(/[^0-9]/g, '').slice(-10);
+        if (last10A !== last10B) return null;
+      }
+
+      return {
+        role: 'student',
+        matric: match.matric || m.toUpperCase(),
+        name: match.name || 'Verified Scholar',
+        dept: match.dept || match.department || 'Computer Science & Information Technology',
+        level: match.level || 'HND II (Final Year)',
+        phone: match.phone || ph,
+        pin: match.pin || p
+      };
     } catch (e) {}
     return null;
   };
@@ -206,8 +384,13 @@ export default function MobilePassVerificationModal({
     sounds.playSuccessChime();
     setVerifiedUser(user);
     setIsSubmitting(false);
-    // Transition to the match & install prompt phase
-    setPhase('match_install');
+    if (isAppAlreadyInstalled()) {
+      // If software is already installed, go directly to workstation approved confirmation
+      setPhase('workstation_approved');
+    } else {
+      // First-time install prompt
+      setPhase('match_install');
+    }
   };
 
   const handleInstallPassAndLogin = () => {
@@ -216,27 +399,21 @@ export default function MobilePassVerificationModal({
     // 1. Mark pass as installed on this phone
     localStorage.setItem('fcc_mobile_pass_installed', 'true');
     localStorage.setItem('fcc_mobile_pass_user', JSON.stringify(verifiedUser));
-    localStorage.setItem('fcc_student_session', JSON.stringify(verifiedUser));
 
-    // 2. Trigger browser install prompt if available
+    // 2. Trigger browser PWA install prompt if available
     if (pwaPrompt) {
-      pwaPrompt.prompt();
+      try {
+        pwaPrompt.prompt();
+      } catch (e) {}
     }
 
-    setPhase('logging_in');
-    setTimeout(() => {
-      proceedLogin(verifiedUser);
-    }, 1000);
+    // Keep mobile on confirmation screen alone (do NOT redirect mobile!)
+    setPhase('workstation_approved');
   };
 
   const proceedLogin = (user) => {
-    localStorage.setItem('fcc_student_session', JSON.stringify(user));
-    if (onLoginSuccess) {
-      onLoginSuccess(user);
-    } else {
-      window.location.hash = '#/scholar/profile';
-      window.location.reload();
-    }
+    // Mobile serves purely as an authenticator key to authorize the computer workstation
+    setPhase('workstation_approved');
   };
 
   if (!isOpen) return null;
@@ -426,17 +603,23 @@ export default function MobilePassVerificationModal({
         ----------------------------------------------------------------- */}
         {phase === 'match_install' && (
           <div className="py-4 text-center space-y-4 animate-scaleUp">
-            {/* Animated Mark */}
-            <div className="relative w-16 h-16 mx-auto">
-              <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping" />
-              <div className="relative w-16 h-16 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-xl shadow-emerald-950 border-2 border-emerald-300">
-                <Check size={36} className="stroke-[3] animate-bounce" />
+            {/* School Logo & Animated Checkmark */}
+            <div className="relative w-20 h-20 mx-auto">
+              <div className="absolute inset-0 rounded-3xl bg-emerald-500/20 animate-ping" />
+              <div className="relative w-20 h-20 rounded-3xl bg-white p-2 flex items-center justify-center shadow-xl shadow-emerald-950 border-2 border-emerald-400">
+                <img
+                  src="/assets/fcc-logo.png"
+                  alt="Federal Co-operative College Crest"
+                  className="w-full h-full object-contain"
+                />
               </div>
             </div>
 
             <div className="space-y-1">
               <div className="inline-block px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-950 border border-emerald-500 text-emerald-300">
-                ✓ RECORD MATCHED WITH HOD REGISTRY
+                {challengeId && challengeId !== 'mobile-direct'
+                  ? '✓ COMPUTER WORKSTATION APPROVED'
+                  : '✓ RECORD MATCHED WITH HOD REGISTRY'}
               </div>
               <h3 className="text-base font-black text-white">
                 {verifiedUser?.name || 'Verified Scholar'}
@@ -446,52 +629,241 @@ export default function MobilePassVerificationModal({
               </p>
             </div>
 
-            {/* Install Callout Box */}
-            <div className="p-4 rounded-2xl bg-[#021810] border-2 border-emerald-500/80 text-left space-y-2 shadow-xl">
-              <div className="flex items-center gap-2 text-emerald-300 text-xs font-bold">
-                <Download size={16} className="text-emerald-400" />
-                <span>Install Pass to Phone for 1-Tap Login</span>
+            {/* Install Callout Box with School Logo Badge - ONLY SHOWN ONCE IF NOT ALREADY ON PHONE */}
+            {!isAppAlreadyInstalled() ? (
+              <div className="p-4 rounded-2xl bg-[#021810] border-2 border-emerald-500/80 text-left space-y-2.5 shadow-xl">
+                <div className="flex items-center gap-2.5 text-emerald-300 text-xs font-bold">
+                  <div className="w-6 h-6 rounded-lg bg-white p-0.5 border border-emerald-400 shrink-0 flex items-center justify-center">
+                    <img src="/assets/fcc-logo.png" alt="FCC Logo" className="w-full h-full object-contain" />
+                  </div>
+                  <span>Install FCC Smart Library on this Phone</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Install this app with the official Federal Co-operative College crest on your phone home screen. Next time you scan the QR on any workstation, you are verified in 1 second!
+                </p>
+                {challengeId && challengeId !== 'mobile-direct' && (
+                  <div className="pt-1 text-[11px] text-emerald-400 font-semibold flex items-center gap-1.5">
+                    <Monitor size={13} />
+                    <span>The library computer has signed in automatically.</span>
+                  </div>
+                )}
               </div>
-              <p className="text-[11px] text-slate-300 leading-relaxed">
-                Save this verified Pass/ID to this phone. Next time you scan this QR code or if you forget your password, you will be verified instantly and logged in automatically!
+            ) : (
+              <div className="p-4 rounded-2xl bg-[#021810] border border-emerald-600/80 text-left space-y-1.5 shadow-lg">
+                <div className="flex items-center gap-2 text-emerald-300 text-xs font-bold">
+                  <CheckCircle2 size={16} className="text-emerald-400" />
+                  <span>FCC App Already Installed on this Device</span>
+                </div>
+                <p className="text-[11px] text-slate-300">
+                  Your device is registered. Workstation authentication is approved and active.
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-2 pt-1">
+              {!isAppAlreadyInstalled() && (
+                <button
+                  type="button"
+                  onClick={handleInstallPassAndLogin}
+                  className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-xl shadow-emerald-950 flex items-center justify-center gap-2 transition cursor-pointer"
+                >
+                  <div className="w-5 h-5 rounded-md bg-white p-0.5 flex items-center justify-center shrink-0">
+                    <img src="/assets/fcc-logo.png" alt="Logo" className="w-full h-full object-contain" />
+                  </div>
+                  <span>Install App on Phone (School Logo Icon)</span>
+                </button>
+              )}
+
+              {challengeId && challengeId !== 'mobile-direct' ? (
+                <button
+                  type="button"
+                  onClick={() => setPhase('workstation_approved')}
+                  className="w-full py-2.5 rounded-xl border border-emerald-800 bg-black/40 hover:bg-emerald-950 text-emerald-300 text-xs font-semibold transition"
+                >
+                  I'm Done — Continue Using Computer Workstation &rarr;
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setPhase('pass_card')}
+                  className="text-[11px] text-emerald-400 hover:text-white underline font-mono"
+                >
+                  View Mobile Pass Card &rarr;
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* -----------------------------------------------------------------
+            5. WORKSTATION APPROVED CONFIRMATION (MOBILE STAYS HERE)
+        ----------------------------------------------------------------- */}
+        {phase === 'workstation_approved' && (
+          <div className="py-6 text-center space-y-4 animate-scaleUp">
+            {/* School Crest Overlay */}
+            <div className="relative w-20 h-20 mx-auto">
+              <div className="absolute inset-0 rounded-3xl bg-emerald-500/20 animate-ping" />
+              <div className="relative w-20 h-20 rounded-3xl bg-white p-2.5 flex items-center justify-center shadow-xl shadow-emerald-950 border-2 border-emerald-400">
+                <img
+                  src="/assets/fcc-logo.png"
+                  alt="Federal Co-operative College Crest"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="inline-block px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-950 border border-emerald-500 text-emerald-300">
+                ✓ COMPUTER WORKSTATION SIGNED IN
+              </div>
+              <h3 className="text-lg font-black text-white">
+                {verifiedUser?.name || 'Verified Scholar'}
+              </h3>
+              <p className="text-xs text-emerald-300/80 font-mono">
+                Matric: {verifiedUser?.matric || matric}
               </p>
             </div>
 
-            <div className="space-y-2 pt-1">
+            <div className="p-4 rounded-2xl bg-[#021810] border border-emerald-700/80 text-xs text-emerald-200 text-left space-y-2">
+              <div className="font-bold text-emerald-400 flex items-center gap-1.5">
+                <Check size={14} className="stroke-[3]" />
+                <span>Access Granted on Computer Screen</span>
+              </div>
+              <p className="text-slate-300 text-[11px] leading-relaxed">
+                Your credentials were authenticated against the institutional database. Your Scholar Dashboard is unlocked on <strong className="text-emerald-300">https://fccibadanlibrary.com.ng/#/login</strong> on the library computer screen alone.
+              </p>
+            </div>
+
+            <div className="space-y-2 pt-2">
               <button
                 type="button"
-                onClick={handleInstallPassAndLogin}
-                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-xl shadow-emerald-950 flex items-center justify-center gap-2 transition cursor-pointer"
+                onClick={() => setPhase('pass_card')}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-950 flex items-center justify-center gap-2 transition"
               >
-                <Download size={16} />
-                <span>Install Pass &amp; Log In to Profile</span>
+                <Smartphone size={14} />
+                <span>Return to Mobile Pass Key</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => proceedLogin(verifiedUser)}
-                className="text-[11px] text-emerald-400 hover:text-white underline font-mono"
+                onClick={onClose || (() => {
+                  try { window.close(); } catch (e) {}
+                  setPhase('pass_card');
+                })}
+                className="w-full py-2.5 rounded-xl border border-emerald-800/80 bg-black/40 hover:bg-emerald-950 text-emerald-300 font-semibold text-xs transition flex items-center justify-center gap-1.5"
               >
-                Continue to profile without installing &rarr;
+                <Monitor size={13} className="text-emerald-400" />
+                <span>Done — Computer Workstation Active</span>
               </button>
             </div>
           </div>
         )}
 
         {/* -----------------------------------------------------------------
-            5. LOGGING IN CELEBRATION
+            6. STANDALONE MOBILE PASS CARD (DEVICE AUTHENTICATOR KEY)
         ----------------------------------------------------------------- */}
-        {phase === 'logging_in' && (
-          <div className="py-8 text-center space-y-3">
-            <RefreshCw size={36} className="mx-auto text-emerald-400 animate-spin" />
-            <div className="text-sm font-bold text-white">
-              Pass installed! Entering your Scholar Profile...
+        {phase === 'pass_card' && (
+          <div className="py-2 space-y-4 animate-scaleUp">
+            {/* Student ID Card Header with School Logo */}
+            <div className="relative p-5 rounded-3xl bg-gradient-to-br from-[#042f20] via-[#021810] to-[#01110b] border-2 border-emerald-500/80 shadow-2xl overflow-hidden space-y-3.5">
+              <div className="flex items-center justify-between border-b border-emerald-800/80 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-white p-1 flex items-center justify-center border-2 border-emerald-400 shrink-0 shadow-md">
+                    <img
+                      src="/assets/fcc-logo.png"
+                      alt="FCC Logo"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-black tracking-wider uppercase text-emerald-300">
+                      Federal Co-operative College
+                    </h3>
+                    <p className="text-[10px] text-slate-300 font-mono">
+                      Workstation Authenticator Pass
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950 border border-emerald-400 text-emerald-300 text-[10px] font-mono font-bold">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>ACTIVE</span>
+                </div>
+              </div>
+
+              {/* Scholar Details */}
+              <div className="space-y-1">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-emerald-400">
+                  Verified Scholar Identity
+                </div>
+                <h4 className="text-base font-black text-white">
+                  {verifiedUser?.name || 'Scholar'}
+                </h4>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-emerald-200 font-mono pt-0.5">
+                  <span>Matric: <strong className="text-white">{verifiedUser?.matric || matric}</strong></span>
+                  {verifiedUser?.dept && (
+                    <span className="text-slate-300">• {verifiedUser.dept}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Security Key Badge */}
+              <div className="pt-2 border-t border-emerald-800/60 flex items-center justify-between text-[10px] text-emerald-300 font-mono">
+                <span className="flex items-center gap-1">
+                  <ShieldCheck size={12} className="text-emerald-400" />
+                  <span>Workstation Access Pass</span>
+                </span>
+                <span className="text-slate-400">FCC-AUTH-KEY</span>
+              </div>
             </div>
-            <p className="text-xs text-emerald-300/70 font-mono">
-              Redirecting to https://192.168.1.149:5172/#/scholar/profile
-            </p>
+
+            {/* Purpose & Instructions */}
+            <div className="p-4 rounded-2xl bg-[#021810] border border-emerald-700/80 space-y-2 text-left">
+              <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                <Monitor size={14} className="text-emerald-400" />
+                <span>Access Library Website on Computers</span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                To log into your Scholar Dashboard, open <strong className="text-emerald-300">https://fccibadanlibrary.com.ng/#/login</strong> on the computer screen.
+                Point your phone camera at the screen QR code to authorize and sign into that computer workstation.
+              </p>
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const scannerInput = document.getElementById('fcc-camera-qr-input');
+                  if (scannerInput) scannerInput.click();
+                }}
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-xl shadow-emerald-950 flex items-center justify-center gap-2 transition cursor-pointer"
+              >
+                <Camera size={16} />
+                <span>Scan Computer Screen QR</span>
+              </button>
+              <input
+                id="fcc-camera-qr-input"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleQrImageCapture}
+              />
+
+              <div className="text-center pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPhase('fill_details')}
+                  className="text-[11px] text-emerald-400 hover:text-white underline font-mono"
+                >
+                  Switch Account / Re-link Details &rarr;
+                </button>
+              </div>
+            </div>
           </div>
         )}
+
+        {/* Modal Popup Footer Attribution */}
+        <InstitutionalFooter compact={true} />
       </div>
     </div>
   );

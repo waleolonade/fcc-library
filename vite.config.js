@@ -3,11 +3,27 @@ import react from '@vitejs/plugin-react';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import { resolve } from 'path';
 
+const qrApproveFallbackPlugin = () => ({
+  name: 'qr-approve-fallback',
+  configureServer(server) {
+    server.middlewares.use((req, res, next) => {
+      const url = req.url || '';
+      if (url.startsWith('/qr-approve') || url.startsWith('/mobile-pass')) {
+        res.writeHead(302, { Location: '/#' + url });
+        res.end();
+        return;
+      }
+      next();
+    });
+  }
+});
+
 export default defineConfig({
   base: './',
   plugins: [
     react(),
-    basicSsl()
+    basicSsl(),
+    qrApproveFallbackPlugin()
   ],
   build: {
     rollupOptions: {

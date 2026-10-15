@@ -25,3 +25,7 @@ scratch/
 *.sqlite
 *.sqlite3
 backend/database/*.sqlite
+
+# Archives & Staging
+*.zip
+cpanel_deploy_staging/

@@ -33,6 +33,7 @@ import { departmentService } from '../services/departmentService';
 import StudentAddModal from '../common/StudentAddModal';
 import StudentBulkImportModal from '../common/StudentBulkImportModal';
 import StudentEditModal from '../common/StudentEditModal';
+import AdminSecuritySettingsModal from '../common/AdminSecuritySettingsModal';
 
 // =========================================================================
 // FCC ADMIN LIBRARY — MASTER CONSOLIDATED ADMIN & STAFF OPERATIONS PLATFORM
@@ -108,6 +109,16 @@ export default function FccAdminLibrary({
     dept: 'Chief College Librarian'
   };
 
+  const [adminUserProfile, setAdminUserProfile] = useState(() => {
+    try {
+      const s = localStorage.getItem('fcc_admin_session');
+      return s ? JSON.parse(s) : user;
+    } catch (e) {
+      return user;
+    }
+  });
+  const [showAdminSecurityModal, setShowAdminSecurityModal] = useState(false);
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Navigation tabs
@@ -171,6 +182,19 @@ export default function FccAdminLibrary({
   const [shelves, setShelves] = useState([]);
   const [analyticsData, setAnalyticsData] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const [customPages, setCustomPages] = useState([]);
+
+  useEffect(() => {
+    fetch('/api/admin/custom-pages')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.pages) {
+          setCustomPages(data.pages);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const handleDeptSync = () => setDepartments(departmentService.getDepartments());
@@ -1079,12 +1103,23 @@ export default function FccAdminLibrary({
 
           {/* Right: User Portal Bridge & Controls */}
           <div className="flex items-center gap-2.5">
+            {/* Admin Profile & Password Settings */}
+            <button
+              onClick={() => setShowAdminSecurityModal(true)}
+              id="admin-security-settings-btn"
+              title="Admin Profile & Security Settings (Change Password, Name, Username)"
+              className="px-3 py-1.5 rounded-lg bg-indigo-900/40 hover:bg-indigo-900/60 text-indigo-300 hover:text-indigo-200 border border-indigo-500/50 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm hover:scale-105 active:scale-95 cursor-pointer"
+            >
+              <Key size={14} className="text-indigo-400" />
+              <span className="hidden sm:inline">Settings &amp; Password</span>
+            </button>
+
             {/* Direct Bridge to Scholar User Portal */}
             <button
               onClick={goToUserPortal}
               id="switch-to-scholar-portal-btn"
               title="Connect to Scholar User Portal (Student View)"
-              className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 hover:text-emerald-200 border border-emerald-500/40 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm shadow-emerald-950 hover:scale-105 active:scale-95"
+              className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 hover:text-emerald-200 border border-emerald-500/40 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm shadow-emerald-950 hover:scale-105 active:scale-95 cursor-pointer"
             >
               <BookOpen size={14} className="text-emerald-400" />
               <span>Scholar User Portal</span>
@@ -1275,6 +1310,40 @@ export default function FccAdminLibrary({
                   })}
                 </div>
               ))}
+
+              {/* Dynamic Custom Admin Pages (Architected by Developer) */}
+              {customPages.length > 0 && (
+                <div className="space-y-1 pt-2 border-t border-emerald-800/60">
+                  <div className="px-3 text-[10px] font-bold text-cyan-400 uppercase tracking-wider flex items-center justify-between">
+                    <span>DYNAMIC CUSTOM PORTALS</span>
+                    <span className="text-[9px] bg-cyan-950 px-1.5 py-0.2 rounded border border-cyan-800 text-cyan-300">
+                      {customPages.length}
+                    </span>
+                  </div>
+                  {customPages.map(page => {
+                    const isActive = activeTab === page.slug;
+                    return (
+                      <button
+                        key={page.id}
+                        onClick={() => handleTabSwitch(page.slug)}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                          isActive
+                            ? 'bg-cyan-600 text-white shadow-md shadow-cyan-950/60 font-bold'
+                            : 'text-cyan-300/80 hover:text-white hover:bg-cyan-950/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 truncate">
+                          <Layers size={15} className={isActive ? 'text-white' : 'text-cyan-400'} />
+                          <span className="truncate">{page.title}</span>
+                        </div>
+                        <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono bg-[#021810] text-cyan-300 border border-cyan-800">
+                          Route
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Bottom Admin Status Card */}
@@ -2734,6 +2803,154 @@ export default function FccAdminLibrary({
           />
         )}
 
+        {/* TAB: DYNAMIC CUSTOM ADMIN PAGES ARCHITECTED IN DEVELOPER PORTAL */}
+        {(() => {
+          const currentCustomPage = customPages.find(p => p.slug === activeTab);
+          if (!currentCustomPage) return null;
+          const feats = typeof currentCustomPage.features === 'object' ? currentCustomPage.features : {};
+          return (
+            <div className="space-y-6 animate-fadeIn font-mono">
+              <section className="bg-[#032317]/90 border-2 border-emerald-500/50 rounded-3xl p-6 shadow-2xl space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-800/80 pb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-950 text-cyan-300 border border-cyan-500">
+                        CUSTOM INSTITUTIONAL PORTAL
+                      </span>
+                      <span className="text-[11px] text-emerald-300 font-mono">
+                        /#/admin/{currentCustomPage.slug}
+                      </span>
+                    </div>
+                    <h2 className="text-base sm:text-lg font-black text-white uppercase tracking-wider flex items-center gap-2 mt-1">
+                      <Layers size={18} className="text-cyan-400" />
+                      <span>{currentCustomPage.title}</span>
+                    </h2>
+                    <p className="text-xs text-emerald-100/80 font-sans max-w-3xl leading-relaxed mt-1">
+                      {currentCustomPage.description || 'Dedicated institutional admin portal configured by system architect.'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 rounded-xl bg-emerald-950 text-emerald-300 border border-emerald-600 text-xs font-bold font-mono">
+                      Clearance: {currentCustomPage.allowed_roles || 'admin'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Granted Capabilities Grid */}
+                <div className="space-y-2">
+                  <div className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider">
+                    Activated Modules &amp; Granted Features:
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {feats.catalog && (
+                      <div className="p-3.5 rounded-2xl bg-[#021810] border border-emerald-800 space-y-2">
+                        <div className="text-xs font-bold text-white flex items-center gap-1.5 font-sans">
+                          <BookOpen size={14} className="text-emerald-400" />
+                          <span>Catalog Index</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 font-sans leading-tight">Direct query access to books and monographs.</p>
+                        <button
+                          type="button"
+                          onClick={() => handleTabSwitch('marc')}
+                          className="w-full py-1.5 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-white text-[11px] font-bold font-sans transition cursor-pointer"
+                        >
+                          Open Cataloguer
+                        </button>
+                      </div>
+                    )}
+
+                    {feats.upload && (
+                      <div className="p-3.5 rounded-2xl bg-[#021810] border border-emerald-800 space-y-2">
+                        <div className="text-xs font-bold text-white flex items-center gap-1.5 font-sans">
+                          <Upload size={14} className="text-cyan-400" />
+                          <span>Digital Book Ingest</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 font-sans leading-tight">Smart PDF text parsing and automated metadata extraction.</p>
+                        <button
+                          type="button"
+                          onClick={() => handleTabSwitch('pdf_upload')}
+                          className="w-full py-1.5 rounded-lg bg-cyan-800 hover:bg-cyan-700 text-white text-[11px] font-bold font-sans transition cursor-pointer"
+                        >
+                          Open Ingest Studio
+                        </button>
+                      </div>
+                    )}
+
+                    {feats.biometrics && (
+                      <div className="p-3.5 rounded-2xl bg-[#021810] border border-emerald-800 space-y-2">
+                        <div className="text-xs font-bold text-white flex items-center gap-1.5 font-sans">
+                          <Fingerprint size={14} className="text-amber-400" />
+                          <span>Biometrics &amp; Pass</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 font-sans leading-tight">Facial recognition and fingerprint verification terminal.</p>
+                        <button
+                          type="button"
+                          onClick={() => setShowBiometricModal(true)}
+                          className="w-full py-1.5 rounded-lg bg-amber-800 hover:bg-amber-700 text-white text-[11px] font-bold font-sans transition cursor-pointer"
+                        >
+                          Launch Scanner
+                        </button>
+                      </div>
+                    )}
+
+                    {feats.audit && (
+                      <div className="p-3.5 rounded-2xl bg-[#021810] border border-emerald-800 space-y-2">
+                        <div className="text-xs font-bold text-white flex items-center gap-1.5 font-sans">
+                          <Database size={14} className="text-indigo-400" />
+                          <span>Audit Telemetry</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 font-sans leading-tight">Review real-time access and transaction logs.</p>
+                        <button
+                          type="button"
+                          onClick={() => handleTabSwitch('audit')}
+                          className="w-full py-1.5 rounded-lg bg-indigo-800 hover:bg-indigo-700 text-white text-[11px] font-bold font-sans transition cursor-pointer"
+                        >
+                          Inspect Audit Logs
+                        </button>
+                      </div>
+                    )}
+
+                    {feats.sms && (
+                      <div className="p-3.5 rounded-2xl bg-[#021810] border border-emerald-800 space-y-2">
+                        <div className="text-xs font-bold text-white flex items-center gap-1.5 font-sans">
+                          <MessageSquare size={14} className="text-teal-400" />
+                          <span>Dispatch Gateway</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 font-sans leading-tight">Institutional SMS alerts and broadcast communications.</p>
+                        <button
+                          type="button"
+                          onClick={() => handleTabSwitch('comms')}
+                          className="w-full py-1.5 rounded-lg bg-teal-800 hover:bg-teal-700 text-white text-[11px] font-bold font-sans transition cursor-pointer"
+                        >
+                          Open Dispatch Hub
+                        </button>
+                      </div>
+                    )}
+
+                    {feats.gate && (
+                      <div className="p-3.5 rounded-2xl bg-[#021810] border border-emerald-800 space-y-2">
+                        <div className="text-xs font-bold text-white flex items-center gap-1.5 font-sans">
+                          <Scan size={14} className="text-emerald-400" />
+                          <span>Turnstile Gate</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 font-sans leading-tight">Physical turnstile barrier and circulation check station.</p>
+                        <button
+                          type="button"
+                          onClick={() => handleTabSwitch('circulation')}
+                          className="w-full py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-bold font-sans transition cursor-pointer"
+                        >
+                          Turnstile Desk
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+            </div>
+          );
+        })()}
+
         </div>
       </main>
       </div>
@@ -2899,6 +3116,14 @@ export default function FccAdminLibrary({
           targetAction="Book Circulation Checkout"
         />
       )}
+
+      {/* Admin Security Settings Modal (Password, Name, Username) */}
+      <AdminSecuritySettingsModal
+        isOpen={showAdminSecurityModal}
+        onClose={() => setShowAdminSecurityModal(false)}
+        currentUser={adminUserProfile}
+        onProfileUpdated={(updated) => setAdminUserProfile(updated)}
+      />
     </div>
   );
 }

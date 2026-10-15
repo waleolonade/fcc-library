@@ -48,7 +48,8 @@ import SmartCatalogSearch from './SmartCatalogSearch';
 import { useDeviceType } from '../utils/useDeviceType';
 import MobileStudentNavigation from './MobileStudentNavigation';
 import TabletStudentNavigation from './TabletStudentNavigation';
-import { Smartphone, Monitor, Tablet as TabletIcon } from 'lucide-react';
+import { Smartphone, Monitor, Tablet as TabletIcon, PhoneCall, Bot as BotIcon } from 'lucide-react';
+import { developerConfigService } from '../services/developerConfigService';
 
 export default function StudentPortal({
   user,
@@ -60,6 +61,15 @@ export default function StudentPortal({
   onPayFine,
   onOpenReader
 }) {
+  const [devConfig, setDevConfig] = useState(() => developerConfigService.getConfig());
+
+  useEffect(() => {
+    const handleCfg = (e) => {
+      if (e.detail) setDevConfig(e.detail);
+    };
+    window.addEventListener('fcc-config-updated', handleCfg);
+    return () => window.removeEventListener('fcc-config-updated', handleCfg);
+  }, []);
   // Navigation active tab:
   // HOME: 'home'
   // LIBRARY: 'library_search', 'library_books', 'library_ebooks', 'library_journals', 'library_digital'
@@ -1266,6 +1276,38 @@ export default function StudentPortal({
           purpose="Campus Turnstile & Library Access"
           onClose={() => setShowBiometrics(false)}
         />
+      )}
+
+      {/* Dynamic 24/7 WhatsApp Librarian Floating Widget (Controlled by Developer) */}
+      {devConfig?.studentFeatures?.whatsAppLibrarian?.enabled !== false && (
+        <aside aria-label="WhatsApp Librarian Helpdesk" className="fixed bottom-6 right-6 z-40">
+          <a
+            href="https://wa.me/2348061657738?text=Hello%20FCC%20Ibadan%20Librarian,%20I%20need%20academic%20research%20assistance."
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2.5 px-4 py-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-2xl shadow-emerald-950 transition hover:scale-105 active:scale-95 border-2 border-emerald-300"
+            title="Chat with Reference Librarian on WhatsApp"
+          >
+            <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
+            <MessageSquare size={16} />
+            <span className="hidden sm:inline font-sans">Ask Reference Librarian</span>
+          </a>
+        </aside>
+      )}
+
+      {/* Dynamic AI Copilot Floating Quick Trigger (Controlled by Developer) */}
+      {devConfig?.studentFeatures?.aiResearchAssistant?.enabled !== false && !isAiOpen && (
+        <aside aria-label="AI Research Copilot" className="fixed bottom-20 right-6 z-40 hidden sm:block">
+          <button
+            type="button"
+            onClick={() => setIsAiOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs shadow-xl transition hover:scale-105 active:scale-95 border border-indigo-400"
+            title="Launch AI Literature Copilot"
+          >
+            <BotIcon size={15} />
+            <span>AI Copilot</span>
+          </button>
+        </aside>
       )}
     </div>
   );

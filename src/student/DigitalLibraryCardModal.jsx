@@ -7,6 +7,7 @@ import { INSTITUTION } from '../data/institutionalSeedData';
 import { sounds } from '../utils/soundEffects';
 import { BarcodeSvg, QrCodeSvg } from '../common/BarcodeQrStudio';
 import { formatStudentLibraryId } from '../utils/studentIdentity';
+import InstitutionalFooter from '../common/InstitutionalFooter';
 
 export default function DigitalLibraryCardModal({ user, onClose }) {
   const [showQrExpanded, setShowQrExpanded] = useState(false);
@@ -136,6 +137,9 @@ export default function DigitalLibraryCardModal({ user, onClose }) {
 
           <span className="text-[11px] text-slate-500 font-mono">Offline Cached Token ✓</span>
         </div>
+
+        {/* Modal Popup Footer Attribution */}
+        <InstitutionalFooter compact={true} />
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { Printer, QrCode, Shield, X } from 'lucide-react';
 import { useState } from 'react';
 import { INSTITUTION } from '../data/institutionalSeedData';
+import InstitutionalFooter from '../common/InstitutionalFooter';
 
 export default function IdCardPrintModal({ user, onClose }) {
   const [cardSide, setCardSide] = useState('front'); // 'front' | 'back'
@@ -126,6 +127,9 @@ export default function IdCardPrintModal({ user, onClose }) {
             </div>
           )}
         </div>
+
+        {/* Modal Popup Footer Attribution */}
+        <InstitutionalFooter compact={true} />
       </div>
     </div>
   );

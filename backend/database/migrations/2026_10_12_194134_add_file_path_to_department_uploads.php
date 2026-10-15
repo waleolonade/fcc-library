@@ -39,8 +39,10 @@ return new class extends Migration
         DB::statement("UPDATE department_uploads SET file_data_url = NULL WHERE file_data_url IS NOT NULL AND length(file_data_url) > 1000");
         DB::statement("UPDATE department_uploads SET cover_image = NULL WHERE cover_image IS NOT NULL AND length(cover_image) > 1000");
 
-        // 3. VACUUM to reclaim freed disk space in the SQLite file
-        DB::statement('VACUUM');
+        // 3. VACUUM to reclaim freed disk space in the SQLite file (skip on MySQL/MariaDB)
+        if (DB::getDriverName() === 'sqlite') {
+            DB::statement('VACUUM');
+        }
     }
 
     /**

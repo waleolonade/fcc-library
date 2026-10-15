@@ -10,6 +10,7 @@ import TraceBadge from './TraceBadge';
 import { sounds } from '../utils/soundEffects';
 import { libraryApi } from '../api/libraryApi';
 import { getBookCoverUrl, DEFAULT_BOOK_COVER, OFFLINE_BOOK_COVER_SVG } from '../utils/bookCoverResolver';
+import InstitutionalFooter from './InstitutionalFooter';
 
 export default function BookDetailsModal({ book, onClose, onOpenReader, onReserve, user: propUser }) {
   const [citationFormat, setCitationFormat] = useState('APA');
@@ -700,6 +701,9 @@ export default function BookDetailsModal({ book, onClose, onOpenReader, onReserv
               )}
             </div>
           )}
+
+          {/* Modal Footer Attribution */}
+          <InstitutionalFooter compact={true} />
         </div>
       </div>
     </div>

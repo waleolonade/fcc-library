@@ -18,9 +18,17 @@
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
+    # 0. API Gateway Safeguard: Strip duplicate /api/api to /api preserving HTTP method & payload
+    RewriteRule ^api/api(/.*)?$ /api$1 [R=307,L]
+
     # 1. API Gateway: Route all /api/* requests to Laravel backend
     RewriteRule ^api(/.*)?$ backend/public/index.php [L,QSA]
     RewriteRule ^backend/public/api(/.*)?$ backend/public/index.php [L,QSA]
+
+    # 1b. Mobile QR Pass & Direct Approvals SPA Routes (Rewrites to hash routes)
+    RewriteRule ^qr-approve(/.*)?$ /#/qr-approve [R=302,NE,L]
+    RewriteRule ^mobile-pass(/.*)?$ /#/mobile-pass [R=302,NE,L]
+    RewriteRule ^qr-login(/.*)?$ /#/qr-approve [R=302,NE,L]
 
     # 2. Student Portal Multi-Page Route
     RewriteCond %{REQUEST_URI} ^/student(/.*)?$

@@ -56,9 +56,20 @@ class CatalogController extends Controller
             });
         }
 
-        $books = $query->orderBy('uploaded_at', 'desc')->get()->map(function ($book) {
+        $selectCols = [
+            'id', 'title', 'subtitle', 'author', 'isbn', 'call_number', 'callNumber',
+            'department', 'subject', 'shelf_location', 'shelfLocation', 'copies_total',
+            'copies_available', 'cover_image', 'year', 'publisher', 'edition', 'category',
+            'status', 'description', 'file_name', 'uploaded_at', 'updated_at'
+        ];
+        $actualCols = array_filter($selectCols, fn($col) => Schema::hasColumn('books', $col));
+        if (empty($actualCols)) {
+            $actualCols = ['*'];
+        }
+
+        $books = $query->select($actualCols)->orderBy('uploaded_at', 'desc')->get()->map(function ($book) {
             $data = $book->toArray();
-            $hasPdf = !empty($book->file_data_url) || !empty($book->file_name);
+            $hasPdf = !empty($book->file_name);
             $data['hasPdf'] = $hasPdf;
             $data['has_file'] = $hasPdf;
             $data['pdfUrl'] = "/api/catalog/{$book->id}/file";

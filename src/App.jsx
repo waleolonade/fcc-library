@@ -18,6 +18,10 @@ import HodDashboard from './hod/HodDashboard';
 import PublicDiscovery from './public_opac/PublicDiscovery';
 import DigitalBookReader from './student/DigitalBookReader';
 import StudentPortal from './student/StudentPortal';
+import DeveloperMasterPortal from './developer/DeveloperMasterPortal';
+import PageMaintenanceGuard from './common/PageMaintenanceGuard';
+import InstitutionalFooter from './common/InstitutionalFooter';
+import { developerConfigService } from './services/developerConfigService';
 import { PATTERNS } from './utils/backgroundPatterns';
 import { getBookCoverUrl } from './utils/bookCoverResolver';
 import { copyToClipboardWithFeedback, navigateTo, parseCurrentRoute } from './utils/router';
@@ -66,7 +70,8 @@ export default function App() {
     if (typeof window !== 'undefined') {
       const h = window.location.hash || '';
       const p = window.location.pathname || '';
-      if (p.includes('/qr-approve') || h.includes('/qr-approve') || h.includes('/qr-login')) return 'qr_approval';
+      if (p.includes('/qr-approve') || h.includes('/qr-approve') || h.includes('/qr-login') || p.includes('/mobile-pass') || h.includes('/mobile-pass')) return 'qr_approval';
+      if (h.includes('/developer') || h.includes('/dev') || h.includes('/root') || h.includes('/master')) return 'developer';
       if (h.includes('/kiosk')) return 'kiosk';
       if (h.includes('/book')) return 'book_dossier';
       if (h.includes('/admin/login')) return 'admin_login';
@@ -109,6 +114,15 @@ export default function App() {
   const [isMuted, setIsMuted] = useState(false);
   const [currentHash, setCurrentHash] = useState(window.location.hash || '#/opac');
   const [copiedUrlFeedback, setCopiedUrlFeedback] = useState(false);
+  const [devConfig, setDevConfig] = useState(() => developerConfigService.getConfig());
+
+  useEffect(() => {
+    const handleConfigUpdate = (e) => {
+      if (e.detail) setDevConfig(e.detail);
+    };
+    window.addEventListener('fcc-config-updated', handleConfigUpdate);
+    return () => window.removeEventListener('fcc-config-updated', handleConfigUpdate);
+  }, []);
 
   const isDemoOrExcluded = (item) => {
     if (!item) return false;
@@ -448,7 +462,9 @@ export default function App() {
       }
 
       // Route switching for authenticated / admin / hod / scholar / opac view
-      if (path === '/kiosk' || path.startsWith('/kiosk')) {
+      if (path === '/developer' || path === '/dev' || path === '/root' || path === '/master' || path.startsWith('/developer')) {
+        setViewMode('developer');
+      } else if (path === '/kiosk' || path.startsWith('/kiosk')) {
         setViewMode('kiosk');
       } else if (path === '/admin/login' || path.startsWith('/admin/login')) {
         if (currentUser && currentUser.role === 'admin') {
@@ -557,7 +573,11 @@ export default function App() {
     // Auto-login when opened via phone camera QR scan URL (e.g. #/login?qr_auth=...)
     const checkIncomingQrAuth = async () => {
       const href = window.location.href;
-      const match = href.match(/[?&](?:qr_auth|qr_token|auth_qr|token)=([^&#]+)/i);
+      // Workstation approval requests (/qr-approve or challenge=) are authenticators for the computer, NOT mobile logins
+      if (href.includes('/qr-approve') || href.includes('challenge=') || href.includes('/mobile-pass') || href.includes('/qr-login')) {
+        return false;
+      }
+      const match = href.match(/[?&](?:qr_auth|qr_token|auth_qr)=([^&#]+)/i);
       const claimMatch = href.match(/[?&](?:claim_session|session_id)=([^&#]+)/i);
 
       if (match) {
@@ -780,17 +800,28 @@ export default function App() {
       {/* Main View Router */}
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
         {viewMode === 'kiosk' ? (
-          <SelfServiceKiosk
-            books={books}
-            loans={loans}
-            setLoans={setLoans}
-            setBooks={setBooks}
-            currentUser={currentUser}
-            onClose={() => {
-              setViewMode(currentUser ? (currentUser.role === 'admin' ? 'admin' : 'student') : 'public_opac');
-              navigateTo(currentUser ? (currentUser.role === 'admin' ? '/admin/overview' : '/scholar/catalog') : '/opac');
-            }}
-          />
+          devConfig?.pageStatus?.kiosk?.enabled === false ? (
+            <PageMaintenanceGuard
+              pageTitle={devConfig.pageStatus.kiosk.title || 'Self-Service Kiosk'}
+              maintenanceMsg={devConfig.pageStatus.kiosk.maintenanceMsg}
+              onReturnToSafePage={() => {
+                setViewMode('public_opac');
+                navigateTo('/opac');
+              }}
+            />
+          ) : (
+            <SelfServiceKiosk
+              books={books}
+              loans={loans}
+              setLoans={setLoans}
+              setBooks={setBooks}
+              currentUser={currentUser}
+              onClose={() => {
+                setViewMode(currentUser ? (currentUser.role === 'admin' ? 'admin' : 'student') : 'public_opac');
+                navigateTo(currentUser ? (currentUser.role === 'admin' ? '/admin/overview' : '/scholar/catalog') : '/opac');
+              }}
+            />
+          )
         ) : viewMode === 'book_dossier' ? (
           <BookDossierView
             book={selectedBookForDetails}
@@ -832,36 +863,68 @@ export default function App() {
           />
         ) : viewMode === 'qr_approval' ? (
           <QrPhoneApprovalPage
-            onLogin={(user) => {
-              sounds.playSuccessChime();
-              setCurrentUser(user);
-              setViewMode('student');
-              navigateTo('/scholar/profile');
+            onLogin={() => {
+              // Mobile is solely an authenticator for the workstation.
+              // It does NOT log into the student portal on mobile.
             }}
             onBackToLogin={() => {
               setViewMode('login');
               navigateTo('/login');
             }}
           />
+        ) : viewMode === 'developer' ? (
+          <DeveloperMasterPortal
+            onImpersonate={(role, user) => {
+              setCurrentUser(user);
+              if (role === 'admin') setViewMode('admin');
+              else if (role === 'hod') setViewMode('hod');
+              else if (role === 'student') setViewMode('student');
+            }}
+            onLogout={() => {
+              setViewMode('login');
+              navigateTo('/login');
+            }}
+          />
         ) : !currentUser ? (
           viewMode === 'public_opac' ? (
-            <PublicDiscovery
-              books={books}
-              partnerLibraries={partnerLibraries}
-              onSelectBook={(book) => {
-                setSelectedBookForDetails(book);
-                navigateTo(`/book/${book.id}`);
-              }}
-              onOpenLogin={() => {
-                setViewMode('login');
-                navigateTo('/login');
-              }}
-            />
+            devConfig?.pageStatus?.opac?.enabled === false ? (
+              <PageMaintenanceGuard
+                pageTitle={devConfig.pageStatus.opac.title || 'Public Discovery (OPAC)'}
+                maintenanceMsg={devConfig.pageStatus.opac.maintenanceMsg}
+                onReturnToSafePage={() => {
+                  setViewMode('login');
+                  navigateTo('/login');
+                }}
+              />
+            ) : (
+              <PublicDiscovery
+                books={books}
+                partnerLibraries={partnerLibraries}
+                onSelectBook={(book) => {
+                  setSelectedBookForDetails(book);
+                  navigateTo(`/book/${book.id}`);
+                }}
+                onOpenLogin={() => {
+                  setViewMode('login');
+                  navigateTo('/login');
+                }}
+              />
+            )
           ) : (
             <WorldClassLogin
               onLogin={(user) => {
                 sounds.playSuccessChime();
-                setCurrentUser(user);
+                if (user) {
+                  const studentUser = {
+                    ...user,
+                    role: 'student',
+                    matric: user.matric || user.barcode
+                  };
+                  localStorage.setItem('fcc_student_session', JSON.stringify(studentUser));
+                  setCurrentUser(studentUser);
+                } else {
+                  setCurrentUser(user);
+                }
                 setViewMode('student');
                 const hash = window.location.hash;
                 const target = hash.includes('catalog') ? '/scholar/catalog' : '/scholar/profile';
@@ -874,50 +937,81 @@ export default function App() {
             />
           )
         ) : currentUser.role === 'admin' ? (
-          <FccAdminLibrary
-            user={currentUser}
-            onLogout={() => handleLogout('admin')}
-            books={books}
-            setBooks={setBooks}
-            partnerLibraries={partnerLibraries}
-            setPartnerLibraries={setPartnerLibraries}
-            loans={loans}
-            setLoans={setLoans}
-            onOpenReader={(b) => {
-              setActiveBookForReader(b);
-              navigateTo(`/reader/${b.id}`);
-            }}
-            onSwitchToUserPortal={() => {
-              setCurrentUser({
-                role: 'student',
-                matric: 'FCC/CSC/2026/409',
-                name: 'OLAWALE AKEEM OLONADE',
-                dept: 'Computer Science & Information Technology'
-              });
-              navigateTo('/scholar/catalog');
-            }}
-            onSwitchToHodPortal={(dept) => {
-              const hodUser = {
-                role: 'hod',
-                name: dept?.hod || 'Department Head',
-                department_code: dept?.code || 'CEM',
-                department_name: dept?.name || 'Academic Department',
-                department_id: dept?.id || `DEP-${dept?.code || 'CEM'}`,
-                matric: `HOD/${dept?.code || 'CEM'}/001`
-              };
-              setCurrentUser(hodUser);
-              try {
-                localStorage.setItem('fcc_hod_session', JSON.stringify(hodUser));
-              } catch (e) {}
-              setViewMode('hod');
-              navigateTo('/hod/overview');
-            }}
-          />
+          devConfig?.pageStatus?.admin?.enabled === false && !currentUser?.isDeveloperImpersonation ? (
+            <PageMaintenanceGuard
+              pageTitle={devConfig.pageStatus.admin.title || 'Chief Librarian Console'}
+              maintenanceMsg={devConfig.pageStatus.admin.maintenanceMsg}
+              onReturnToSafePage={() => {
+                setViewMode('public_opac');
+                navigateTo('/opac');
+              }}
+            />
+          ) : (
+            <FccAdminLibrary
+              user={currentUser}
+              onLogout={() => handleLogout('admin')}
+              books={books}
+              setBooks={setBooks}
+              partnerLibraries={partnerLibraries}
+              setPartnerLibraries={setPartnerLibraries}
+              loans={loans}
+              setLoans={setLoans}
+              onOpenReader={(b) => {
+                setActiveBookForReader(b);
+                navigateTo(`/reader/${b.id}`);
+              }}
+              onSwitchToUserPortal={() => {
+                setCurrentUser({
+                  role: 'student',
+                  matric: 'FCC/CSC/2026/409',
+                  name: 'OLAWALE AKEEM OLONADE',
+                  dept: 'Computer Science & Information Technology'
+                });
+                navigateTo('/scholar/catalog');
+              }}
+              onSwitchToHodPortal={(dept) => {
+                const hodUser = {
+                  role: 'hod',
+                  name: dept?.hod || 'Department Head',
+                  department_code: dept?.code || 'CEM',
+                  department_name: dept?.name || 'Academic Department',
+                  department_id: dept?.id || `DEP-${dept?.code || 'CEM'}`,
+                  matric: `HOD/${dept?.code || 'CEM'}/001`
+                };
+                setCurrentUser(hodUser);
+                try {
+                  localStorage.setItem('fcc_hod_session', JSON.stringify(hodUser));
+                } catch (e) {}
+                setViewMode('hod');
+                navigateTo('/hod/overview');
+              }}
+            />
+          )
         ) : currentUser.role === 'hod' ? (
-          <HodDashboard
-            key={currentUser?.department_code || 'hod'}
-            user={currentUser}
-            onLogout={() => handleLogout('hod')}
+          devConfig?.pageStatus?.hod?.enabled === false && !currentUser?.isDeveloperImpersonation ? (
+            <PageMaintenanceGuard
+              pageTitle={devConfig.pageStatus.hod.title || 'HOD Academic Department'}
+              maintenanceMsg={devConfig.pageStatus.hod.maintenanceMsg}
+              onReturnToSafePage={() => {
+                setViewMode('public_opac');
+                navigateTo('/opac');
+              }}
+            />
+          ) : (
+            <HodDashboard
+              key={currentUser?.department_code || 'hod'}
+              user={currentUser}
+              onLogout={() => handleLogout('hod')}
+            />
+          )
+        ) : devConfig?.pageStatus?.scholar?.enabled === false && !currentUser?.isDeveloperImpersonation ? (
+          <PageMaintenanceGuard
+            pageTitle={devConfig.pageStatus.scholar.title || 'Student Scholar Portal'}
+            maintenanceMsg={devConfig.pageStatus.scholar.maintenanceMsg}
+            onReturnToSafePage={() => {
+              setViewMode('public_opac');
+              navigateTo('/opac');
+            }}
           />
         ) : (
           <StudentPortal
@@ -935,6 +1029,11 @@ export default function App() {
           />
         )}
       </div>
+
+      {/* Global Institutional Copyright & Attribution Footer */}
+      {viewMode !== 'admin_login' && (
+        <InstitutionalFooter />
+      )}
 
       {/* Global Book Details & Citation Modal (Shown only when opened as an overlay, not on full-page dossier) */}
       {selectedBookForDetails && viewMode !== 'book_dossier' && (
@@ -983,6 +1082,31 @@ export default function App() {
         books={books}
         currentUser={currentUser}
       />
+
+      {/* Floating Developer God Mode Dock */}
+      {typeof window !== 'undefined' && 
+        localStorage.getItem('fcc_developer_session') === 'active' && 
+        viewMode !== 'developer' && 
+        viewMode !== 'admin_login' && 
+        viewMode !== 'hod' && 
+        viewMode !== 'hod_login' && 
+        !window.location.hash.includes('login') && 
+        !window.location.hash.includes('hod') && (
+        <aside aria-label="Developer Master Controls" className="fixed bottom-4 left-4 z-50 flex items-center gap-2 p-2 rounded-2xl bg-[#040915]/95 border-2 border-cyan-400 text-cyan-300 shadow-2xl backdrop-blur-xl font-mono text-xs">
+          <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping ml-1" />
+          <span className="font-bold tracking-wider">DEV ROOT</span>
+          <button
+            type="button"
+            onClick={() => {
+              setViewMode('developer');
+              navigateTo('/developer');
+            }}
+            className="px-2.5 py-1 rounded-xl bg-cyan-950 border border-cyan-500 hover:bg-cyan-900 text-white font-bold transition text-[11px]"
+          >
+            Master Deck &rarr;
+          </button>
+        </aside>
+      )}
     </div>
   );
 }

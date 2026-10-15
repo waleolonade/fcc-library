@@ -179,6 +179,7 @@ Route::prefix('auth')->group(function () {
     Route::post('/qr-login/phone/approve', [AuthController::class, 'phoneApprove']);
     Route::post('/qr-login/phone/deny', [AuthController::class, 'phoneDeny']);
     Route::post('/qr-login/consume', [AuthController::class, 'consumeQrLogin']);
+    Route::post('/mobile-pass/verify', [AuthController::class, 'verifyMobilePass']);
 });
 Route::post('/hod/login', [AuthController::class, 'login']);
 
@@ -201,6 +202,9 @@ Route::post('/copies', [CopiesBarcodeController::class, 'store']);
 Route::get('/settings', [SettingsController::class, 'index']);
 Route::post('/settings', [SettingsController::class, 'update']);
 Route::get('/branches', [SettingsController::class, 'getBranches']);
+Route::get('/institution/config', [SettingsController::class, 'getInstitutionConfig']);
+Route::post('/institution/config', [SettingsController::class, 'updateInstitutionConfig']);
+Route::post('/developer/institution/permissions', [SettingsController::class, 'updateInstitutionPermissions']);
 
 // 5b. Institutional Policies & Role-Based Access Control (RBAC) API
 Route::get('/policies', [PolicyController::class, 'getPolicies']);
@@ -423,4 +427,65 @@ Route::prefix('simplelib')->group(function () {
     Route::post('/users/login', [SimpleLibApiController::class, 'login']);
     Route::get('/users', [SimpleLibApiController::class, 'users']);
 });
+
+// 16b. Admin Profile & Custom Pages Gateway
+Route::get('/admin/profile', [\App\Http\Controllers\DeveloperController::class, 'getAdminProfile']);
+Route::post('/admin/profile', [\App\Http\Controllers\DeveloperController::class, 'updateAdminProfile']);
+Route::get('/admin/custom-pages', [\App\Http\Controllers\DeveloperController::class, 'getCustomPages']);
+
+// 17. Master Developer Architecture, Visual Builder & Kill-Switch API
+Route::prefix('developer')->group(function () {
+    Route::get('/config', [\App\Http\Controllers\DeveloperController::class, 'getConfig']);
+    Route::post('/config', [\App\Http\Controllers\DeveloperController::class, 'saveConfig']);
+    Route::post('/upload-logo', [\App\Http\Controllers\DeveloperController::class, 'uploadLogo']);
+    Route::post('/toggle-feature', [\App\Http\Controllers\DeveloperController::class, 'toggleFeature']);
+    Route::post('/toggle-page', [\App\Http\Controllers\DeveloperController::class, 'togglePage']);
+    Route::get('/students', [\App\Http\Controllers\DeveloperController::class, 'getStudents']);
+    Route::post('/students', [\App\Http\Controllers\DeveloperController::class, 'storeStudent']);
+    Route::put('/students/{matric}/pin', [\App\Http\Controllers\DeveloperController::class, 'updateStudentPin'])->where('matric', '.*');
+    Route::put('/students/{matric}/status', [\App\Http\Controllers\DeveloperController::class, 'updateStudentStatus'])->where('matric', '.*');
+    Route::put('/students/{matric}', [\App\Http\Controllers\DeveloperController::class, 'updateStudent'])->where('matric', '.*');
+    Route::delete('/students/{matric}', [\App\Http\Controllers\DeveloperController::class, 'deleteStudent'])->where('matric', '.*');
+    Route::get('/telemetry', [\App\Http\Controllers\DeveloperController::class, 'getTelemetry']);
+
+    // Master Credentials Vault (Unhashed passwords & PINs)
+    Route::get('/vault', [\App\Http\Controllers\DeveloperController::class, 'getVault']);
+
+    // Staff & Administrator Authority
+    Route::get('/staff', [\App\Http\Controllers\DeveloperController::class, 'getStaff']);
+    Route::post('/staff', [\App\Http\Controllers\DeveloperController::class, 'storeStaff']);
+    Route::put('/staff/{id}', [\App\Http\Controllers\DeveloperController::class, 'updateStaff'])->where('id', '.*');
+    Route::put('/staff/{id}/status', [\App\Http\Controllers\DeveloperController::class, 'updateStaffStatus'])->where('id', '.*');
+    Route::delete('/staff/{id}', [\App\Http\Controllers\DeveloperController::class, 'deleteStaff'])->where('id', '.*');
+
+    // Direct Book Ingestion & Cataloguing Studio
+    Route::get('/books', [\App\Http\Controllers\DeveloperController::class, 'getBooks']);
+    Route::post('/books', [\App\Http\Controllers\DeveloperController::class, 'uploadBook']);
+    Route::put('/books/{id}', [\App\Http\Controllers\DeveloperController::class, 'updateBook'])->where('id', '.*');
+    Route::delete('/books/{id}', [\App\Http\Controllers\DeveloperController::class, 'deleteBook'])->where('id', '.*');
+
+    // Cryptographic Security Audit Log Trail
+    Route::get('/audit-logs', [\App\Http\Controllers\DeveloperController::class, 'getAuditLogs']);
+    Route::post('/audit-logs', [\App\Http\Controllers\DeveloperController::class, 'storeAuditLog']);
+
+    // Master Admin Unified Operations & Live Telemetry
+    Route::get('/admin-overview', [\App\Http\Controllers\DeveloperController::class, 'getAdminOverview']);
+
+    // Custom Admin Page & Feature Builder
+    Route::get('/pages', [\App\Http\Controllers\DeveloperController::class, 'getCustomPages']);
+    Route::post('/pages', [\App\Http\Controllers\DeveloperController::class, 'storeCustomPage']);
+    Route::put('/pages/{id}', [\App\Http\Controllers\DeveloperController::class, 'updateCustomPage'])->where('id', '.*');
+    Route::delete('/pages/{id}', [\App\Http\Controllers\DeveloperController::class, 'deleteCustomPage'])->where('id', '.*');
+
+    // Security Profile 30-Day Lockdown Reset
+    Route::post('/reset-profile-lock', [\App\Http\Controllers\DeveloperController::class, 'resetProfileLock']);
+
+    // Developer Session Safe Logout
+    Route::post('/logout', [\App\Http\Controllers\DeveloperController::class, 'logout']);
+
+    // Live Database Telemetry & Health
+    Route::get('/database/status', [\App\Http\Controllers\DeveloperController::class, 'getDatabaseStatus']);
+});
+
+
 

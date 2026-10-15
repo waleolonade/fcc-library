@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { processPassportPhoto } from '../utils/passportImageStudio';
 import { sounds } from '../utils/soundEffects';
+import InstitutionalFooter from '../common/InstitutionalFooter';
 
 export default function PassportUploadModal({
   isOpen,
@@ -383,6 +384,9 @@ export default function PassportUploadModal({
             </button>
           )}
         </div>
+
+        {/* Modal Popup Footer Attribution */}
+        <InstitutionalFooter compact={true} />
       </div>
     </div>
   );

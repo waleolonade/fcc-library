@@ -2,14 +2,28 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, ShieldCheck, AlertTriangle, ArrowLeft, CheckCircle, Smartphone } from 'lucide-react';
 import { QrCodeSvg } from '../common/BarcodeQrStudio';
 import { sounds } from '../utils/soundEffects';
+import fccLogo from '../assets/fcc-logo.png';
 
 const API = import.meta.env.VITE_API_BASE_URL || '';
 // Public URL the phone should open so phones on any network connect to the official domain.
 const PUBLIC_APP_URL = import.meta.env.VITE_PUBLIC_APP_URL || 'https://fccibadanlibrary.com.ng';
 const POLL_INTERVAL_MS = 1500;
 
+function resolveApiUrl(path) {
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  if (!API) {
+    return cleanPath;
+  }
+  const cleanApi = API.replace(/\/+$/, '');
+  if (cleanApi.endsWith('/api') && cleanPath.startsWith('/api/')) {
+    return `${cleanApi}${cleanPath.slice(4)}`;
+  }
+  return `${cleanApi}${cleanPath}`;
+}
+
 /** JSON request with fallback to the backend port when the dev proxy is unavailable. */
 async function apiRequest(path, { method = 'GET', body, headers = {} } = {}) {
+  const targetUrl = resolveApiUrl(path);
   const init = {
     method,
     headers: { 'Content-Type': 'application/json', ...headers },
@@ -17,13 +31,25 @@ async function apiRequest(path, { method = 'GET', body, headers = {} } = {}) {
   };
   let res;
   try {
-    res = await fetch(`${API}${path}`, init);
+    res = await fetch(targetUrl, init);
   } catch {
-    res = await fetch(`${window.location.protocol}//${window.location.hostname}:8000${path}`, init);
+    const host = typeof window !== 'undefined' ? window.location.hostname : '';
+    const isLocal = host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.');
+    if (isLocal) {
+      try {
+        const localPath = path.startsWith('/api') ? path : `/api${path}`;
+        res = await fetch(`${window.location.protocol}//${host}:8000${localPath}`, init);
+      } catch {
+        throw new Error('Could not connect to local server on port 8000.');
+      }
+    } else {
+      throw new Error('Network connection failed. Please check your internet connection.');
+    }
   }
+
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = new Error(data.error || 'Request failed. Please try again.');
+    const err = new Error(data.error || data.message || `Request failed (${res.status}). Please try again.`);
     err.data = data;
     err.status = res.status;
     throw err;
@@ -45,9 +71,10 @@ export function QrPhoneLogin({ onLogin, onBack }) {
   const createChallenge = useCallback(async () => {
     setStatus('loading');
     setError('');
-    consumedRef.current = false;
     try {
-      const clientUrl = PUBLIC_APP_URL || window.location.origin;
+      const clientUrl = (typeof window !== 'undefined' && window.location.origin)
+        ? window.location.origin
+        : (PUBLIC_APP_URL || 'https://fccibadanlibrary.com.ng');
       const data = await apiRequest('/api/auth/qr-login/create', { method: 'POST', body: { clientUrl } });
       setChallenge(data);
       setStatus('waiting');
@@ -78,13 +105,34 @@ export function QrPhoneLogin({ onLogin, onBack }) {
         if (data.status === 'approved' && !consumedRef.current) {
           consumedRef.current = true;
           setStatus('approved');
-          const auth = await apiRequest('/api/auth/qr-login/consume', {
-            method: 'POST',
-            body: { challengeId: challenge.challengeId, pollToken: challenge.pollToken },
-          });
-          if (!active) return;
-          sounds.playSuccessChime();
-          onLogin(auth.user, auth.accessToken);
+          try {
+            const auth = await apiRequest('/api/auth/qr-login/consume', {
+              method: 'POST',
+              body: { challengeId: challenge.challengeId, pollToken: challenge.pollToken },
+            });
+            sounds.playSuccessChime();
+            const studentUser = auth?.user ? {
+              ...auth.user,
+              role: 'student',
+              matric: auth.user.matric || auth.user.barcode
+            } : null;
+
+            if (studentUser) {
+              localStorage.setItem('fcc_student_session', JSON.stringify(studentUser));
+              if (auth.accessToken) {
+                localStorage.setItem('fcc_student_token', auth.accessToken);
+              }
+              if (onLogin) {
+                onLogin(studentUser, auth.accessToken);
+              }
+            }
+            // Auto login website workstation to scholar profile
+            window.location.hash = '#/scholar/profile';
+          } catch (consumeErr) {
+            console.error('Failed to consume QR login token:', consumeErr);
+            setStatus('error');
+            setError(consumeErr.message || 'Login approval could not be finalized. Please re-scan.');
+          }
           return;
         }
 
@@ -116,7 +164,19 @@ export function QrPhoneLogin({ onLogin, onBack }) {
 
       <div className="mx-auto w-fit rounded-2xl bg-white p-3.5 shadow-2xl min-h-[238px] min-w-[238px] flex items-center justify-center">
         {status === 'waiting' && challenge ? (
-          <QrCodeSvg value={challenge.qrUrl} size={210} />
+          <div className="relative inline-flex items-center justify-center">
+            <QrCodeSvg value={challenge.qrUrl} size={214} logo={fccLogo} showLogo={true} />
+            {/* Embedded High-Resolution Institutional School Crest Overlay */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-12 h-12 rounded-xl bg-white p-1 shadow-lg border-2 border-emerald-600 flex items-center justify-center ring-2 ring-emerald-500/20">
+                <img
+                  src={fccLogo}
+                  alt="Federal Co-operative College Crest"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            </div>
+          </div>
         ) : status === 'approved' ? (
           <CheckCircle size={64} className="text-emerald-600" />
         ) : (
@@ -171,14 +231,13 @@ export function QrPhoneApprovalPage({ onLogin, onBackToLogin }) {
         challengeId={challengeId}
         scanToken={scanToken}
         prefilledMatric={matric}
-        onClose={onBackToLogin || (() => window.location.assign('/#/login'))}
-        onLoginSuccess={(user) => {
-          if (onLogin) {
-            onLogin(user);
-          } else {
-            window.location.hash = '#/scholar/profile';
-            window.location.reload();
-          }
+        onClose={onBackToLogin || (() => {
+          try { window.close(); } catch (e) {}
+          window.location.assign('/#/login');
+        })}
+        onLoginSuccess={() => {
+          // Mobile device is an authentication key to unlock the workstation.
+          // It does NOT log into the student dashboard on mobile.
         }}
       />
     </main>
