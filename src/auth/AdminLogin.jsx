@@ -1,17 +1,23 @@
-import React, { useState } from 'react';
 import {
-  Shield, Lock, Key, ArrowRight, AlertTriangle, CheckCircle2,
-  Building2, Eye, EyeOff, Sparkles, Terminal, ArrowLeft, RefreshCw
+    AlertTriangle,
+    ArrowLeft,
+    ArrowRight,
+    Building2,
+    CheckCircle2,
+    Eye, EyeOff,
+    Key,
+    Lock,
+    RefreshCw,
+    Shield
 } from 'lucide-react';
-import { INSTITUTION } from '../data/institutionalSeedData';
-import { navigateTo } from '../utils/router';
-import { PATTERNS } from '../utils/backgroundPatterns';
+import { useState } from 'react';
 import fccLogo from '../assets/fcc-logo.png';
-import { sounds } from '../utils/soundEffects';
 import InstitutionalFooter from '../common/InstitutionalFooter';
+import { navigateTo } from '../utils/router';
+import { sounds } from '../utils/soundEffects';
 
 export default function AdminLogin({ onLogin }) {
-  const [adminEmail, setAdminEmail] = useState('admin@fccibadan.com.ng');
+  const [adminEmail, setAdminEmail] = useState('admin@fccibadanlibrary.com.ng');
   const [adminPass, setAdminPass] = useState('admin123');
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState('');
@@ -27,7 +33,7 @@ export default function AdminLogin({ onLogin }) {
 
     // List of known authorized administrative staff emails & identifiers
     const authorizedAdminEmails = [
-      'admin@fccibadan.com.ng',
+      'admin@fccibadanlibrary.com.ng',
       'admin@fccibadanlibrary.com.ng',
       'admin@fccibadan.edu.ng',
       'librarian@fccibadanlibrary.com.ng',
@@ -62,8 +68,8 @@ export default function AdminLogin({ onLogin }) {
         sounds.playSuccessChime();
         const adminUser = {
           ...data.user,
-          role: 'admin',
-          email: emailTrimmed,
+          role: data.user.role || 'admin',
+          email: data.user.email || emailTrimmed,
           name: data.user.name || 'Chief Librarian / System Administrator'
         };
         localStorage.setItem('fcc_admin_session', JSON.stringify(adminUser));
@@ -73,10 +79,9 @@ export default function AdminLogin({ onLogin }) {
       }
 
       // If backend returned a specific administrative denial
-      if (data.error && !isRecognizedAdminEmail) {
+      if (data.error) {
         setLoading(false);
         sounds.playErrorBuzz();
-        // Ensure no mention of HOD!
         const cleanMsg = data.error.replace(/register with your department HOD\.?/gi, 'contact the Library Directorate.');
         setError(cleanMsg);
         return;

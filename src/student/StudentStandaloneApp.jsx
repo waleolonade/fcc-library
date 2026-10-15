@@ -1,41 +1,59 @@
-import React, { useState, useEffect, useRef } from 'react';
 import {
-  BookOpen, Search, LogOut, QrCode, FileText, Bot, DoorOpen,
-  Sparkles, Layers, Bookmark, MapPin, Filter, AlertTriangle,
-  Award, ShieldCheck, Globe, MessageSquare, Printer, Fingerprint,
-  Building2, Key, Bell, User, Clock, ChevronLeft, ChevronRight,
-  Menu, X, HelpCircle, Settings, Shield, PlusCircle, Wifi, Compass, Link2, Copy, Database
+    Award,
+    Bell,
+    Bookmark,
+    BookOpen,
+    Bot,
+    Building2,
+    ChevronLeft, ChevronRight,
+    Clock,
+    Database,
+    DoorOpen,
+    Fingerprint,
+    Globe,
+    Key,
+    Layers,
+    Link2,
+    LogOut,
+    Menu,
+    MessageSquare,
+    QrCode,
+    Search,
+    ShieldCheck,
+    Sparkles,
+    X
 } from 'lucide-react';
-import { INSTITUTION } from '../data/institutionalSeedData';
+import { useEffect, useState } from 'react';
 import { libraryApi } from '../api/libraryApi';
-import { sounds } from '../utils/soundEffects';
 import TraceBadge from '../common/TraceBadge';
+import { INSTITUTION } from '../data/institutionalSeedData';
+import { sounds } from '../utils/soundEffects';
 
 // Student Subcomponents
-import StudentOverviewDashboard from './StudentOverviewDashboard';
+import BiometricScannerModal from '../common/BiometricScannerModal';
+import BookDetailsModal from '../common/BookDetailsModal';
+import DigitalBookReader from '../common/DigitalBookReader';
+import PartnerLibrariesGateway from '../common/PartnerLibrariesGateway';
+import { useDeviceType } from '../utils/useDeviceType';
+import AcademicJournalsDirectory from './AcademicJournalsDirectory';
+import AcquisitionRequestModal from './AcquisitionRequestModal';
+import AiLibrarianModal from './AiLibrarianModal';
+import DigitalLibraryCardModal from './DigitalLibraryCardModal';
+import GraduationClearance from './GraduationClearance';
+import LmsApiExplorer from './LmsApiExplorer';
+import MobileStudentNavigation from './MobileStudentNavigation';
 import SmartCatalogSearch from './SmartCatalogSearch';
+import StudentCardAndLoans from './StudentCardAndLoans';
 import StudentCourseResources from './StudentCourseResources';
+import StudentDigitalLibrary from './StudentDigitalLibrary';
+import StudentEventsAndAnnouncements from './StudentEventsAndAnnouncements';
+import StudentHelpCenter from './StudentHelpCenter';
+import StudentOverviewDashboard from './StudentOverviewDashboard';
 import StudentReadingLists from './StudentReadingLists';
 import StudentResearchCenter from './StudentResearchCenter';
 import StudentResearchHub from './StudentResearchHub';
-import StudentDigitalLibrary from './StudentDigitalLibrary';
-import DigitalLibraryCardModal from './DigitalLibraryCardModal';
-import StudentStudyRooms from './StudentStudyRooms';
-import StudentHelpCenter from './StudentHelpCenter';
-import StudentEventsAndAnnouncements from './StudentEventsAndAnnouncements';
-import AcquisitionRequestModal from './AcquisitionRequestModal';
-import DigitalBookReader from '../common/DigitalBookReader';
-import BookDetailsModal from '../common/BookDetailsModal';
-import AiLibrarianModal from './AiLibrarianModal';
-import PartnerLibrariesGateway from '../common/PartnerLibrariesGateway';
-import BiometricScannerModal from '../common/BiometricScannerModal';
-import StudentCardAndLoans from './StudentCardAndLoans';
-import GraduationClearance from './GraduationClearance';
 import StudentReservations from './StudentReservations';
-import LmsApiExplorer from './LmsApiExplorer';
-import AcademicJournalsDirectory from './AcademicJournalsDirectory';
-import { useDeviceType } from '../utils/useDeviceType';
-import MobileStudentNavigation from './MobileStudentNavigation';
+import StudentStudyRooms from './StudentStudyRooms';
 import TabletStudentNavigation from './TabletStudentNavigation';
 
 export default function StudentStandaloneApp() {
@@ -530,7 +548,7 @@ export default function StudentStandaloneApp() {
           </form>
 
           <div className="p-3 bg-slate-950 rounded-2xl border border-slate-800 text-center space-y-1 text-[11px] text-slate-400">
-            <div className="font-mono text-emerald-400">Connected to Database: brainfeels_library</div>
+            <div className="font-mono text-emerald-400">Connected to Database: gsashtub_brainfeels_library</div>
             <div>Credentials issued by College Library Directorate</div>
           </div>
         </div>
@@ -729,9 +747,9 @@ export default function StudentStandaloneApp() {
           {/* Right Action Icons & Profile Badge */}
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Database Live Status Badge */}
-            <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-emerald-400" title="Connected to SQL Database brainfeels_library">
+            <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-emerald-400" title="Connected to SQL Database gsashtub_brainfeels_library">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              brainfeels_library SQL Live
+              gsashtub_brainfeels_library SQL Live
             </div>
 
             {/* AI Librarian Launcher */}

@@ -10,6 +10,7 @@ import { sounds } from '../utils/soundEffects';
 
 export default function DepartmentManagement({ onSwitchToHodPortal }) {
   const [departments, setDepartments] = useState([]);
+  const [patrons, setPatrons] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFaculty, setSelectedFaculty] = useState('All');
@@ -29,7 +30,7 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
     pin: '1234',
     established: '2026',
     color: 'emerald',
-    studentCount: 150,
+    studentCount: 0,
     description: ''
   });
 
@@ -37,20 +38,26 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
   const fetchDepartmentsFromBackend = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/departments', {
-        headers: { 'Accept': 'application/json' }
-      });
-      if (res.ok) {
-        const data = await res.json();
+      const [resDepts, resPatrons] = await Promise.all([
+        fetch('/api/departments', { headers: { 'Accept': 'application/json' } }),
+        fetch('/api/patrons', { headers: { 'Accept': 'application/json' } })
+      ]);
+
+      if (resDepts.ok) {
+        const data = await resDepts.json();
         if (Array.isArray(data)) {
           setDepartments(data);
-          return;
         }
       }
-      setDepartments([]);
+
+      if (resPatrons.ok) {
+        const pData = await resPatrons.json();
+        if (Array.isArray(pData)) {
+          setPatrons(pData);
+        }
+      }
     } catch (err) {
-      console.error('Error fetching departments from backend:', err);
-      setDepartments([]);
+      console.error('Error fetching departments and patrons from backend:', err);
     } finally {
       setIsLoading(false);
     }
@@ -90,7 +97,7 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
       pin: '1234',
       established: new Date().getFullYear().toString(),
       color: 'emerald',
-      studentCount: 150,
+      studentCount: 0,
       description: ''
     });
     setEditingDept(null);
@@ -110,7 +117,7 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
       pin: dept.pin || '1234',
       established: dept.established?.toString() || '1990',
       color: dept.color || 'emerald',
-      studentCount: dept.studentCount || 150,
+      studentCount: dept.student_count ?? dept.studentCount ?? 0,
       description: dept.description || ''
     });
     setIsAddModalOpen(true);
@@ -126,14 +133,19 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
     }
 
     try {
+      const parsedStudents = parseInt(formData.studentCount, 10);
       const payload = {
         name: formData.name.trim(),
         code: formData.code.toUpperCase().trim(),
+        faculty: formData.faculty?.trim() || 'School of Cooperative & Management Studies',
         hod_name: formData.hod.trim(),
         hod_email: formData.hodEmail?.trim() || `${formData.code.toLowerCase().trim()}.hod@fccibadan.edu.ng`,
+        hod_phone: formData.hodPhone?.trim() || '+234 800 000 0000',
         hod_pin: formData.pin?.trim() || '1234',
-        student_count: parseInt(formData.studentCount) || 150,
-        faculty_count: 8
+        student_count: !isNaN(parsedStudents) && parsedStudents >= 0 ? parsedStudents : 0,
+        faculty_count: 8,
+        description: formData.description?.trim() || `Department offering accredited programmes in ${formData.name.trim()}.`,
+        established: formData.established?.toString().trim() || new Date().getFullYear().toString()
       };
 
       let res;
@@ -307,7 +319,26 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
-  const totalStudents = useMemo(() => departments.reduce((acc, d) => acc + (d.student_count ?? d.studentCount ?? 0), 0), [departments]);
+  const getDeptStudentCount = (dept) => {
+    if (patrons && patrons.length > 0) {
+      const dName = (dept.name || '').toLowerCase();
+      const dCode = (dept.code || '').toLowerCase();
+      const matched = patrons.filter(p => {
+        const pDept = (p.department || '').toLowerCase();
+        const pMat = (p.matric || '').toLowerCase();
+        return pDept.includes(dName) || dName.includes(pDept) || pDept.includes(dCode) || pMat.includes(`/${dCode}/`) || pMat.includes(dCode);
+      });
+      return matched.length;
+    }
+    return dept.student_count ?? dept.studentCount ?? 0;
+  };
+
+  const totalStudents = useMemo(() => {
+    if (patrons && patrons.length > 0) {
+      return patrons.length;
+    }
+    return departments.reduce((acc, d) => acc + (d.student_count ?? d.studentCount ?? 0), 0);
+  }, [patrons, departments]);
   const totalCourses = useMemo(() => departments.reduce((acc, d) => acc + (d.courses_count ?? d.coursesCount ?? 0), 0), [departments]);
   const totalTheses = useMemo(() => departments.reduce((acc, d) => acc + (d.theses_count ?? d.hndProjectsCount ?? 0), 0), [departments]);
 
@@ -504,7 +535,7 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
                       </div>
                       <div className="mt-1.5 flex items-baseline gap-1.5">
                         <span className="text-xl font-black text-white tracking-tight">
-                          {(dept.student_count ?? dept.studentCount ?? 0).toLocaleString()}
+                          {getDeptStudentCount(dept).toLocaleString()}
                         </span>
                         <span className="text-[9px] font-bold text-emerald-400 flex items-center gap-0.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />

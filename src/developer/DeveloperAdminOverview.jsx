@@ -1,12 +1,19 @@
-import React, { useState, useEffect } from 'react';
 import {
-  Activity, BookOpen, Users, Clock, AlertTriangle, ShieldCheck,
-  ArrowRight, RefreshCw, Sparkles, CheckCircle2, DollarSign,
-  Layers, HardDrive, Database, Globe, Play, Lock, Eye, Building2,
-  FileText, CornerDownRight, ExternalLink
+    Activity,
+    AlertTriangle,
+    ArrowRight,
+    BookOpen,
+    Building2,
+    Clock,
+    Database, Globe,
+    Lock,
+    Play,
+    RefreshCw,
+    ShieldCheck,
+    Sparkles,
+    Users
 } from 'lucide-react';
-import { INSTITUTION } from '../data/institutionalSeedData';
-import { sounds } from '../utils/soundEffects';
+import { useEffect, useState } from 'react';
 
 export default function DeveloperAdminOverview({ passkey, onSwitchTab, onImpersonate, showToast }) {
   const [data, setData] = useState(null);
@@ -75,7 +82,7 @@ export default function DeveloperAdminOverview({ passkey, onSwitchTab, onImperso
             </button>
 
             <button
-              onClick={() => onImpersonate?.('admin', { role: 'admin', name: 'Dr. Alhaji Balogun O.', email: 'admin@fccibadan.com.ng' })}
+              onClick={() => onImpersonate?.('admin', { role: 'admin', name: 'Dr. Alhaji Balogun O.', email: 'admin@fccibadanlibrary.com.ng' })}
               className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-xl shadow-emerald-950"
             >
               <Play size={14} />

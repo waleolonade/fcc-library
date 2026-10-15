@@ -10,8 +10,8 @@ class Department extends Model
     protected $keyType = 'string';
 
     protected $fillable = [
-        'id', 'name', 'code', 'hod_name', 'hod_email', 'hod_pin',
-        'student_count', 'faculty_count'
+        'id', 'name', 'code', 'faculty', 'hod_name', 'hod_email', 'hod_phone', 'hod_pin',
+        'student_count', 'faculty_count', 'description', 'established'
     ];
 
     public function uploads()

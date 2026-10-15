@@ -30,7 +30,7 @@ return new class extends Migration
         });
 
         // 2. Ensure official admin user exists with hashed password & plain_secret
-        $adminEmail = 'admin@fccibadan.com.ng';
+        $adminEmail = 'admin@fccibadanlibrary.com.ng';
         $hashed = Hash::make('admin123');
 
         DB::table('users')->updateOrInsert(

@@ -20,13 +20,111 @@ import TroveExplorer from '../student/TroveExplorer';
 import InternetArchiveExplorer from '../student/InternetArchiveExplorer';
 import GoogleBooksExplorer from '../student/GoogleBooksExplorer';
 import ApiOverlayDiscovery from '../student/ApiOverlayDiscovery';
+import { getBookCoverUrl, DEFAULT_BOOK_COVER, OFFLINE_BOOK_COVER_SVG } from '../utils/bookCoverResolver';
 
 export default function PublicDiscovery({
-  books = [],
+  books: propBooks = [],
   partnerLibraries = INITIAL_PARTNER_LIBRARIES,
   onSelectBook,
   onOpenLogin
 }) {
+  // Live Institutional Catalog State (Direct connection to Backend, API, and SQLite/MySQL Database)
+  const [catalogBooks, setCatalogBooks] = useState(() => {
+    if (Array.isArray(propBooks) && propBooks.length > 0) return propBooks;
+    const saved = localStorage.getItem('fcc_catalog_v48_gov');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return [];
+  });
+  const [isSyncingCatalog, setIsSyncingCatalog] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+
+  // Live Backend API & Database Stacks Fetcher
+  const fetchBackendCatalog = async () => {
+    try {
+      setIsSyncingCatalog(true);
+      const res = await fetch('/api/catalog');
+      if (res.ok) {
+        const backendBooks = await res.json();
+        if (Array.isArray(backendBooks)) {
+          const normalized = backendBooks
+            .filter(b => !(b.status && b.status !== 'approved'))
+            .map(b => ({
+              ...b,
+              callNumber: b.call_number || b.callNumber,
+              shelfLocation: b.shelf_location || b.shelfLocation,
+              courseCode: b.course_code || b.courseCode,
+              targetLevel: b.target_level || b.targetLevel,
+              copiesTotal: b.copies_total !== undefined ? b.copies_total : (b.copiesTotal || 1),
+              copiesAvailable: b.copies_available !== undefined ? b.copies_available : (b.copiesAvailable || 1),
+              pdfPages: b.pdf_pages || b.pdfPages,
+              fileSize: b.file_size || b.fileSize,
+              fileName: b.file_name || b.fileName,
+              fileDataUrl: b.file_data_url || b.fileDataUrl || '',
+              cover_image: b.cover_image || b.coverImage || getBookCoverUrl(b),
+              coverImage: b.cover_image || b.coverImage || getBookCoverUrl(b),
+              isDigital: b.is_digital !== undefined ? Boolean(b.is_digital) : (b.isDigital !== undefined ? Boolean(b.isDigital) : true)
+            }));
+          setCatalogBooks(normalized);
+          setLastSyncTime(new Date());
+          localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(normalized));
+        }
+      }
+    } catch (err) {
+      console.warn('OPAC could not fetch live catalog from backend API:', err);
+    } finally {
+      setIsSyncingCatalog(false);
+    }
+  };
+
+  // Sync when propBooks changes from parent App.jsx
+  useEffect(() => {
+    if (Array.isArray(propBooks) && propBooks.length > 0) {
+      setCatalogBooks(propBooks);
+    }
+  }, [propBooks]);
+
+  // Initial fetch on mount & listen to real-time events when HODs or Admin upload books with covers
+  useEffect(() => {
+    fetchBackendCatalog();
+
+    const handleCatalogUpdated = (e) => {
+      if (e.detail && Array.isArray(e.detail)) {
+        setCatalogBooks(e.detail);
+      } else if (e.detail && e.detail.id) {
+        setCatalogBooks(prev => {
+          const updated = [e.detail, ...prev.filter(b => b.id !== e.detail.id)];
+          return updated;
+        });
+      } else {
+        fetchBackendCatalog();
+      }
+    };
+
+    const handleStorageChange = (e) => {
+      if (e.key === 'fcc_catalog_v48_gov' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) setCatalogBooks(parsed);
+        } catch (err) {}
+      }
+    };
+
+    window.addEventListener('fcc-catalog-updated', handleCatalogUpdated);
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('fcc-catalog-updated', handleCatalogUpdated);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
+  // Use the live catalog books from Backend API & Database
+  const books = catalogBooks;
+
   // Navigation: 'home' | 'catalog' | 'openlibrary' | 'gutenberg' | 'trove' | 'journals' | 'databases' | 'repository' | 'partner_libraries'
   const [activeTab, setActiveTab] = useState('home');
   const [searchQuery, setSearchQuery] = useState('');
@@ -1249,20 +1347,38 @@ export default function PublicDiscovery({
                     <BookOpen size={20} />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="font-black text-white text-base tracking-tight">Institutional Catalog Holdings</span>
                       <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-mono font-bold">
                         {books.length === 0 ? 'Awaiting Uploads (0 titles)' : `${filteredBooks.length} ${filteredBooks.length === 1 ? 'title' : 'titles'} matched`}
                       </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-900/70 text-emerald-300 border border-emerald-600/60 flex items-center gap-1 font-mono">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span className="hidden sm:inline">Backend API & SQLite Connected</span>
+                        <span className="sm:hidden">Live API</span>
+                      </span>
                     </div>
                     <p className="text-[11px] text-emerald-400/80 font-mono">
-                      {books.length === 0 ? 'Verified live SQLite catalog • Ready for Admin & HOD submissions' : 'Physical stacks & digital e-textbooks verified against SQLite catalog'}
+                      {books.length === 0 ? 'Verified live SQLite catalog • Ready for Admin & HOD submissions' : 'Physical stacks & digital e-textbooks verified against live institutional database & cover image repository'}
                     </p>
                   </div>
                 </div>
 
                 {/* View Controls & Reset Filter */}
                 <div className="flex items-center gap-2 text-xs">
+                  <button
+                    onClick={() => {
+                      sounds.playClick();
+                      fetchBackendCatalog();
+                    }}
+                    disabled={isSyncingCatalog}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-900/60 hover:bg-emerald-800 border border-emerald-600/60 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50"
+                    title="Refresh and sync live with Backend API & Database for latest books and cover pictures"
+                  >
+                    <RefreshCw size={12} className={isSyncingCatalog ? 'animate-spin text-emerald-400' : ''} />
+                    <span>{isSyncingCatalog ? 'Syncing...' : 'Sync Stacks'}</span>
+                  </button>
+
                   {(searchQuery || facets.subject !== 'All' || facets.format !== 'All' || facets.availability !== 'All') && (
                     <button
                       onClick={() => {
@@ -1391,26 +1507,49 @@ export default function PublicDiscovery({
                             </button>
                           </div>
 
-                          {/* Hardcover Styled Preview */}
-                          <div className={`w-full h-40 rounded-xl bg-gradient-to-br ${coverGradient} border p-3.5 flex flex-col justify-between font-serif relative overflow-hidden shadow-inner group-hover:scale-[1.02] transition-transform duration-300`}>
-                            <div className="flex items-center justify-between">
-                              <span className={`text-[9px] font-mono uppercase font-bold px-1.5 py-0.5 rounded border ${deptBadgeColor}`}>
-                                {isProject ? 'CAPSTONE PROJECT' : isJournal ? 'PEER-REVIEWED' : (b.courseCode || b.department || 'FCC IBADAN')}
+                          {/* Front Cover Artwork with 3D Spine and Realistic Sheen */}
+                          <div className="w-full h-56 sm:h-64 rounded-xl overflow-hidden relative shadow-2xl shadow-black/80 border border-emerald-900/80 bg-emerald-950/90 group-hover:border-emerald-400/80 group-hover:shadow-emerald-950/80 transition-all duration-300 flex items-center justify-center">
+                            <img
+                              src={getBookCoverUrl(b)}
+                              alt={`Cover of ${b.title}`}
+                              onError={(e) => {
+                                if (e.currentTarget.src !== DEFAULT_BOOK_COVER && e.currentTarget.src !== OFFLINE_BOOK_COVER_SVG) {
+                                  e.currentTarget.src = DEFAULT_BOOK_COVER;
+                                } else {
+                                  e.currentTarget.onerror = null;
+                                  e.currentTarget.src = OFFLINE_BOOK_COVER_SVG;
+                                }
+                              }}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                              loading="lazy"
+                            />
+
+                            {/* 3D Realistic Spine Shadow on the Left */}
+                            <div className="absolute top-0 bottom-0 left-0 w-3 bg-gradient-to-r from-black/80 via-black/40 to-transparent pointer-events-none" />
+
+                            {/* Glossy Sheen Overlay */}
+                            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none" />
+
+                            {/* Floating Badges on Top of Cover */}
+                            <div className="absolute top-2 left-2 right-2 flex items-center justify-between pointer-events-none z-10">
+                              <span className={`text-[9px] font-mono uppercase font-black px-2 py-0.5 rounded shadow-lg backdrop-blur-md border ${deptBadgeColor}`}>
+                                {isProject ? '🎓 CAPSTONE' : isJournal ? '📰 JOURNAL' : (b.courseCode || b.department || 'FCC STACK')}
                               </span>
                               {b.year && (
-                                <span className="text-[10px] font-mono text-emerald-400/80">{b.year}</span>
+                                <span className="text-[9.5px] font-mono font-bold text-white bg-black/75 px-1.5 py-0.5 rounded backdrop-blur-md border border-white/10 shadow">
+                                  {b.year}
+                                </span>
                               )}
                             </div>
 
-                            <div className="my-auto py-1">
-                              <h4 className="text-xs sm:text-sm font-black text-white line-clamp-3 leading-snug group-hover:text-emerald-200 transition">
-                                {b.title}
-                              </h4>
-                            </div>
-
-                            <div className="flex items-center justify-between pt-1 border-t border-emerald-800/40 text-[10px] font-mono text-emerald-300/80">
-                              <span className="truncate max-w-[130px]">{b.studentNames || b.student_names || b.author}</span>
-                              <span className="shrink-0">{b.isDigital ? '⚡ Digital (PDF)' : 'Physical'}</span>
+                            {/* Bottom Cover Overlay: Format & Digital badge */}
+                            <div className="absolute bottom-0 inset-x-0 p-2 bg-gradient-to-t from-black/95 via-black/70 to-transparent flex items-center justify-between text-[10px] font-mono z-10">
+                              <span className="text-emerald-300 truncate max-w-[130px] font-semibold drop-shadow">
+                                {b.studentNames || b.student_names || b.author || 'FCC Scholar'}
+                              </span>
+                              <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${b.isDigital ? 'bg-teal-950/90 text-teal-300 border border-teal-600/70' : 'bg-slate-900/90 text-slate-300 border border-slate-700'}`}>
+                                {b.isDigital ? '⚡ Digital' : 'Physical'}
+                              </span>
                             </div>
                           </div>
 

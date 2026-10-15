@@ -1,9 +1,9 @@
-﻿-- =========================================================================
--- DATABASE: brainfeels_library
+-- =========================================================================
+-- DATABASE: gsashtub_brainfeels_library
 -- MySQL 8.0+ Compatible Full Dump
 -- Federal Co-operative College, Ibadan â€” Smart Library System
 -- Generated: 2026-10-01
--- Import via: phpMyAdmin â†’ brainfeels_library â†’ Import â†’ select this file
+-- Import via: phpMyAdmin â†’ gsashtub_brainfeels_library â†’ Import â†’ select this file
 -- =========================================================================
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
@@ -15,11 +15,11 @@ SET NAMES utf8mb4;
 -- =========================================================================
 -- CREATE DATABASE (run if db doesn't exist yet)
 -- =========================================================================
-CREATE DATABASE IF NOT EXISTS `brainfeels_library`
+CREATE DATABASE IF NOT EXISTS `gsashtub_brainfeels_library`
   DEFAULT CHARACTER SET utf8mb4
   DEFAULT COLLATE utf8mb4_unicode_ci;
 
-USE `brainfeels_library`;
+USE `gsashtub_brainfeels_library`;
 
 -- =========================================================================
 -- SECTION 1: DROP TABLES IN SAFE ORDER

@@ -1,12 +1,12 @@
 -- =========================================================================
--- DATABASE: brainfeels_library
+-- DATABASE: gsashtub_brainfeels_library
 -- Complete SQL Dump & Initializer for Federal Co-operative College Smart Library
 -- Compatible with MySQL, PostgreSQL, SQLite, MariaDB
 -- Generated At: 2026-09-18T16:08:01.706Z
 -- =========================================================================
 
 -- =========================================================================
--- DATABASE SCHEMA: brainfeels_library
+-- DATABASE SCHEMA: gsashtub_brainfeels_library
 -- Enterprise Relational Schema for Federal Co-operative College Smart Library
 -- =========================================================================
 

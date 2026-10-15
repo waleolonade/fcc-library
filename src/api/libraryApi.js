@@ -1,9 +1,9 @@
 // =========================================================================
 // FCC IBADAN SMART ILS — CENTRALIZED REST & EVENT API CLIENT
-// Direct Database & Backend API Connection for brainfeels_library
+// Direct Database & Backend API Connection for gsashtub_brainfeels_library
 // =========================================================================
 
-import { INSTITUTION, BRANCHES, SYSTEM_HEALTH_METRICS } from '../data/institutionalSeedData';
+import { SYSTEM_HEALTH_METRICS } from '../data/institutionalSeedData';
 import { formatStudentBarcode } from '../utils/studentIdentity';
 
 // Broadcast Channel for Real-Time Cross-App Synchronization
@@ -770,7 +770,7 @@ export const libraryApi = {
       if (health) {
         return {
           ...SYSTEM_HEALTH_METRICS,
-          databaseStatus: health.status === 'Healthy' ? 'Online (brainfeels_library MySQL/SQLite)' : 'Degraded',
+          databaseStatus: health.status === 'Healthy' ? 'Online (gsashtub_brainfeels_library MySQL/SQLite)' : 'Degraded',
           activeLoans: health.counts?.activeLoans ?? 0,
           totalHoldings: health.counts?.totalBooks ?? 0,
           activePatrons: health.counts?.activePatrons ?? 0
@@ -1053,13 +1053,13 @@ export const libraryApi = {
   },
 
   // -------------------------------------------------------------
-  // 12. DATABASE MANAGEMENT API (brainfeels_library)
+  // 12. DATABASE MANAGEMENT API (gsashtub_brainfeels_library)
   // -------------------------------------------------------------
   database: {
     async getStatus() {
       const data = await fetchApi('/database/status');
       return data || {
-        database: 'brainfeels_library',
+        database: 'gsashtub_brainfeels_library',
         engine: 'MySQL / phpMyAdmin (port 3306)',
         status: 'Online & Connected',
         totalTables: 18,
@@ -1130,6 +1130,25 @@ export const libraryApi = {
       const res = await fetchApi('/rbac/users', {
         method: 'POST',
         body: JSON.stringify(data)
+      });
+      if (syncChannel) syncChannel.postMessage({ type: 'RBAC_UPDATED', timestamp: Date.now() });
+      return res;
+    },
+
+    async getRoles() {
+      const res = await fetchApi('/rbac/roles');
+      return res || { success: false, roles: [] };
+    },
+
+    async getPermissions() {
+      const res = await fetchApi('/rbac/permissions');
+      return res || { success: false, permissions: [] };
+    },
+
+    async updateRolePermissions(roleId, permissions) {
+      const res = await fetchApi(`/rbac/roles/${encodeURIComponent(roleId)}/permissions`, {
+        method: 'POST',
+        body: JSON.stringify({ permissions })
       });
       if (syncChannel) syncChannel.postMessage({ type: 'RBAC_UPDATED', timestamp: Date.now() });
       return res;

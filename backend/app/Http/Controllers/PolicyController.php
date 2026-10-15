@@ -4,12 +4,26 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use App\Models\Patron;
 use App\Models\Department;
+use App\Models\AuditLog;
 
 class PolicyController extends Controller
 {
+    /**
+     * Get direct PDO connection to MySQL gsashtub_brainfeels_library database (phpMyAdmin).
+     */
+    private function getMysqlPdo(): ?\PDO
+    {
+        try {
+            return \App\Services\DatabaseService::getPdo();
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
     /**
      * GET /api/policies
      * Retrieve institutional tier borrowing policies and fine calculation rules.
@@ -120,10 +134,8 @@ class PolicyController extends Controller
         $policies = $existingJson ? json_decode($existingJson, true) : null;
 
         if (!$policies || !is_array($policies)) {
-            // Get defaults
             $resp = $this->getPolicies();
             $policies = $resp->getData()->tier_policies;
-            // Convert to array
             $policies = json_decode(json_encode($policies), true);
         }
 
@@ -148,7 +160,6 @@ class PolicyController extends Controller
             $policies[] = $updatedPolicy;
         }
 
-        // Save back to library_settings
         DB::table('library_settings')->updateOrInsert(
             ['setting_key' => 'tier_policies'],
             [
@@ -159,7 +170,6 @@ class PolicyController extends Controller
             ]
         );
 
-        // Also sync legacy single keys if student or faculty
         if ($role === 'student' && isset($updatedPolicy['maxBooks'])) {
             DB::table('library_settings')->updateOrInsert(
                 ['setting_key' => 'max_borrow_limit_student'],
@@ -179,7 +189,6 @@ class PolicyController extends Controller
             );
         }
 
-        // Audit log
         $actor = $request->input('_actor', 'Chief Librarian');
         DB::table('audit_logs')->insert([
             'id' => 'LOG-' . Str::upper(Str::random(8)),
@@ -253,7 +262,7 @@ class PolicyController extends Controller
 
     /**
      * GET /api/rbac/directory
-     * Fetch complete institutional user directory (Admins, Librarians, HODs, Faculty, Students).
+     * Fetch complete institutional user directory with active user_roles and permissions.
      */
     public function getRbacDirectory(Request $request)
     {
@@ -262,106 +271,95 @@ class PolicyController extends Controller
         $search = strtolower(trim((string)$request->query('search', '')));
 
         $list = [];
+        $pdo = $this->getMysqlPdo();
 
-        // 1. Staff / Admins from users table + default administrative officers
-        $users = DB::table('users')->get();
-        $hasSuperAdmin = false;
-        $hasCircLibrarian = false;
+        // 1. Fetch system users joined with user_roles and roles
+        if ($pdo) {
+            try {
+                $stmt = $pdo->query("
+                    SELECT u.id, u.name, u.email, u.username, u.role as table_role, u.phone, u.designation, u.status,
+                           r.id as role_id, r.name as role_name, r.display_name as role_display
+                    FROM users u
+                    LEFT JOIN user_roles ur ON u.id = ur.user_id
+                    LEFT JOIN roles r ON ur.role_id = r.id
+                    ORDER BY u.id ASC
+                ");
+                $rows = $stmt->fetchAll();
 
-        foreach ($users as $u) {
-            $isSuper = str_contains(strtolower($u->email ?? ''), 'admin') || str_contains(strtolower($u->name ?? ''), 'balogun');
-            if ($isSuper) $hasSuperAdmin = true;
-            else $hasCircLibrarian = true;
+                $processedUserIds = [];
+                foreach ($rows as $row) {
+                    $uId = $row['id'];
+                    $effectiveRole = strtolower($row['role_name'] ?: ($row['table_role'] ?: 'student'));
 
-            $list[] = [
-                'id' => 'STAFF-' . str_pad($u->id, 3, '0', STR_PAD_LEFT),
-                'name' => $u->name,
-                'email' => $u->email,
-                'dept' => 'Library Directorate',
-                'role' => $isSuper ? 'super_admin' : 'librarian',
-                'roleLabel' => $isSuper ? 'Super Admin & Chief Librarian' : 'Operational Librarian',
-                'status' => 'Active',
-                'source' => 'system_user'
-            ];
+                    if (!isset($processedUserIds[$uId])) {
+                        $processedUserIds[$uId] = [
+                            'id' => $row['username'] ?: ('USER-' . str_pad($uId, 3, '0', STR_PAD_LEFT)),
+                            'numeric_id' => $uId,
+                            'name' => $row['name'],
+                            'email' => $row['email'],
+                            'username' => $row['username'],
+                            'phone' => $row['phone'] ?? '+234 800 000 0000',
+                            'dept' => $row['designation'] ?: 'Library Directorate',
+                            'role' => $effectiveRole,
+                            'roleLabel' => $row['role_display'] ?: ucwords(str_replace('_', ' ', $effectiveRole)),
+                            'roles' => [$effectiveRole],
+                            'role_ids' => $row['role_id'] ? [$row['role_id']] : [],
+                            'status' => ucfirst($row['status'] ?: 'Active'),
+                            'source' => 'system_user'
+                        ];
+                    } else {
+                        if (!in_array($effectiveRole, $processedUserIds[$uId]['roles'])) {
+                            $processedUserIds[$uId]['roles'][] = $effectiveRole;
+                        }
+                        if ($row['role_id'] && !in_array($row['role_id'], $processedUserIds[$uId]['role_ids'])) {
+                            $processedUserIds[$uId]['role_ids'][] = $row['role_id'];
+                        }
+                    }
+                }
+                $list = array_values($processedUserIds);
+            } catch (\Throwable $e) {}
         }
 
-        // Seed standard Chief Librarian if missing
-        if (!$hasSuperAdmin) {
-            $list[] = [
-                'id' => 'STAFF-001',
-                'name' => 'Dr. Mrs. A. Balogun',
-                'email' => 'balogun@fccibadan.edu.ng',
-                'dept' => 'Library Directorate',
-                'role' => 'super_admin',
-                'roleLabel' => 'Super Admin & Chief Librarian',
-                'status' => 'Active',
-                'source' => 'institutional_staff'
-            ];
-        }
-
-        // Seed Circulation desk operational librarian if missing
-        if (!$hasCircLibrarian) {
-            $list[] = [
-                'id' => 'STAFF-002',
-                'name' => 'Mr. Tunde Bakare',
-                'email' => 'bakare@fccibadan.edu.ng',
-                'dept' => 'Circulation & Stacks',
-                'role' => 'librarian',
-                'roleLabel' => 'Operational Librarian',
-                'status' => 'Active',
-                'source' => 'institutional_staff'
-            ];
-        }
-
-        // 2. Department Heads from departments table
-        $departments = Department::all();
-        foreach ($departments as $dept) {
-            if (!empty($dept->hod_name)) {
+        // Fallback to SQLite users if MySQL empty
+        if (empty($list)) {
+            $sqliteUsers = DB::table('users')->get();
+            foreach ($sqliteUsers as $u) {
+                $role = strtolower($u->role ?? 'student');
                 $list[] = [
-                    'id' => 'HOD-' . strtoupper($dept->code),
-                    'name' => $dept->hod_name,
-                    'email' => $dept->hod_email ?: (strtolower($dept->code) . '.hod@fccibadan.edu.ng'),
-                    'dept' => $dept->name,
-                    'role' => 'hod',
-                    'roleLabel' => 'Head of Department (HOD)',
-                    'status' => 'Active',
-                    'source' => 'department'
+                    'id' => $u->username ?: ('USER-' . str_pad($u->id, 3, '0', STR_PAD_LEFT)),
+                    'numeric_id' => $u->id,
+                    'name' => $u->name,
+                    'email' => $u->email,
+                    'username' => $u->username ?? null,
+                    'dept' => $u->designation ?: 'Library Directorate',
+                    'role' => $role,
+                    'roleLabel' => ucwords(str_replace('_', ' ', $role)),
+                    'roles' => [$role],
+                    'status' => ucfirst($u->status ?? 'Active'),
+                    'source' => 'sqlite_user'
                 ];
             }
         }
 
-        // 3. Patrons (Students & Faculty) from database
-        $patrons = Patron::orderBy('name', 'asc')->get();
-        foreach ($patrons as $p) {
-            $isFaculty = ($p->role === 'faculty') || str_contains(strtolower($p->level ?? ''), 'faculty');
-            $list[] = [
-                'id' => $p->matric ?: $p->id,
-                'name' => $p->name,
-                'email' => $p->email ?: (strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $p->matric)) . '@student.fccibadan.edu.ng'),
-                'dept' => $p->department ?: 'General Studies',
-                'role' => $isFaculty ? 'faculty' : 'student',
-                'roleLabel' => $isFaculty ? 'Faculty Researcher' : ($p->level ?: 'Student Scholar'),
-                'status' => $p->status ?: 'Active',
-                'borrow_quota' => (int)($p->borrow_quota ?? 5),
-                'clearance_status' => $p->clearance_status ?: 'Active Student',
-                'source' => 'patron'
-            ];
-        }
-
         // Compute Statistics
         $total = count($list);
-        $librariansCount = count(array_filter($list, fn($u) => in_array($u['role'], ['super_admin', 'librarian'])));
+        $librariansCount = count(array_filter($list, fn($u) => in_array($u['role'], ['admin', 'super_admin', 'chief_librarian', 'librarian', 'cataloguer', 'circulation_clerk'])));
         $hodsCount = count(array_filter($list, fn($u) => $u['role'] === 'hod'));
         $facultyCount = count(array_filter($list, fn($u) => $u['role'] === 'faculty'));
         $studentsCount = count(array_filter($list, fn($u) => $u['role'] === 'student'));
 
         // Filter if requested
         if ($roleFilter && $roleFilter !== 'all') {
-            $list = array_values(array_filter($list, fn($u) => $u['role'] === $roleFilter));
+            $list = array_values(array_filter($list, function ($u) use ($roleFilter) {
+                if ($roleFilter === 'librarian') {
+                    return in_array($u['role'], ['admin', 'super_admin', 'chief_librarian', 'librarian', 'cataloguer', 'circulation_clerk']);
+                }
+                return $u['role'] === $roleFilter || (isset($u['roles']) && in_array($roleFilter, $u['roles']));
+            }));
         }
 
         if ($deptFilter && $deptFilter !== 'all') {
-            $list = array_values(array_filter($list, fn($u) => strtolower($u['dept']) === strtolower($deptFilter)));
+            $list = array_values(array_filter($list, fn($u) => str_contains(strtolower($u['dept']), strtolower($deptFilter))));
         }
 
         if (!empty($search)) {
@@ -375,6 +373,7 @@ class PolicyController extends Controller
 
         return response()->json([
             'success' => true,
+            'count' => count($list),
             'users' => $list,
             'stats' => [
                 'total' => $total,
@@ -388,73 +387,109 @@ class PolicyController extends Controller
 
     /**
      * PUT /api/rbac/users/{id}/role
-     * Update an account's role tier and status in the database.
+     * Update an account's role tier and maintain user_roles table in database.
      */
     public function updateUserRole(Request $request, $id)
     {
-        $newRole = $request->input('role');
-        $newStatus = $request->input('status', 'Active');
+        $newRole = strtolower(trim((string)$request->input('role', '')));
+        $newStatus = trim((string)$request->input('status', 'Active'));
         $newQuota = $request->input('borrow_quota');
 
-        // Check if Patron
-        $patron = Patron::where('matric', $id)->orWhere('id', $id)->first();
-        if ($patron) {
-            if ($newRole) {
-                $patron->role = $newRole;
-                if ($newRole === 'faculty') {
-                    $patron->level = 'Academic Faculty';
-                    $patron->category = 'Staff';
+        if (empty($newRole)) {
+            return response()->json(['success' => false, 'message' => 'Role is required.'], 422);
+        }
+
+        $roleNameToId = [
+            'admin' => 1,
+            'super_admin' => 1,
+            'chief_librarian' => 2,
+            'librarian' => 2,
+            'cataloguer' => 3,
+            'circulation_clerk' => 4,
+            'staff' => 4,
+            'hod' => 5,
+            'faculty' => 6,
+            'student' => 7,
+            'guest' => 8
+        ];
+        $targetRoleId = $roleNameToId[$newRole] ?? 7;
+
+        $cleanId = str_replace(['STAFF-', 'USER-'], '', $id);
+        $pdo = $this->getMysqlPdo();
+
+        if ($pdo) {
+            try {
+                $stmt = $pdo->prepare("SELECT id, name, email FROM users WHERE id = :id OR username = :username OR email = :email LIMIT 1");
+                $stmt->execute([':id' => $cleanId, ':username' => $id, ':email' => $id]);
+                $user = $stmt->fetch();
+
+                if ($user) {
+                    $uId = $user['id'];
+
+                    // 1. Update role in users table
+                    $up = $pdo->prepare("UPDATE users SET role = :role, status = :status, updated_at = NOW() WHERE id = :id");
+                    $up->execute([':role' => $newRole, ':status' => strtolower($newStatus), ':id' => $uId]);
+
+                    // 2. Maintain user_roles pivot table
+                    $pdo->prepare("DELETE FROM user_roles WHERE user_id = ?")->execute([$uId]);
+                    $pdo->prepare("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)")->execute([$uId, $targetRoleId]);
+
+                    if (in_array($newRole, ['admin', 'super_admin'])) {
+                        $pdo->prepare("INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (?, 2)")->execute([$uId]);
+                    }
                 }
-            }
-            if ($newStatus) {
-                $patron->status = $newStatus;
+            } catch (\Throwable $e) {}
+        }
+
+        // Also sync SQLite users table
+        try {
+            DB::table('users')->where('id', $cleanId)->orWhere('username', $id)->orWhere('email', $id)->update([
+                'role' => $newRole,
+                'status' => strtolower($newStatus),
+                'updated_at' => now()
+            ]);
+        } catch (\Throwable $e) {}
+
+        // Check if Patron exists and update patron role
+        $patron = Patron::where('matric', $id)->orWhere('id', $id)->orWhere('email', $id)->first();
+        if ($patron) {
+            $patron->role = $newRole;
+            if ($newRole === 'faculty') {
+                $patron->level = 'Academic Faculty';
+                $patron->category = 'Staff';
+                $patron->borrow_quota = 10;
+            } elseif ($newRole === 'student') {
+                $patron->level = 'ND I';
+                $patron->category = 'Undergraduate';
+                $patron->borrow_quota = 5;
             }
             if ($newQuota !== null) {
                 $patron->borrow_quota = (int)$newQuota;
             }
+            $patron->status = $newStatus;
             $patron->save();
-
-            return response()->json([
-                'success' => true,
-                'message' => "Scholar {$patron->name} record updated successfully.",
-                'user' => [
-                    'id' => $patron->matric,
-                    'name' => $patron->name,
-                    'role' => $patron->role,
-                    'status' => $patron->status
-                ]
-            ]);
-        }
-
-        // Check if system User
-        $cleanId = str_replace('STAFF-', '', $id);
-        $user = DB::table('users')->where('id', $cleanId)->orWhere('email', $id)->first();
-        if ($user) {
-            DB::table('users')->where('id', $user->id)->update([
-                'updated_at' => now()
-            ]);
-            return response()->json([
-                'success' => true,
-                'message' => "Staff {$user->name} privileges updated successfully."
-            ]);
         }
 
         return response()->json([
             'success' => true,
-            'message' => "Account {$id} role and permissions successfully synchronized."
+            'message' => "User '{$id}' role successfully updated to '{$newRole}' in user_roles and users tables.",
+            'role' => $newRole,
+            'role_id' => $targetRoleId
         ]);
     }
 
     /**
      * POST /api/rbac/users
-     * Create a new institutional staff or patron account in database.
+     * Create a new institutional staff or patron account in database and maintain user_roles.
      */
     public function createStaffUser(Request $request)
     {
         $name = trim((string)$request->input('name'));
         $email = trim((string)$request->input('email'));
-        $role = $request->input('role', 'librarian');
-        $dept = $request->input('department', $request->input('dept', 'Library Directorate'));
+        $role = strtolower(trim((string)$request->input('role', 'librarian')));
+        $dept = trim((string)$request->input('department', $request->input('dept', 'Library Directorate')));
+        $phone = trim((string)$request->input('phone', '+234 800 000 0000'));
+        $pin = trim((string)$request->input('password', $request->input('pin', '1234')));
 
         if (empty($name) || empty($email)) {
             return response()->json([
@@ -463,13 +498,103 @@ class PolicyController extends Controller
             ], 422);
         }
 
+        $roleNameToId = [
+            'admin' => 1,
+            'super_admin' => 1,
+            'chief_librarian' => 2,
+            'librarian' => 2,
+            'cataloguer' => 3,
+            'circulation_clerk' => 4,
+            'staff' => 4,
+            'hod' => 5,
+            'faculty' => 6,
+            'student' => 7,
+            'guest' => 8
+        ];
+        $roleId = $roleNameToId[$role] ?? 4;
+        $hash = Hash::make($pin);
+        $username = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', explode('@', $email)[0]));
+
+        $pdo = $this->getMysqlPdo();
+
+        if ($pdo) {
+            try {
+                $stmt = $pdo->prepare("
+                    INSERT INTO users (name, email, username, password, plain_secret, role, phone, designation, status, created_at, updated_at)
+                    VALUES (:name, :email, :username, :password, :pin, :role, :phone, :desig, 'active', NOW(), NOW())
+                    ON DUPLICATE KEY UPDATE
+                        name = VALUES(name),
+                        username = VALUES(username),
+                        password = VALUES(password),
+                        plain_secret = VALUES(plain_secret),
+                        role = VALUES(role),
+                        phone = VALUES(phone),
+                        designation = VALUES(designation),
+                        status = 'active',
+                        updated_at = NOW()
+                ");
+                $stmt->execute([
+                    ':name' => $name,
+                    ':email' => $email,
+                    ':username' => $username,
+                    ':password' => $hash,
+                    ':pin' => $pin,
+                    ':role' => $role,
+                    ':phone' => $phone,
+                    ':desig' => "{$role} ({$dept})"
+                ]);
+
+                $uStmt = $pdo->prepare("SELECT id FROM users WHERE email = ? LIMIT 1");
+                $uStmt->execute([$email]);
+                $userId = $uStmt->fetchColumn();
+
+                if ($userId) {
+                    $pdo->prepare("DELETE FROM user_roles WHERE user_id = ?")->execute([$userId]);
+                    $pdo->prepare("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)")->execute([$userId, $roleId]);
+                    if (in_array($role, ['admin', 'super_admin'])) {
+                        $pdo->prepare("INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (?, 2)")->execute([$userId]);
+                    }
+                }
+            } catch (\Throwable $e) {}
+        }
+
+        // Sync SQLite
+        try {
+            DB::table('users')->updateOrInsert(
+                ['email' => $email],
+                [
+                    'name' => $name,
+                    'username' => $username,
+                    'password' => $hash,
+                    'plain_secret' => $pin,
+                    'role' => $role,
+                    'phone' => $phone,
+                    'designation' => "{$role} ({$dept})",
+                    'status' => 'active',
+                    'updated_at' => now()
+                ]
+            );
+
+            $sqliteUser = DB::table('users')->where('email', $email)->first();
+            if ($sqliteUser) {
+                try {
+                    DB::table('user_roles')->where('user_id', $sqliteUser->id)->delete();
+                    DB::table('user_roles')->insert([
+                        'user_id' => $sqliteUser->id,
+                        'role_id' => $roleId
+                    ]);
+                } catch (\Throwable $e2) {}
+            }
+        } catch (\Throwable $e) {}
+
+        // If patron role (student or faculty), also register in patrons table
         if (in_array($role, ['student', 'faculty'])) {
             $year = date('Y');
-            $deptCode = 'STF';
+            $deptCode = strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $dept), 0, 3)) ?: 'GEN';
             $num = rand(100, 999);
             $matric = $request->input('id', "FCC/{$deptCode}/{$year}/{$num}");
 
-            $patron = Patron::updateOrCreate(
+            Patron::updateOrCreate(
                 ['matric' => $matric],
                 [
                     'id' => 'PAT-' . rand(10000, 99999),
@@ -482,36 +607,160 @@ class PolicyController extends Controller
                     'level' => $role === 'faculty' ? 'Academic Faculty' : 'ND I',
                     'borrow_quota' => $role === 'faculty' ? 10 : 5,
                     'status' => 'Active',
-                    'pin' => '1234'
+                    'pin' => $pin
                 ]
             );
-
-            return response()->json([
-                'success' => true,
-                'message' => "Account for {$name} created successfully in institutional patron registry.",
-                'user' => $patron
-            ]);
         }
-
-        // If staff / librarian / admin
-        $userId = DB::table('users')->insertGetId([
-            'name' => $name,
-            'email' => $email,
-            'password' => bcrypt('fcc2026'),
-            'created_at' => now(),
-            'updated_at' => now()
-        ]);
 
         return response()->json([
             'success' => true,
-            'message' => "Institutional staff account for {$name} created successfully in database.",
+            'message' => "User account for {$name} created successfully and assigned role in user_roles table.",
             'user' => [
-                'id' => 'STAFF-' . str_pad($userId, 3, '0', STR_PAD_LEFT),
+                'id' => $username,
                 'name' => $name,
                 'email' => $email,
                 'role' => $role,
+                'role_id' => $roleId,
                 'dept' => $dept
             ]
+        ], 201);
+    }
+
+    /**
+     * GET /api/rbac/roles
+     * List all official roles and their assigned permissions.
+     */
+    public function getRoles()
+    {
+        $pdo = $this->getMysqlPdo();
+        $roles = [];
+
+        if ($pdo) {
+            try {
+                $rolesRaw = $pdo->query("SELECT * FROM roles ORDER BY id ASC")->fetchAll();
+                $rpStmt = $pdo->prepare("
+                    SELECT p.* 
+                    FROM permissions p 
+                    JOIN role_permissions rp ON p.id = rp.permission_id 
+                    WHERE rp.role_id = ?
+                ");
+
+                foreach ($rolesRaw as $r) {
+                    $rpStmt->execute([$r['id']]);
+                    $perms = $rpStmt->fetchAll();
+                    $r['permissions'] = $perms;
+                    $r['permissions_count'] = count($perms);
+                    $roles[] = $r;
+                }
+            } catch (\Throwable $e) {}
+        }
+
+        if (empty($roles)) {
+            $roles = DB::table('roles')->get();
+        }
+
+        return response()->json([
+            'success' => true,
+            'roles' => $roles
+        ]);
+    }
+
+    /**
+     * GET /api/rbac/permissions
+     * List all system permissions.
+     */
+    public function getPermissions()
+    {
+        $pdo = $this->getMysqlPdo();
+        $perms = [];
+
+        if ($pdo) {
+            try {
+                $perms = $pdo->query("SELECT * FROM permissions ORDER BY id ASC")->fetchAll();
+            } catch (\Throwable $e) {}
+        }
+
+        if (empty($perms)) {
+            $perms = DB::table('permissions')->get();
+        }
+
+        return response()->json([
+            'success' => true,
+            'permissions' => $perms
+        ]);
+    }
+
+    /**
+     * POST /api/rbac/roles/{id}/permissions
+     * PUT  /api/rbac/roles/{id}/permissions
+     * Assign or update permissions for a specific role in role_permissions table.
+     */
+    public function updateRolePermissions(Request $request, $id)
+    {
+        $permissions = $request->input('permissions', []);
+        if (!is_array($permissions)) {
+            $permissions = [];
+        }
+
+        $cleanRoleId = is_numeric($id) ? (int)$id : null;
+        $pdo = $this->getMysqlPdo();
+
+        if ($pdo) {
+            try {
+                if (!$cleanRoleId) {
+                    $rStmt = $pdo->prepare("SELECT id FROM roles WHERE name = ? OR display_name = ? LIMIT 1");
+                    $rStmt->execute([$id, $id]);
+                    $cleanRoleId = $rStmt->fetchColumn();
+                }
+
+                if ($cleanRoleId) {
+                    // Remove existing role_permissions for this role
+                    $pdo->prepare("DELETE FROM role_permissions WHERE role_id = ?")->execute([$cleanRoleId]);
+
+                    $ins = $pdo->prepare("INSERT IGNORE INTO role_permissions (role_id, permission_id) VALUES (?, ?)");
+                    foreach ($permissions as $p) {
+                        $pId = is_numeric($p) ? (int)$p : null;
+                        if (!$pId) {
+                            $lookup = $pdo->prepare("SELECT id FROM permissions WHERE slug = ? OR name = ? LIMIT 1");
+                            $lookup->execute([$p, $p]);
+                            $pId = $lookup->fetchColumn();
+                        }
+                        if ($pId) {
+                            $ins->execute([$cleanRoleId, $pId]);
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {}
+        }
+
+        // Also sync SQLite role_permissions if table exists
+        try {
+            if (!$cleanRoleId) {
+                $cleanRoleId = DB::table('roles')->where('name', $id)->orWhere('display_name', $id)->value('id');
+            }
+            if ($cleanRoleId) {
+                DB::table('role_permissions')->where('role_id', $cleanRoleId)->delete();
+                foreach ($permissions as $p) {
+                    $pId = is_numeric($p) ? (int)$p : null;
+                    if (!$pId) {
+                        $pId = DB::table('permissions')->where('slug', $p)->orWhere('name', $p)->value('id');
+                    }
+                    if ($pId) {
+                        DB::table('role_permissions')->insert([
+                            'role_id' => $cleanRoleId,
+                            'permission_id' => $pId
+                        ]);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => true,
+            'message' => "Permissions for role '{$id}' successfully updated in role_permissions table.",
+            'role_id' => $cleanRoleId,
+            'assigned_count' => count($permissions)
         ]);
     }
 }
+

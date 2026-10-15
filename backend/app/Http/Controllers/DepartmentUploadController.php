@@ -7,12 +7,41 @@ use App\Models\DepartmentUpload;
 use App\Models\Book;
 use App\Models\AuditLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class DepartmentUploadController extends Controller
 {
     public function getDepartments()
     {
+        // 1. Fetch departments from MySQL gsashtub_brainfeels_library.departments first
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            $mysqlDepts = $pdo->query("SELECT * FROM departments ORDER BY name ASC")->fetchAll();
+
+            if (!empty($mysqlDepts)) {
+                foreach ($mysqlDepts as $md) {
+                    Department::updateOrCreate(
+                        ['id' => $md['id']],
+                        [
+                            'name' => $md['name'],
+                            'code' => $md['code'],
+                            'faculty' => $md['faculty'] ?? null,
+                            'hod_name' => $md['hod_name'],
+                            'hod_email' => $md['hod_email'],
+                            'hod_phone' => $md['hod_phone'] ?? null,
+                            'hod_pin' => $md['hod_pin'] ?? '1234',
+                            'student_count' => (int)($md['student_count'] ?? 150),
+                            'faculty_count' => (int)($md['faculty_count'] ?? 8),
+                            'description' => $md['description'] ?? null,
+                            'established' => $md['established'] ?? null,
+                        ]
+                    );
+                }
+            }
+        } catch (\Throwable $e) {}
+
         $departments = Department::withCount('uploads')->orderBy('name', 'asc')->get();
 
         $enriched = $departments->map(function ($dept) {
@@ -27,12 +56,35 @@ class DepartmentUploadController extends Controller
                 ->orWhere('department', 'LIKE', '%' . $deptCode . '%')
                 ->count();
 
-            $patronsCount = \App\Models\Patron::where(function ($q) use ($deptName, $deptCode) {
-                $q->where('department', 'like', "%{$deptName}%")
-                  ->orWhere('department', 'like', "%{$deptCode}%")
-                  ->orWhere('matric', 'like', "%/{$deptCode}/%")
-                  ->orWhere('matric', 'like', "%{$deptCode}%");
-            })->count();
+            $realStudentCount = 0;
+            try {
+                $pdo = \App\Services\DatabaseService::getPdo();
+                if ($pdo) {
+                    $st = $pdo->prepare("
+                        SELECT COUNT(*) FROM patrons 
+                        WHERE department LIKE :d1 
+                           OR department LIKE :d2 
+                           OR matric LIKE :m1 
+                           OR matric LIKE :m2
+                    ");
+                    $st->execute([
+                        ':d1' => "%{$deptName}%",
+                        ':d2' => "%{$deptCode}%",
+                        ':m1' => "%/{$deptCode}/%",
+                        ':m2' => "%{$deptCode}%"
+                    ]);
+                    $realStudentCount = (int)$st->fetchColumn();
+                }
+            } catch (\Throwable $e) {}
+
+            if ($realStudentCount === 0) {
+                $realStudentCount = \App\Models\Patron::where(function ($q) use ($deptName, $deptCode) {
+                    $q->where('department', 'like', "%{$deptName}%")
+                      ->orWhere('department', 'like', "%{$deptCode}%")
+                      ->orWhere('matric', 'like', "%/{$deptCode}/%")
+                      ->orWhere('matric', 'like', "%{$deptCode}%");
+                })->count();
+            }
 
             $colorPalette = [
                 'CEM' => 'emerald',
@@ -70,8 +122,7 @@ class DepartmentUploadController extends Controller
                 'PAD' => '+234 803 771 9900'
             ];
 
-            // Real live count of registered scholars and students from the database
-            $studentTotal = $patronsCount;
+            $studentTotal = $realStudentCount;
 
             return [
                 'id' => $dept->id,
@@ -81,12 +132,12 @@ class DepartmentUploadController extends Controller
                 'hod' => $dept->hod_name,
                 'hod_email' => $dept->hod_email,
                 'hodEmail' => $dept->hod_email,
-                'hodPhone' => $dept->hod_phone ?? ($phoneMap[$dept->code] ?? '+234 803 000 0000'),
-                'hod_pin' => $dept->hod_pin ?? '1234',
-                'pin' => $dept->hod_pin ?? '1234',
-                'faculty' => $dept->faculty ?? ($facultyMap[$dept->code] ?? ('School of ' . $dept->name)),
+                'hodPhone' => $dept->hod_phone ?: ($phoneMap[$dept->code] ?? '+234 803 000 0000'),
+                'hod_pin' => $dept->hod_pin ?: '1234',
+                'pin' => $dept->hod_pin ?: '1234',
+                'faculty' => $dept->faculty ?: ($facultyMap[$dept->code] ?? ('School of ' . $dept->name)),
                 'color' => $colorPalette[$dept->code] ?? 'teal',
-                'established' => $estMap[$dept->code] ?? '1990',
+                'established' => $dept->established ?: ($estMap[$dept->code] ?? '1990'),
                 'status' => 'Active',
                 'student_count' => $studentTotal,
                 'studentCount' => $studentTotal,
@@ -95,7 +146,7 @@ class DepartmentUploadController extends Controller
                 'theses_count' => $thesesCount,
                 'hndProjectsCount' => $thesesCount,
                 'uploads_count' => $dept->uploads_count ?? 0,
-                'description' => "Accredited academic department offering National Diploma (ND) and Higher National Diploma (HND) curricula in {$dept->name}.",
+                'description' => $dept->description ?: "Accredited academic department offering National Diploma (ND) and Higher National Diploma (HND) curricula in {$dept->name}.",
                 'created_at' => $dept->created_at,
                 'updated_at' => $dept->updated_at
             ];
@@ -110,10 +161,14 @@ class DepartmentUploadController extends Controller
             'name' => 'required|string|max:255',
             'code' => 'required|string|max:50',
             'hod_name' => 'required|string|max:255',
-            'hod_email' => 'nullable|string|email|max:255',
+            'hod_email' => 'nullable|string|max:255',
             'hod_pin' => 'nullable|string|max:50',
+            'faculty' => 'nullable|string|max:255',
+            'hod_phone' => 'nullable|string|max:50',
             'student_count' => 'nullable|integer',
-            'faculty_count' => 'nullable|integer'
+            'faculty_count' => 'nullable|integer',
+            'description' => 'nullable|string',
+            'established' => 'nullable|string|max:20'
         ]);
 
         $cleanCode = strtoupper(trim(preg_replace('/[^A-Za-z0-9]/', '', $validated['code'])));
@@ -124,19 +179,37 @@ class DepartmentUploadController extends Controller
             [
                 'name' => trim($validated['name']),
                 'code' => $cleanCode,
+                'faculty' => trim($validated['faculty'] ?? ('School of ' . trim($validated['name']))),
                 'hod_name' => trim($validated['hod_name']),
                 'hod_email' => trim($validated['hod_email'] ?? (strtolower($cleanCode) . '.hod@fccibadan.edu.ng')),
+                'hod_phone' => trim($validated['hod_phone'] ?? '+234 800 000 0000'),
                 'hod_pin' => trim($validated['hod_pin'] ?? '1234'),
                 'student_count' => (int) ($validated['student_count'] ?? 150),
-                'faculty_count' => (int) ($validated['faculty_count'] ?? 8)
+                'faculty_count' => (int) ($validated['faculty_count'] ?? 8),
+                'description' => trim($validated['description'] ?? "Accredited academic department offering ND and HND curricula in {$validated['name']}."),
+                'established' => trim($validated['established'] ?? date('Y'))
             ]
         );
 
         $this->syncDeptToMysql($dept, 'save');
 
+        // Audit Log
+        AuditLog::create([
+            'id' => 'AUD-' . rand(10000, 99999),
+            'action' => 'DEPARTMENT_REGISTERED',
+            'details' => "Administrator registered academic department '{$dept->name}' ({$dept->code}) with HOD {$dept->hod_name}.",
+            'actor' => 'Central Library Admin',
+            'role' => 'Admin',
+            'resource_type' => 'Department',
+            'resource_id' => $dept->id,
+            'ip_address' => $request->ip() ?? '127.0.0.1',
+            'hash' => hash('sha256', microtime(true) . $dept->id),
+            'timestamp' => Carbon::now()->toIso8601String()
+        ]);
+
         return response()->json([
             'success' => true,
-            'message' => "Department '{$dept->name}' registered with HOD {$dept->hod_name} successfully!",
+            'message' => "Department '{$dept->name}' ({$dept->code}) registered into database with HOD {$dept->hod_name} successfully!",
             'department' => $dept
         ], 201);
     }
@@ -152,19 +225,27 @@ class DepartmentUploadController extends Controller
             'name' => 'sometimes|required|string|max:255',
             'code' => 'sometimes|required|string|max:50',
             'hod_name' => 'sometimes|required|string|max:255',
-            'hod_email' => 'nullable|string|email|max:255',
+            'hod_email' => 'nullable|string|max:255',
             'hod_pin' => 'nullable|string|max:50',
+            'faculty' => 'nullable|string|max:255',
+            'hod_phone' => 'nullable|string|max:50',
             'student_count' => 'nullable|integer',
-            'faculty_count' => 'nullable|integer'
+            'faculty_count' => 'nullable|integer',
+            'description' => 'nullable|string',
+            'established' => 'nullable|string|max:20'
         ]);
 
         if (isset($validated['name'])) $dept->name = trim($validated['name']);
         if (isset($validated['code'])) $dept->code = strtoupper(trim(preg_replace('/[^A-Za-z0-9]/', '', $validated['code'])));
+        if (isset($validated['faculty'])) $dept->faculty = trim($validated['faculty']);
         if (isset($validated['hod_name'])) $dept->hod_name = trim($validated['hod_name']);
         if (isset($validated['hod_email'])) $dept->hod_email = trim($validated['hod_email']);
+        if (isset($validated['hod_phone'])) $dept->hod_phone = trim($validated['hod_phone']);
         if (isset($validated['hod_pin'])) $dept->hod_pin = trim($validated['hod_pin']);
         if (isset($validated['student_count'])) $dept->student_count = (int) $validated['student_count'];
         if (isset($validated['faculty_count'])) $dept->faculty_count = (int) $validated['faculty_count'];
+        if (isset($validated['description'])) $dept->description = trim($validated['description']);
+        if (isset($validated['established'])) $dept->established = trim($validated['established']);
 
         $dept->save();
 
@@ -172,7 +253,7 @@ class DepartmentUploadController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => "Department '{$dept->name}' and HOD {$dept->hod_name} updated successfully!",
+            'message' => "Department '{$dept->name}' and HOD {$dept->hod_name} updated successfully in database!",
             'department' => $dept
         ]);
     }
@@ -611,21 +692,13 @@ class DepartmentUploadController extends Controller
     }
 
     /**
-     * Synchronize department record directly into MySQL brainfeels_library.departments table.
+     * Synchronize department record directly into MySQL gsashtub_brainfeels_library.departments table,
+     * and register/link HOD account in `users` and `user_roles` tables.
      */
     private function syncDeptToMysql($dept, $action = 'save'): void
     {
         try {
-            $host = env('DB_MYSQL_HOST', '127.0.0.1');
-            $port = env('DB_MYSQL_PORT', '3306');
-            $db   = env('DB_MYSQL_DATABASE', 'brainfeels_library');
-            $user = env('DB_MYSQL_USERNAME', 'root');
-            $pass = env('DB_MYSQL_PASSWORD', '');
-
-            $pdo = new \PDO("mysql:host={$host};port={$port};dbname={$db}", $user, $pass, [
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_SILENT,
-                \PDO::ATTR_TIMEOUT => 2
-            ]);
+            $pdo = \App\Services\DatabaseService::getPdo();
 
             if ($action === 'delete') {
                 $id = is_object($dept) ? $dept->id : $dept;
@@ -633,28 +706,95 @@ class DepartmentUploadController extends Controller
                 $stmt->execute([':id' => $id, ':code' => $id]);
             } else {
                 $stmt = $pdo->prepare("
-                    INSERT INTO departments (id, name, code, hod_name, hod_email, hod_pin, student_count, faculty_count, created_at, updated_at)
-                    VALUES (:id, :name, :code, :hod_name, :hod_email, :hod_pin, :student_count, :faculty_count, NOW(), NOW())
+                    INSERT INTO departments (id, name, code, faculty, hod_name, hod_email, hod_phone, hod_pin, student_count, faculty_count, description, established, created_at, updated_at)
+                    VALUES (:id, :name, :code, :faculty, :hod_name, :hod_email, :hod_phone, :hod_pin, :student_count, :faculty_count, :description, :established, NOW(), NOW())
                     ON DUPLICATE KEY UPDATE
                         name = VALUES(name),
                         code = VALUES(code),
+                        faculty = VALUES(faculty),
                         hod_name = VALUES(hod_name),
                         hod_email = VALUES(hod_email),
+                        hod_phone = VALUES(hod_phone),
                         hod_pin = VALUES(hod_pin),
                         student_count = VALUES(student_count),
                         faculty_count = VALUES(faculty_count),
+                        description = VALUES(description),
+                        established = VALUES(established),
                         updated_at = NOW()
                 ");
                 $stmt->execute([
                     ':id' => $dept->id,
                     ':name' => $dept->name,
                     ':code' => $dept->code,
+                    ':faculty' => $dept->faculty ?? ('School of ' . $dept->name),
                     ':hod_name' => $dept->hod_name,
                     ':hod_email' => $dept->hod_email,
+                    ':hod_phone' => $dept->hod_phone ?? '+234 800 000 0000',
                     ':hod_pin' => $dept->hod_pin ?? '1234',
                     ':student_count' => (int)($dept->student_count ?? 150),
-                    ':faculty_count' => (int)($dept->faculty_count ?? 8)
+                    ':faculty_count' => (int)($dept->faculty_count ?? 8),
+                    ':description' => $dept->description ?? "Accredited academic department offering ND and HND curricula in {$dept->name}.",
+                    ':established' => $dept->established ?? '1990'
                 ]);
+
+                // Register / Update HOD user account in `users` table
+                if (!empty($dept->hod_email)) {
+                    $hodUsername = 'hod_' . strtolower($dept->code);
+                    $hodPin = $dept->hod_pin ?: '1234';
+                    $hodHash = Hash::make($hodPin);
+                    $hodPhone = $dept->hod_phone ?: '+234 800 000 0000';
+
+                    $insHod = $pdo->prepare("
+                        INSERT INTO users (name, email, username, password, plain_secret, role, phone, designation, status, created_at, updated_at)
+                        VALUES (:name, :email, :username, :password, :pin, 'hod', :phone, :desig, 'active', NOW(), NOW())
+                        ON DUPLICATE KEY UPDATE
+                            name = VALUES(name),
+                            username = VALUES(username),
+                            password = VALUES(password),
+                            plain_secret = VALUES(plain_secret),
+                            role = 'hod',
+                            phone = VALUES(phone),
+                            designation = VALUES(designation),
+                            status = 'active',
+                            updated_at = NOW()
+                    ");
+                    $insHod->execute([
+                        ':name' => $dept->hod_name,
+                        ':email' => $dept->hod_email,
+                        ':username' => $hodUsername,
+                        ':password' => $hodHash,
+                        ':pin' => $hodPin,
+                        ':phone' => $hodPhone,
+                        ':desig' => "Head of Department, {$dept->name}"
+                    ]);
+
+                    // Link in user_roles pivot table (role_id 5 = hod)
+                    $uStmt = $pdo->prepare("SELECT id FROM users WHERE email = ? LIMIT 1");
+                    $uStmt->execute([$dept->hod_email]);
+                    $uId = $uStmt->fetchColumn();
+
+                    if ($uId) {
+                        $pdo->prepare("INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (?, 5)")->execute([$uId]);
+                    }
+
+                    // Also sync to SQLite users table
+                    try {
+                        DB::table('users')->updateOrInsert(
+                            ['email' => $dept->hod_email],
+                            [
+                                'name' => $dept->hod_name,
+                                'username' => $hodUsername,
+                                'password' => $hodHash,
+                                'plain_secret' => $hodPin,
+                                'role' => 'hod',
+                                'phone' => $hodPhone,
+                                'designation' => "Head of Department, {$dept->name}",
+                                'status' => 'active',
+                                'updated_at' => now()
+                            ]
+                        );
+                    } catch (\Throwable $e) {}
+                }
             }
         } catch (\Throwable $e) {}
     }
@@ -662,10 +802,7 @@ class DepartmentUploadController extends Controller
     private function syncUploadToMysql($upload): void
     {
         try {
-            $pdo = new \PDO("mysql:host=127.0.0.1;port=3306;dbname=brainfeels_library", "root", "", [
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_SILENT,
-                \PDO::ATTR_TIMEOUT => 2
-            ]);
+            $pdo = \App\Services\DatabaseService::getPdo();
             $stmt = $pdo->prepare("
                 INSERT INTO department_uploads (id, title, author, department_id, department_name, uploaded_by_hod_id, hod_name, course_code, target_level, semester, resource_type, file_name, file_data_url, cover_image, access_scope, status, review_notes, reviewed_by, assigned_call_number, assigned_shelf, book_id, created_at, updated_at)
                 VALUES (:id, :title, :author, :department_id, :department_name, :uploaded_by_hod_id, :hod_name, :course_code, :target_level, :semester, :resource_type, :file_name, :file_data_url, :cover_image, :access_scope, :status, :review_notes, :reviewed_by, :assigned_call_number, :assigned_shelf, :book_id, NOW(), NOW())
@@ -701,10 +838,7 @@ class DepartmentUploadController extends Controller
     private function syncBookToMysql($book): void
     {
         try {
-            $pdo = new \PDO("mysql:host=127.0.0.1;port=3306;dbname=brainfeels_library", "root", "", [
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_SILENT,
-                \PDO::ATTR_TIMEOUT => 2
-            ]);
+            $pdo = \App\Services\DatabaseService::getPdo();
             $stmt = $pdo->prepare("
                 INSERT INTO books (id, title, subtitle, author, department, course_code, target_level, call_number, shelf_location, isbn, doi, publisher, year, pdf_pages, file_size, file_name, file_data_url, cover_image, is_digital, access_level, copies_total, copies_available, uploaded_at, uploaded_by)
                 VALUES (:id, :title, :subtitle, :author, :department, :course_code, :target_level, :call_number, :shelf_location, :isbn, :doi, :publisher, :year, :pdf_pages, :file_size, :file_name, :file_data_url, :cover_image, :is_digital, :access_level, :copies_total, :copies_available, :uploaded_at, :uploaded_by)

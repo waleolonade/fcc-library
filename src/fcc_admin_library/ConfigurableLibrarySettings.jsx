@@ -1,11 +1,20 @@
-import React, { useState, useEffect } from 'react';
 import {
-  Settings, Sliders, Shield, Save, RefreshCw, CheckCircle2,
-  Building, Clock, DollarSign, BookOpen, AlertCircle, Sparkles,
-  Phone, Mail, MapPin, Globe, Check, Tag, ShieldCheck, Lock, Unlock, Calendar, Layers, AlertTriangle
+    AlertCircle,
+    AlertTriangle,
+    Building,
+    Check,
+    CheckCircle2,
+    Clock, DollarSign,
+    Lock,
+    RefreshCw,
+    Save,
+    ShieldCheck,
+    Sparkles,
+    Tag
 } from 'lucide-react';
-import { sounds } from '../utils/soundEffects';
+import { useEffect, useState } from 'react';
 import { institutionalConfigService } from '../services/institutionalConfigService';
+import { sounds } from '../utils/soundEffects';
 
 export default function ConfigurableLibrarySettings({ onSettingsUpdated }) {
   const [loading, setLoading] = useState(true);
@@ -46,7 +55,7 @@ export default function ConfigurableLibrarySettings({ onSettingsUpdated }) {
   const [adminProfile, setAdminProfile] = useState({
     name: 'Alhaji Balogun O. (College Chief Librarian)',
     username: 'chief_librarian',
-    email: 'admin@fccibadan.com.ng',
+    email: 'admin@fccibadanlibrary.com.ng',
     phone: '+2348033334455',
     designation: 'College Librarian & Director of Library Services',
     password: '',
@@ -112,7 +121,7 @@ export default function ConfigurableLibrarySettings({ onSettingsUpdated }) {
   const fetchAdminProfile = async () => {
     try {
       const activeSession = JSON.parse(localStorage.getItem('fcc_admin_session') || '{}');
-      const email = activeSession.email || 'admin@fccibadan.com.ng';
+      const email = activeSession.email || 'admin@fccibadanlibrary.com.ng';
       const res = await fetch(`/api/admin/profile?email=${encodeURIComponent(email)}`);
       if (res.ok) {
         const data = await res.json();
@@ -925,7 +934,7 @@ export default function ConfigurableLibrarySettings({ onSettingsUpdated }) {
                   disabled={adminLocked}
                   value={adminProfile.email}
                   onChange={e => setAdminProfile({ ...adminProfile, email: e.target.value })}
-                  placeholder="admin@fccibadan.com.ng"
+                  placeholder="admin@fccibadanlibrary.com.ng"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#021810] border border-emerald-800/80 text-white font-mono focus:outline-none focus:border-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>

@@ -484,22 +484,13 @@ class LibraryApiController extends Controller
     }
 
     /**
-     * Synchronize API records directly into MySQL brainfeels_library.library_apis table
+     * Synchronize API records directly into MySQL gsashtub_brainfeels_library.library_apis table
      * ensuring phpMyAdmin and master database remain completely up to date.
      */
     private function syncToMysql($api, $action = 'save'): void
     {
         try {
-            $host = env('DB_MYSQL_HOST', '127.0.0.1');
-            $port = env('DB_MYSQL_PORT', '3306');
-            $db   = env('DB_MYSQL_DATABASE', 'brainfeels_library');
-            $user = env('DB_MYSQL_USERNAME', 'root');
-            $pass = env('DB_MYSQL_PASSWORD', '');
-
-            $pdo = new \PDO("mysql:host={$host};port={$port};dbname={$db}", $user, $pass, [
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_SILENT,
-                \PDO::ATTR_TIMEOUT => 2
-            ]);
+            $pdo = \App\Services\DatabaseService::getPdo();
 
             if ($action === 'delete') {
                 $id = is_object($api) ? $api->id : $api;

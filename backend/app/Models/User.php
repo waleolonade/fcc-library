@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -19,7 +18,13 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'username',
+        'role',
         'password',
+        'plain_secret',
+        'phone',
+        'designation',
+        'status'
     ];
 
     /**
@@ -29,6 +34,7 @@ class User extends Authenticatable
      */
     protected $hidden = [
         'password',
+        'plain_secret',
         'remember_token',
     ];
 
@@ -43,5 +49,42 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * User roles relation via user_roles pivot table.
+     */
+    public function roles()
+    {
+        return $this->belongsToMany(Role::class, 'user_roles', 'user_id', 'role_id');
+    }
+
+    /**
+     * Check if user has a specific role.
+     */
+    public function hasRole(string $roleName): bool
+    {
+        if (strcasecmp($this->role, $roleName) === 0) {
+            return true;
+        }
+        return $this->roles->contains(function ($role) use ($roleName) {
+            return strcasecmp($role->name, $roleName) === 0;
+        });
+    }
+
+    /**
+     * Check if user has a specific permission.
+     */
+    public function hasPermission(string $permissionSlug): bool
+    {
+        if ($this->hasRole('admin') || $this->hasRole('super_admin')) {
+            return true;
+        }
+        foreach ($this->roles as $role) {
+            if ($role->permissions->contains('slug', $permissionSlug)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

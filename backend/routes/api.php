@@ -214,6 +214,10 @@ Route::get('/rbac/directory', [PolicyController::class, 'getRbacDirectory']);
 Route::post('/rbac/users', [PolicyController::class, 'createStaffUser']);
 Route::put('/rbac/users/{id}/role', [PolicyController::class, 'updateUserRole'])->where('id', '.*');
 Route::patch('/rbac/users/{id}/role', [PolicyController::class, 'updateUserRole'])->where('id', '.*');
+Route::get('/rbac/roles', [PolicyController::class, 'getRoles']);
+Route::get('/rbac/permissions', [PolicyController::class, 'getPermissions']);
+Route::post('/rbac/roles/{id}/permissions', [PolicyController::class, 'updateRolePermissions'])->where('id', '.*');
+Route::put('/rbac/roles/{id}/permissions', [PolicyController::class, 'updateRolePermissions'])->where('id', '.*');
 
 // 6. Backward Compatibility Catalog API
 Route::get('/catalog', [CatalogController::class, 'index']);
@@ -248,6 +252,19 @@ Route::post('/patrons/{id}/clearance', [PatronController::class, 'updateClearanc
 Route::put('/patrons/{id}/clearance', [PatronController::class, 'updateClearance'])->where('id', '.*');
 Route::get('/users', [PatronController::class, 'index']);
 Route::get('/users/{id}', [PatronController::class, 'show']);
+
+// 7b. RBAC Directory, User Roles & Institutional Policies API
+Route::get('/policies', [\App\Http\Controllers\PolicyController::class, 'getPolicies']);
+Route::post('/policies/tier', [\App\Http\Controllers\PolicyController::class, 'updateTierPolicy']);
+Route::put('/policies/tier/{role}', [\App\Http\Controllers\PolicyController::class, 'updateTierPolicy']);
+Route::post('/policies/fines', [\App\Http\Controllers\PolicyController::class, 'updateFineRules']);
+Route::put('/policies/fines', [\App\Http\Controllers\PolicyController::class, 'updateFineRules']);
+
+Route::get('/rbac/directory', [\App\Http\Controllers\PolicyController::class, 'getRbacDirectory']);
+Route::put('/rbac/users/{id}/role', [\App\Http\Controllers\PolicyController::class, 'updateUserRole']);
+Route::post('/rbac/users', [\App\Http\Controllers\PolicyController::class, 'createStaffUser']);
+Route::get('/rbac/roles', [\App\Http\Controllers\PolicyController::class, 'getRoles']);
+Route::get('/rbac/permissions', [\App\Http\Controllers\PolicyController::class, 'getPermissions']);
 
 
 // 8. Circulation & Book Loans API (Prompt 36)
@@ -486,6 +503,10 @@ Route::prefix('developer')->group(function () {
     // Live Database Telemetry & Health
     Route::get('/database/status', [\App\Http\Controllers\DeveloperController::class, 'getDatabaseStatus']);
 });
+
+// Database Management & init-db Endpoints
+Route::get('/database/status', [\App\Http\Controllers\LibrarySystemController::class, 'getDatabaseStatus']);
+Route::post('/database/init', [\App\Http\Controllers\LibrarySystemController::class, 'initDatabase']);
 
 
 

@@ -1,12 +1,24 @@
-import React from 'react';
 import {
-  BookOpen, Clock, AlertTriangle, CheckCircle, Bookmark,
-  Layers, QrCode, Bot, DoorOpen, ShieldCheck, Sparkles,
-  ArrowRight, Search, FileText, Download, UserCheck, RefreshCw,
-  Compass, ChevronRight, Globe, Award, Wifi, Calendar, Check, Link2, Quote
+    Award,
+    Bookmark,
+    BookOpen,
+    Bot,
+    CheckCircle,
+    ChevronRight,
+    Clock,
+    Compass,
+    DoorOpen,
+    FileText,
+    Globe,
+    Layers, QrCode,
+    Quote,
+    RefreshCw,
+    Search,
+    Sparkles,
+    UserCheck
 } from 'lucide-react';
-import { INSTITUTION } from '../data/institutionalSeedData';
 import TraceBadge from '../common/TraceBadge';
+import { INSTITUTION } from '../data/institutionalSeedData';
 
 export default function StudentOverviewDashboard({
   user,
@@ -88,7 +100,7 @@ export default function StudentOverviewDashboard({
               Welcome back, {user?.name || 'Scholar'}
             </h1>
             <p className="text-slate-400 text-xs sm:text-sm max-w-xl">
-              Connected directly to <span className="text-indigo-400 font-mono font-bold">brainfeels_library</span> database. Real-time circulation, digital monographs, and research depository.
+              Connected directly to <span className="text-indigo-400 font-mono font-bold">gsashtub_brainfeels_library</span> database. Real-time circulation, digital monographs, and research depository.
             </p>
 
             {/* Student Metadata Tag Ribbon */}

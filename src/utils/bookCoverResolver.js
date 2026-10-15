@@ -106,6 +106,16 @@ export const CURATED_COVERS_BY_KEYWORD = [
     keywords: ['math', 'mathematics', 'calculus', 'algebra', 'statistics'],
     url: 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=600&auto=format&fit=crop&q=80',
     accent: '#ec4899'
+  },
+  {
+    keywords: ['artificial intelligence', 'artificialintelligence', 'ai ', 'russell', 'norvig', 'machine learning', 'deep learning', 'neural', 'cyber', 'robotics', 'cambridge'],
+    url: 'https://images.unsplash.com/photo-1677442136019-21780efad99a?w=600&auto=format&fit=crop&q=80',
+    accent: '#6366f1'
+  },
+  {
+    keywords: ['thesis', 'dissertation', 'project', 'capstone', 'empirical', 'research monograph'],
+    url: 'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=600&auto=format&fit=crop&q=80',
+    accent: '#d97706'
   }
 ];
 
@@ -118,10 +128,14 @@ export const DEFAULT_BOOK_COVER = 'https://images.unsplash.com/photo-15320121645
 export function getBookCoverUrl(book) {
   if (!book) return DEFAULT_BOOK_COVER;
 
-  // 1. If book already has an uploaded image (data URL or http), return it
-  const existing = book.cover_image || book.coverImage;
+  // 1. If book already has an uploaded image (data URL, base64, or http url), return it directly
+  const existing = book.cover_image || book.coverImage || book.cover || book.cover_path || book.cover_data_url || book.coverUrl || book.cover_url || (book.cover_file && book.cover_file.data);
   if (existing && typeof existing === 'string' && existing.trim().length > 10) {
-    return existing.trim();
+    const trimmed = existing.trim();
+    if (trimmed.startsWith('storage/') || trimmed.startsWith('uploads/') || trimmed.startsWith('covers/')) {
+      return '/' + trimmed;
+    }
+    return trimmed;
   }
 
   // 2. Match curated cover by title / subject / department keywords
@@ -143,8 +157,17 @@ export function getBookCoverUrl(book) {
   if (dept.includes('bank') || dept.includes('finance')) {
     return 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=600&auto=format&fit=crop&q=80';
   }
-  if (dept.includes('agric')) {
+  if (dept.includes('agric') || dept.includes('agr')) {
     return 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?w=600&auto=format&fit=crop&q=80';
+  }
+  if (dept.includes('business') || dept.includes('bam') || dept.includes('management')) {
+    return 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=600&auto=format&fit=crop&q=80';
+  }
+  if (dept.includes('public') || dept.includes('administration') || dept.includes('pad')) {
+    return 'https://images.unsplash.com/photo-1450133064473-71024230f91b?w=600&auto=format&fit=crop&q=80';
+  }
+  if (dept.includes('marketing') || dept.includes('consumer') || dept.includes('mkt')) {
+    return 'https://images.unsplash.com/photo-1557804506-669a67965ba0?w=600&auto=format&fit=crop&q=80';
   }
 
   return DEFAULT_BOOK_COVER;

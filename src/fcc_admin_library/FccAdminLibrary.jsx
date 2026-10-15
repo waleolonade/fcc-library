@@ -34,6 +34,8 @@ import StudentAddModal from '../common/StudentAddModal';
 import StudentBulkImportModal from '../common/StudentBulkImportModal';
 import StudentEditModal from '../common/StudentEditModal';
 import AdminSecuritySettingsModal from '../common/AdminSecuritySettingsModal';
+import DigitalBookReader from '../common/DigitalBookReader';
+import { getBookCoverUrl } from '../utils/bookCoverResolver';
 
 // =========================================================================
 // FCC ADMIN LIBRARY — MASTER CONSOLIDATED ADMIN & STAFF OPERATIONS PLATFORM
@@ -201,6 +203,61 @@ export default function FccAdminLibrary({
     window.addEventListener('fcc-departments-updated', handleDeptSync);
     return () => window.removeEventListener('fcc-departments-updated', handleDeptSync);
   }, []);
+
+  // Department Overview & Book Holdings State
+  const [overviewDeptFilter, setOverviewDeptFilter] = useState('All');
+  const [overviewBookSearch, setOverviewBookSearch] = useState('');
+  const [activeAdminReaderBook, setActiveAdminReaderBook] = useState(null);
+  const [selectedOverviewBook, setSelectedOverviewBook] = useState(null);
+
+  // Match book to department
+  const isBookInDepartment = (book, dept) => {
+    if (!book || !dept) return false;
+    const deptCode = (dept.code || '').trim().toUpperCase();
+    const deptName = (dept.name || '').trim().toLowerCase();
+    const bDept = (book.department || '').trim().toLowerCase();
+    const bCall = (book.call_number || book.callNumber || '').toUpperCase();
+    const bCourse = (book.course_code || book.courseCode || '').toUpperCase();
+
+    if (deptCode && (bCall.includes(`-${deptCode}-`) || bCall.includes(`/${deptCode}/`) || bCourse.startsWith(deptCode))) {
+      return true;
+    }
+    if (deptName && (bDept.includes(deptName) || deptName.includes(bDept))) {
+      return true;
+    }
+    if (deptCode === 'CSC' && (bDept.includes('computer') || bDept.includes('csc'))) {
+      return true;
+    }
+    if (deptCode && bDept.toUpperCase().includes(deptCode)) {
+      return true;
+    }
+    return false;
+  };
+
+  const getDeptBookCount = (dept) => {
+    return books.filter(b => isBookInDepartment(b, dept)).length;
+  };
+
+  const overviewFilteredBooks = useMemo(() => {
+    return books.filter(b => {
+      if (overviewDeptFilter !== 'All') {
+        const targetDept = departments.find(d => (d.code || '').toUpperCase() === overviewDeptFilter.toUpperCase() || (d.id || '') === overviewDeptFilter);
+        if (targetDept && !isBookInDepartment(b, targetDept)) {
+          return false;
+        }
+      }
+      if (overviewBookSearch.trim()) {
+        const q = overviewBookSearch.trim().toLowerCase();
+        const title = (b.title || '').toLowerCase();
+        const author = (b.author || '').toLowerCase();
+        const call = (b.call_number || b.callNumber || '').toLowerCase();
+        const isbn = (b.isbn || '').toLowerCase();
+        const dept = (b.department || '').toLowerCase();
+        return title.includes(q) || author.includes(q) || call.includes(q) || isbn.includes(q) || dept.includes(q);
+      }
+      return true;
+    });
+  }, [books, departments, overviewDeptFilter, overviewBookSearch]);
 
 
   // Patrons Management State
@@ -445,7 +502,7 @@ export default function FccAdminLibrary({
     setIsRefreshing(true);
     const startTime = performance.now();
     try {
-      const [healthRes, catRes, patRes, loanRes, thRes, acqRes, logRes, apiRes, shelfRes, analyticRes, partnerRes] = await Promise.allSettled([
+      const [healthRes, catRes, patRes, loanRes, thRes, acqRes, logRes, apiRes, shelfRes, analyticRes, partnerRes, deptRes] = await Promise.allSettled([
         fetch('/api/health').then(r => r.ok ? r.json() : null),
         fetch('/api/catalog').then(r => r.ok ? r.json() : null),
         fetch('/api/patrons').then(r => r.ok ? r.json() : null),
@@ -456,7 +513,8 @@ export default function FccAdminLibrary({
         fetch('/api/library-apis').then(r => r.ok ? r.json() : null),
         fetch('/api/shelves').then(r => r.ok ? r.json() : null),
         fetch('/api/analytics').then(r => r.ok ? r.json() : null),
-        fetch('/api/partner-libraries').then(r => r.ok ? r.json() : null)
+        fetch('/api/partner-libraries').then(r => r.ok ? r.json() : null),
+        fetch('/api/departments').then(r => r.ok ? r.json() : null)
       ]);
 
       const roundTripMs = Math.round(performance.now() - startTime);
@@ -506,6 +564,10 @@ export default function FccAdminLibrary({
       if (partnerRes.status === 'fulfilled' && Array.isArray(partnerRes.value)) {
         setLocalPartnerLibs(partnerRes.value);
         localStorage.setItem('fcc_partner_libs_v48', JSON.stringify(partnerRes.value));
+      }
+
+      if (deptRes.status === 'fulfilled' && Array.isArray(deptRes.value) && deptRes.value.length > 0) {
+        setDepartments(deptRes.value);
       }
 
       if (soundEnabled) sounds.playSuccessChime();
@@ -1555,6 +1617,268 @@ export default function FccAdminLibrary({
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Departmental Book Holdings & Central Catalog Stacks Section */}
+            <div id="admin-departmental-books-section" className="rounded-3xl bg-slate-900/90 border border-slate-800 p-6 shadow-xl space-y-6">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+                <div className="flex items-start sm:items-center gap-3">
+                  <div className="p-3 rounded-2xl bg-indigo-950 text-indigo-400 border border-indigo-800 shadow-md">
+                    <Building2 size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white flex flex-wrap items-center gap-2">
+                      <span>Departmental Book Holdings & Stacks Matrix</span>
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-indigo-950 text-indigo-300 border border-indigo-700">
+                        {books.length} Total Books
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Accredited curriculum monographs, textbooks, and digital repository items categorized across each academic department.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {/* Search inside overview books */}
+                  <div className="relative min-w-[220px]">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={overviewBookSearch}
+                      onChange={(e) => setOverviewBookSearch(e.target.value)}
+                      placeholder="Search books by title, author, call no..."
+                      className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+                    />
+                    {overviewBookSearch && (
+                      <button
+                        onClick={() => setOverviewBookSearch('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={refreshFromLaravel}
+                    className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                    title="Refresh all catalog books from database"
+                  >
+                    <RefreshCw size={14} className={isRefreshing ? 'animate-spin text-indigo-400' : ''} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Department Filter Tabs */}
+              <div className="space-y-2">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold block">
+                  Filter by Academic Department ({departments.length} Units):
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setOverviewDeptFilter('All')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                      overviewDeptFilter === 'All'
+                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-950'
+                        : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                    }`}
+                  >
+                    <span>All Departments</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                      overviewDeptFilter === 'All' ? 'bg-indigo-950 text-indigo-200' : 'bg-slate-900 text-slate-400'
+                    }`}>
+                      {books.length}
+                    </span>
+                  </button>
+
+                  {departments.map((dept) => {
+                    const count = getDeptBookCount(dept);
+                    const isSelected = overviewDeptFilter.toUpperCase() === (dept.code || '').toUpperCase() || overviewDeptFilter === dept.id;
+
+                    return (
+                      <button
+                        key={dept.id || dept.code}
+                        onClick={() => setOverviewDeptFilter(dept.code || dept.id)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-950 font-bold'
+                            : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                        }`}
+                      >
+                        <span className="font-mono text-[11px] font-bold text-indigo-300">{dept.code}</span>
+                        <span className="truncate max-w-[150px]">{dept.name}</span>
+                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                          isSelected ? 'bg-indigo-950 text-indigo-200' : 'bg-slate-900 text-slate-400'
+                        }`}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Department Overview Banner (when specific dept is active) */}
+              {overviewDeptFilter !== 'All' && (() => {
+                const activeDept = departments.find(d => (d.code || '').toUpperCase() === overviewDeptFilter.toUpperCase() || d.id === overviewDeptFilter);
+                if (!activeDept) return null;
+                const bookCount = getDeptBookCount(activeDept);
+                const studentCount = activeDept.student_count ?? activeDept.studentCount ?? 0;
+
+                return (
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-indigo-900/40 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-950 text-indigo-300 border border-indigo-800">
+                          {activeDept.code}
+                        </span>
+                        <h4 className="text-sm font-bold text-white">{activeDept.name}</h4>
+                      </div>
+                      <p className="text-slate-400 text-[11px]">
+                        Head of Department: <strong className="text-slate-200">{activeDept.hod_name || activeDept.hod || 'Department Head'}</strong>
+                        {activeDept.hod_email && <span> • {activeDept.hod_email}</span>}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                        <span className="text-[10px] text-slate-500 block">STUDENTS</span>
+                        <strong className="text-white font-mono">{studentCount} scholars</strong>
+                      </div>
+                      <div className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                        <span className="text-[10px] text-slate-500 block">HOLDINGS</span>
+                        <strong className="text-indigo-400 font-mono">{bookCount} books</strong>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Department Books Grid */}
+              {overviewFilteredBooks.length === 0 ? (
+                <div className="p-12 text-center bg-slate-950/60 rounded-2xl border border-dashed border-slate-800 space-y-3">
+                  <BookOpen size={36} className="mx-auto text-slate-600" />
+                  <h4 className="text-sm font-bold text-slate-300">
+                    {overviewBookSearch ? `No books found matching "${overviewBookSearch}"` : 'No Books Registered in this Department'}
+                  </h4>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Use the Fast Ingestion shortcuts above (Upload PDF, MARC 21, or OpenAlex) to catalog monographs for this department.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {overviewFilteredBooks.map((book, idx) => {
+                    const coverUrl = getBookCoverUrl(book);
+                    const copiesAvail = book.copies_available ?? book.copiesAvailable ?? 1;
+                    const copiesTot = book.copies_total ?? book.copiesTotal ?? 1;
+
+                    return (
+                      <div
+                        key={book.id || idx}
+                        className="bg-slate-950 rounded-2xl border border-slate-800/90 p-3.5 flex flex-col justify-between space-y-3 hover:border-indigo-500/50 hover:shadow-xl transition group relative overflow-hidden"
+                      >
+                        {/* 3D Realistic Cover Artwork Presentation */}
+                        <div
+                          onClick={() => {
+                            setActiveAdminReaderBook(book);
+                            if (onOpenReader) onOpenReader(book);
+                          }}
+                          className="w-full h-48 rounded-xl overflow-hidden relative shadow-lg shadow-black/80 border border-slate-800 bg-slate-900 group-hover:border-indigo-500/60 transition cursor-pointer"
+                          title="Click to Open and Read Book in Digital Reader"
+                        >
+                          <img
+                            src={coverUrl}
+                            alt={book.title}
+                            className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                            onError={(e) => {
+                              e.target.onerror = null;
+                              e.target.src = 'https://images.unsplash.com/photo-1532012164546-f432f2e37b73?w=600&auto=format&fit=crop&q=80';
+                            }}
+                          />
+                          <div className="absolute top-0 bottom-0 left-0 w-2.5 bg-gradient-to-r from-black/80 to-transparent pointer-events-none" />
+                          <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none" />
+
+                          {/* Badge */}
+                          <div className="absolute top-2 right-2 z-10 flex flex-col gap-1 items-end">
+                            <span className="px-2 py-0.5 rounded-md text-[9px] font-bold font-mono bg-black/80 backdrop-blur-sm text-indigo-300 border border-indigo-500/40 shadow">
+                              {book.course_code || book.courseCode || book.department || 'FCC'}
+                            </span>
+                            {(book.hasPdf || book.has_file || book.file_data_url || book.pdf_url) && (
+                              <span className="px-1.5 py-0.5 rounded text-[8px] font-bold font-mono bg-emerald-950/90 text-emerald-300 border border-emerald-600/50">
+                                DIGITAL PDF
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Hover Read Overlay */}
+                          <div className="absolute inset-0 bg-indigo-950/70 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
+                            <span className="px-3.5 py-1.5 rounded-xl bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg transform translate-y-2 group-hover:translate-y-0 transition">
+                              <BookOpen size={14} />
+                              <span>Read Monograph</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Bibliographic Details */}
+                        <div className="space-y-1.5 flex-1">
+                          <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                            <span className="text-indigo-400 truncate max-w-[140px] font-semibold">
+                              {book.call_number || book.callNumber || 'FCC-CALL'}
+                            </span>
+                            <span>{book.publication_year || book.year || '2026'}</span>
+                          </div>
+
+                          <h4
+                            onClick={() => {
+                              setActiveAdminReaderBook(book);
+                              if (onOpenReader) onOpenReader(book);
+                            }}
+                            className="text-xs font-bold text-white line-clamp-2 leading-snug group-hover:text-indigo-300 transition cursor-pointer"
+                            title={book.title}
+                          >
+                            {book.title}
+                          </h4>
+
+                          <p className="text-[11px] text-slate-400 truncate">
+                            By {book.author || 'FCC Faculty Scholar'}
+                          </p>
+
+                          <div className="pt-1 flex items-center justify-between text-[10px] text-slate-400 border-t border-slate-900">
+                            <span className="truncate max-w-[130px]">
+                              {book.shelf_location || book.shelfLocation || 'Central Stacks'}
+                            </span>
+                            <span className="text-emerald-400 font-mono font-semibold">
+                              {copiesAvail}/{copiesTot} on shelf
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="pt-2 border-t border-slate-900 flex items-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              setActiveAdminReaderBook(book);
+                              if (onOpenReader) onOpenReader(book);
+                            }}
+                            className="flex-1 py-1.5 px-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 shadow-md shadow-indigo-950 transition active:scale-95"
+                          >
+                            <BookOpen size={13} />
+                            <span>Open & Read</span>
+                          </button>
+                          <button
+                            onClick={() => setSelectedOverviewBook(book)}
+                            className="p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition"
+                            title="Inspect Bibliographic Record & Metadata"
+                          >
+                            <Eye size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2762,7 +3086,7 @@ export default function FccAdminLibrary({
         )}
 
         {/* TAB 15: INSTITUTIONAL RBAC USER TIERS & GLOBAL SYSTEM POLICIES */}
-        {activeTab === 'policies' && (
+        {(activeTab === 'policies' || activeTab === 'rbac') && (
           <InstitutionalRbacPolicies />
         )}
 
@@ -3115,6 +3439,142 @@ export default function FccAdminLibrary({
           }}
           targetAction="Book Circulation Checkout"
         />
+      )}
+
+      {/* Admin Fullscreen Digital Book Reader Modal */}
+      {activeAdminReaderBook && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-fadeIn">
+          <div className="w-full h-full max-w-7xl bg-slate-950 rounded-3xl overflow-hidden shadow-2xl border border-indigo-500/30 flex flex-col relative">
+            <DigitalBookReader
+              book={activeAdminReaderBook}
+              onClose={() => setActiveAdminReaderBook(null)}
+              user={adminUserProfile}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Admin Bibliographic Dossier Modal */}
+      {selectedOverviewBook && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+          <div className="w-full max-w-2xl bg-slate-900 border border-indigo-500/40 rounded-3xl p-6 shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <BookOpen size={20} className="text-indigo-400" />
+                <h4 className="text-base font-bold text-white">Bibliographic Record & Dossier</h4>
+              </div>
+              <button
+                onClick={() => setSelectedOverviewBook(null)}
+                className="text-slate-400 hover:text-white text-xs px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 transition"
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="w-32 h-44 rounded-xl overflow-hidden border border-slate-800 shrink-0 shadow-lg relative bg-slate-950">
+                <img
+                  src={getBookCoverUrl(selectedOverviewBook)}
+                  alt={selectedOverviewBook.title}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute top-0 bottom-0 left-0 w-2 bg-gradient-to-r from-black/80 to-transparent pointer-events-none" />
+              </div>
+
+              <div className="space-y-2 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-950 text-indigo-300 border border-indigo-800">
+                    {selectedOverviewBook.course_code || selectedOverviewBook.courseCode || selectedOverviewBook.department || 'FCC'}
+                  </span>
+                  {(selectedOverviewBook.hasPdf || selectedOverviewBook.has_file || selectedOverviewBook.file_data_url || selectedOverviewBook.pdf_url) && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                      DIGITAL E-BOOK
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-sm font-bold text-white leading-snug">
+                  {selectedOverviewBook.title}
+                </h3>
+                <p className="text-xs text-slate-300">
+                  Author: <strong className="text-indigo-300">{selectedOverviewBook.author || 'FCC Faculty Scholar'}</strong>
+                </p>
+                <p className="text-xs text-slate-400">
+                  Department: <strong className="text-white">{selectedOverviewBook.department || 'Federal Cooperative College, Ibadan'}</strong>
+                </p>
+              </div>
+            </div>
+
+            {/* Metadata Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+              <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">CALL NUMBER</span>
+                <span className="font-mono text-indigo-300 font-bold text-[11px] truncate block">
+                  {selectedOverviewBook.call_number || selectedOverviewBook.callNumber || 'FCC-CALL'}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">ISBN</span>
+                <span className="font-mono text-white text-[11px] truncate block">
+                  {selectedOverviewBook.isbn || 'FCC-DIGITAL'}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">YEAR</span>
+                <span className="text-emerald-400 font-bold text-[11px]">
+                  {selectedOverviewBook.publication_year || selectedOverviewBook.year || '2026'}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">HOLDINGS</span>
+                <span className="text-white font-bold text-[11px]">
+                  {selectedOverviewBook.copies_available ?? 1}/{selectedOverviewBook.copies_total ?? 1} copies
+                </span>
+              </div>
+            </div>
+
+            {/* Shelf Location */}
+            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs flex items-center justify-between">
+              <span className="text-slate-400">Physical Location:</span>
+              <span className="font-mono text-indigo-300 font-bold">
+                {selectedOverviewBook.shelf_location || selectedOverviewBook.shelfLocation || 'Main Library Stacks'}
+              </span>
+            </div>
+
+            {/* Abstract */}
+            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 leading-relaxed">
+              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider block mb-1">
+                Abstract & Catalog Summary:
+              </span>
+              {selectedOverviewBook.abstract || (
+                <span className="text-slate-400">
+                  Institutional monograph registered in the Federal Cooperative College, Ibadan Central Digital Library System. Available for academic loan and online reading.
+                </span>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="pt-2 border-t border-slate-800 flex items-center justify-end gap-2.5">
+              <button
+                onClick={() => setSelectedOverviewBook(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  const b = selectedOverviewBook;
+                  setSelectedOverviewBook(null);
+                  setActiveAdminReaderBook(b);
+                  if (onOpenReader) onOpenReader(b);
+                }}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-950 flex items-center gap-2 transition active:scale-95"
+              >
+                <BookOpen size={14} />
+                <span>Open in Digital Reader</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Admin Security Settings Modal (Password, Name, Username) */}

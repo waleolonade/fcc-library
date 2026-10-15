@@ -1,8 +1,13 @@
-﻿-- =========================================================================
--- DATABASE SCHEMA: brainfeels_library (Federal Co-operative College)
--- Enterprise Normalized Relational Schema for Production OPAC System
--- Standard: ANSI SQL / MySQL 8.0+ / SQLite 3 Compatible
 -- =========================================================================
+-- DATABASE SCHEMA: gsashtub_brainfeels_library (Federal Co-operative College)
+-- Compatible with MySQL 8.0+, MariaDB, cPanel phpMyAdmin
+-- =========================================================================
+
+CREATE DATABASE IF NOT EXISTS `gsashtub_brainfeels_library` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `gsashtub_brainfeels_library`;
+
+SET FOREIGN_KEY_CHECKS = 0;
+
 
 -- 1. Roles & Granular Access Control
 CREATE TABLE IF NOT EXISTS roles (
@@ -175,21 +180,23 @@ CREATE TABLE IF NOT EXISTS books (
     publisher VARCHAR(255),
     year INT,
     edition VARCHAR(100),
-    isbn VARCHAR(50) INDEX,
+    isbn VARCHAR(50),
     issn VARCHAR(50),
-    doi VARCHAR(100) INDEX,
-    subject VARCHAR(255) INDEX,
-    department VARCHAR(150) INDEX,
-    course_code VARCHAR(50) INDEX,
+    doi VARCHAR(100),
+    subject VARCHAR(255),
+    department VARCHAR(150),
+    course_code VARCHAR(50),
     target_level VARCHAR(50),
     branch VARCHAR(255) DEFAULT 'Main Library',
     shelf_location VARCHAR(100),
-    call_number VARCHAR(100) INDEX,
+    call_number VARCHAR(100),
     format VARCHAR(50) DEFAULT 'Book', -- Book, E-Book, Thesis, Journal, Monograph
     is_digital BOOLEAN DEFAULT FALSE,
     pdf_pages INT DEFAULT 0,
     file_size VARCHAR(50),
     file_name VARCHAR(255),
+    file_data_url LONGTEXT NULL,
+    cover_image LONGTEXT NULL,
     external_url TEXT,
     abstract TEXT,
     keywords TEXT,
@@ -480,6 +487,52 @@ CREATE TABLE IF NOT EXISTS announcements (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 -- =========================================================================
+
+-- Departments Table
+CREATE TABLE IF NOT EXISTS departments (
+    id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    faculty VARCHAR(255) NULL,
+    hod_name VARCHAR(255) NOT NULL,
+    hod_email VARCHAR(255) NULL,
+    hod_phone VARCHAR(50) NULL,
+    hod_pin VARCHAR(50) DEFAULT '1234',
+    student_count INT DEFAULT 150,
+    faculty_count INT DEFAULT 8,
+    description TEXT NULL,
+    established VARCHAR(20) DEFAULT '1990',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Department Uploads Table
+CREATE TABLE IF NOT EXISTS department_uploads (
+    id VARCHAR(50) PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    author VARCHAR(255) NOT NULL,
+    department_id VARCHAR(50) NOT NULL,
+    department_name VARCHAR(255) NOT NULL,
+    uploaded_by_hod_id VARCHAR(100) NULL,
+    hod_name VARCHAR(255) NULL,
+    course_code VARCHAR(50) NULL,
+    target_level VARCHAR(100) NULL,
+    semester VARCHAR(50) NULL,
+    resource_type VARCHAR(100) DEFAULT 'Book',
+    file_name VARCHAR(255) NULL,
+    file_data_url LONGTEXT NULL,
+    cover_image LONGTEXT NULL,
+    access_scope VARCHAR(100) DEFAULT 'Public Institution-Wide',
+    status VARCHAR(50) DEFAULT 'pending',
+    review_notes TEXT NULL,
+    reviewed_by VARCHAR(255) NULL,
+    assigned_call_number VARCHAR(100) NULL,
+    assigned_shelf VARCHAR(100) NULL,
+    book_id VARCHAR(50) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
 -- DATABASE SEED DATA: Federal Co-operative College Smart Library
 -- Standard SQL Seed Dataset for Production & Development Deployment
 -- Compatible with MySQL 8.0+, MariaDB, SQLite 3

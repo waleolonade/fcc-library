@@ -1,5 +1,5 @@
 -- =========================================================================
--- FULL DATABASE RESTORE: brainfeels_library (SQLite)
+-- FULL DATABASE RESTORE: gsashtub_brainfeels_library (SQLite)
 -- Federal Co-operative College, Ibadan — Smart Library System
 -- Restored: 2026-10-01
 -- Covers ALL tables + ALL real institutional seed data

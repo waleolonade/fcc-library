@@ -404,6 +404,8 @@ export default function FccCataloguingModule({ books = [], onIngestSuccess }) {
       abstract: record.abstract,
       notes: record.notes,
       cover: record.coverImage,
+      cover_image: record.coverImage,
+      coverImage: record.coverImage,
       rating: 5.0,
       reviewsCount: 38,
       status: 'Available',

@@ -61,19 +61,7 @@ class ThesisController extends Controller
 
     private function mysql(): ?\PDO
     {
-        static $pdo = false;
-        if ($pdo !== false) return $pdo;
-        try {
-            $pdo = new \PDO(
-                'mysql:host=' . env('DB_MYSQL_HOST', '127.0.0.1') . ';port=' . env('DB_MYSQL_PORT', '3306') . ';dbname=' . env('DB_MYSQL_DATABASE', 'brainfeels_library'),
-                env('DB_MYSQL_USERNAME', 'root'),
-                env('DB_MYSQL_PASSWORD', ''),
-                [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_SILENT, \PDO::ATTR_TIMEOUT => 2]
-            );
-        } catch (\Throwable $e) {
-            $pdo = null;
-        }
-        return $pdo;
+        return \App\Services\DatabaseService::getPdo();
     }
 
     private function syncToMysql(Thesis $thesis, string $action = 'save'): void

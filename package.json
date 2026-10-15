@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "backend": "php backend/artisan serve --host=0.0.0.0 --port=8000",
     "backend:migrate": "php backend/artisan migrate --seed",
+    "init-db": "php database/init-db.php",
     "start": "php backend/artisan serve --host=0.0.0.0 --port=8000",
     "mobile": "cd mobile && npm start",
     "mobile:android": "cd mobile && npm run android",

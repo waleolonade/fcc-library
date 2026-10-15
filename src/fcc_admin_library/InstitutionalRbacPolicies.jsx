@@ -87,12 +87,20 @@ export default function InstitutionalRbacPolicies() {
   // New Staff Form State
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
-  const [newStaffRole, setNewStaffRole] = useState('librarian');
+  const [newStaffRole, setNewStaffRole] = useState('admin');
   const [newStaffDept, setNewStaffDept] = useState('Library Directorate');
+  const [newStaffPin, setNewStaffPin] = useState('admin2026');
 
   // 4. Batch SIS / CSV Import State
   const [batchCsvText, setBatchCsvText] = useState('');
   const [isExecutingBatch, setIsExecutingBatch] = useState(false);
+
+  // 5. Roles & Permissions Matrix State
+  const [rolesList, setRolesList] = useState([]);
+  const [permissionsList, setPermissionsList] = useState([]);
+  const [selectedMatrixRoleId, setSelectedMatrixRoleId] = useState(1);
+  const [selectedRolePermIds, setSelectedRolePermIds] = useState([]);
+  const [isSavingPerms, setIsSavingPerms] = useState(false);
 
   const showFeedback = (msg, isErr = false) => {
     if (isErr) {
@@ -106,13 +114,15 @@ export default function InstitutionalRbacPolicies() {
     }
   };
 
-  // Fetch Policies and Directory from Central SQLite Database
+  // Fetch Policies, Directory, Roles and Permissions from Central Database
   const fetchAllData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [policiesRes, rbacRes] = await Promise.all([
+      const [policiesRes, rbacRes, rolesRes, permsRes] = await Promise.all([
         libraryApi.policies.getPolicies(),
-        libraryApi.rbac.getDirectory()
+        libraryApi.rbac.getDirectory(),
+        libraryApi.rbac.getRoles(),
+        libraryApi.rbac.getPermissions()
       ]);
 
       if (policiesRes && policiesRes.success) {
@@ -130,12 +140,28 @@ export default function InstitutionalRbacPolicies() {
           setRbacStats(rbacRes.stats);
         }
       }
+
+      if (rolesRes && rolesRes.success && Array.isArray(rolesRes.roles)) {
+        setRolesList(rolesRes.roles);
+      }
+
+      if (permsRes && permsRes.success && Array.isArray(permsRes.permissions)) {
+        setPermissionsList(permsRes.permissions);
+      }
     } catch (err) {
-      console.error('Error fetching policies or RBAC directory:', err);
+      console.error('Error fetching policies, RBAC or roles:', err);
     } finally {
       setIsLoading(false);
     }
   }, []);
+
+  // Update selected role permission IDs when role selection changes
+  useEffect(() => {
+    const role = rolesList.find(r => r.id === selectedMatrixRoleId);
+    if (role && Array.isArray(role.permissions)) {
+      setSelectedRolePermIds(role.permissions.map(p => p.id));
+    }
+  }, [selectedMatrixRoleId, rolesList]);
 
   useEffect(() => {
     fetchAllData();
@@ -259,14 +285,17 @@ export default function InstitutionalRbacPolicies() {
         name: newStaffName.trim(),
         email: newStaffEmail.trim(),
         role: newStaffRole,
-        department: newStaffDept
+        department: newStaffDept,
+        password: newStaffPin.trim(),
+        pin: newStaffPin.trim()
       });
 
       if (res && res.success) {
         setIsAddingStaff(false);
         setNewStaffName('');
         setNewStaffEmail('');
-        showFeedback(`Staff account for ${newStaffName} created and saved in SQLite database!`);
+        setNewStaffPin('admin2026');
+        showFeedback(`Staff account for ${newStaffName} created and saved in institutional database (MySQL users & user_roles)!`);
         fetchAllData();
       } else {
         showFeedback(res?.message || 'Failed to create staff account in database.', true);
@@ -277,6 +306,25 @@ export default function InstitutionalRbacPolicies() {
       setIsSaving(false);
     }
   };
+
+  // Save Role Permissions Matrix to Database
+  const handleSaveRolePermissions = async () => {
+    setIsSavingPerms(true);
+    try {
+      const res = await libraryApi.rbac.updateRolePermissions(selectedMatrixRoleId, selectedRolePermIds);
+      if (res && res.success) {
+        showFeedback(`Role permissions successfully updated in MySQL role_permissions table and SQLite!`);
+        fetchAllData();
+      } else {
+        showFeedback(res?.message || 'Failed to update role permissions.', true);
+      }
+    } catch (err) {
+      showFeedback('Server error saving role permissions to database.', true);
+    } finally {
+      setIsSavingPerms(false);
+    }
+  };
+
 
   // Load CSV Format Template
   const loadCsvTemplate = () => {
@@ -347,6 +395,59 @@ FCC/FAC/2026/001, Dr. Samuel K. Johnson, s.johnson@fccibadan.edu.ng, Computer Sc
     }
   };
 
+  const displayRoles = useMemo(() => {
+    return rolesList.length > 0 ? rolesList : [
+      { id: 1, name: 'admin', display_name: 'Library Administrator', description: 'Full administrative access to entire institution library system' },
+      { id: 2, name: 'chief_librarian', display_name: 'Chief College Librarian', description: 'Executive catalog, collection and policy oversight' },
+      { id: 3, name: 'cataloguer', display_name: 'Cataloguing Librarian', description: 'MARC 21, Dewey/LCC metadata and accessioning' },
+      { id: 4, name: 'circulation_clerk', display_name: 'Circulation Desk Staff', description: 'Desk checkout, checkin, renewals and fine collection' },
+      { id: 5, name: 'hod', display_name: 'Head of Department (HOD)', description: 'Departmental curriculum texts and syllabi management' },
+      { id: 6, name: 'faculty', display_name: 'Academic Faculty Member', description: 'Lecturer with extended borrow limits and course reserve access' },
+      { id: 7, name: 'student', display_name: 'Student Scholar', description: 'Standard patron with borrowing, reserve and e-reader access' },
+      { id: 8, name: 'guest', display_name: 'Public / Guest Scholar', description: 'Discovery catalog search and public open-access browsing' }
+    ];
+  }, [rolesList]);
+
+  const displayPermissions = useMemo(() => {
+    return permissionsList.length > 0 ? permissionsList : [
+      { id: 1, slug: 'catalogue.view', name: 'View Catalogue', module: 'catalogue', description: 'Browse and view full bibliographic records' },
+      { id: 2, slug: 'catalogue.create', name: 'Create Resources', module: 'catalogue', description: 'Catalog and upload new books, serials and theses' },
+      { id: 3, slug: 'catalogue.edit', name: 'Edit Resources', module: 'catalogue', description: 'Modify bibliographic records, call numbers and subject tags' },
+      { id: 4, slug: 'catalogue.delete', name: 'Delete/Archive Resources', module: 'catalogue', description: 'Decommission or weed resources from active stacks' },
+      { id: 5, slug: 'users.view', name: 'View Patrons & Staff', module: 'users', description: 'Inspect patron profiles, loan records and clearance status' },
+      { id: 6, slug: 'users.create', name: 'Register Patrons', module: 'users', description: 'Register new students, faculty and staff members' },
+      { id: 7, slug: 'users.edit', name: 'Edit Patron Profiles', module: 'users', description: 'Modify patron contact info, level and borrow quotas' },
+      { id: 8, slug: 'loans.create', name: 'Issue Loans (Checkout)', module: 'loans', description: 'Scan barcodes and issue books to authenticated patrons' },
+      { id: 9, slug: 'loans.return', name: 'Process Returns (Checkin)', module: 'loans', description: 'Receive returned copies, inspect condition and restack' },
+      { id: 10, slug: 'loans.renew', name: 'Renew Loans', module: 'loans', description: 'Extend book loan period for eligible patrons' },
+      { id: 11, slug: 'loans.override', name: 'Circulation Override', module: 'loans', description: 'Override loan blocks, fines and quota restrictions' },
+      { id: 12, slug: 'reports.view', name: 'View Analytics & Reports', module: 'reports', description: 'Inspect institutional KPIs, loan metrics and usage charts' },
+      { id: 13, slug: 'settings.manage', name: 'Configure Library Settings', module: 'settings', description: 'Update institutional loan days, fines and branches' },
+      { id: 14, slug: 'audits.view', name: 'Audit Logs & Telemetry', module: 'audits', description: 'Review system events, access logs and staff actions' },
+      { id: 15, slug: 'rbac.manage', name: 'Manage Roles & RBAC', module: 'rbac', description: 'Assign roles and permissions to institutional accounts' }
+    ];
+  }, [permissionsList]);
+
+  const permsByModule = useMemo(() => {
+    const groups = {};
+    displayPermissions.forEach(p => {
+      const mod = p.module || 'general';
+      if (!groups[mod]) groups[mod] = [];
+      groups[mod].push(p);
+    });
+    return groups;
+  }, [displayPermissions]);
+
+  const togglePermission = (permId) => {
+    setSelectedRolePermIds(prev =>
+      prev.includes(permId) ? prev.filter(id => id !== permId) : [...prev, permId]
+    );
+  };
+
+  const currentSelectedRole = useMemo(() => {
+    return displayRoles.find(r => r.id === selectedMatrixRoleId) || displayRoles[0];
+  }, [displayRoles, selectedMatrixRoleId]);
+
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
       {/* Header */}
@@ -387,6 +488,7 @@ FCC/FAC/2026/001, Dr. Samuel K. Johnson, s.johnson@fccibadan.edu.ng, Computer Sc
       <div className="flex flex-wrap items-center gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800 self-start">
         {[
           { id: 'rbac', label: 'User Tiers & RBAC Directory', icon: Users, badge: rbacStats.total },
+          { id: 'permissions_matrix', label: 'Roles & Permissions Matrix', icon: Shield, badge: rolesList.length || 8 },
           { id: 'policies', label: 'Loan Durations & Fine Rules', icon: Clock },
           { id: 'batch_import', label: 'Batch SIS / CSV Import', icon: Upload }
         ].map(st => {
@@ -835,6 +937,203 @@ FCC/FAC/2026/001, Dr. Samuel K. Johnson, s.johnson@fccibadan.edu.ng, Computer Sc
       )}
 
       {/* =========================================================================
+          SUB-TAB 4: ROLES & PERMISSIONS MATRIX (role_permissions in Database)
+          ========================================================================= */}
+      {activeSubTab === 'permissions_matrix' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Header Card */}
+          <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Shield size={20} className="text-indigo-400" />
+                  <span>Institutional Roles & Permissions Matrix</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-1 max-w-2xl">
+                  Granular permission control stored directly in the database. Assign or revoke permissions per role in <code className="text-emerald-400 font-mono">role_permissions</code> and <code className="text-indigo-400 font-mono">roles</code> tables.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <a
+                  href="http://localhost/phpmyadmin/index.php?route=/sql&pos=0&db=gsashtub_brainfeels_library&table=role_permissions"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono font-medium flex items-center gap-1.5 border border-slate-700 transition"
+                  title="Open role_permissions table in phpMyAdmin"
+                >
+                  <Database size={13} className="text-emerald-400" />
+                  <span>phpMyAdmin: role_permissions</span>
+                </a>
+                <a
+                  href="http://localhost/phpmyadmin/index.php?route=/sql&pos=0&db=gsashtub_brainfeels_library&table=roles"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono font-medium flex items-center gap-1.5 border border-slate-700 transition"
+                  title="Open roles table in phpMyAdmin"
+                >
+                  <Database size={13} className="text-indigo-400" />
+                  <span>phpMyAdmin: roles</span>
+                </a>
+              </div>
+            </div>
+
+            {/* Role Selector Horizontal Bar */}
+            <div className="space-y-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Select Institutional Role to Configure:</span>
+              <div className="flex flex-wrap gap-2">
+                {displayRoles.map(r => {
+                  const isSelected = r.id === selectedMatrixRoleId;
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => {
+                        sounds?.playClick?.();
+                        setSelectedMatrixRoleId(r.id);
+                      }}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                        isSelected
+                          ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-lg shadow-indigo-950 ring-2 ring-indigo-400/50'
+                          : 'bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                      }`}
+                    >
+                      <Key size={13} className={isSelected ? 'text-white' : 'text-slate-400'} />
+                      <span>{r.display_name || r.name}</span>
+                      <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${
+                        isSelected ? 'bg-indigo-900 text-white' : 'bg-slate-900 text-slate-400'
+                      }`}>
+                        {r.name}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Role Configuration & Permissions Workspace */}
+          <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-2xl bg-slate-950 border border-slate-800">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-base font-bold text-white">{currentSelectedRole.display_name || currentSelectedRole.name}</h4>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-indigo-950 text-indigo-300 border border-indigo-800">
+                    ID: {currentSelectedRole.id} • Slug: {currentSelectedRole.name}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {currentSelectedRole.description || 'Configured institutional authority tier.'}
+                </p>
+                <div className="text-[11px] text-emerald-400 font-mono mt-1 flex items-center gap-1.5">
+                  <Check size={12} />
+                  <span>{selectedRolePermIds.length} of {displayPermissions.length} permissions actively granted for this role</span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    sounds?.playClick?.();
+                    setSelectedRolePermIds(displayPermissions.map(p => p.id));
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition"
+                >
+                  Select All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    sounds?.playClick?.();
+                    setSelectedRolePermIds([]);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-semibold transition"
+                >
+                  Clear All
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveRolePermissions}
+                  disabled={isSavingPerms}
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-emerald-950 cursor-pointer"
+                >
+                  <Save size={13} className={isSavingPerms ? 'animate-spin' : ''} />
+                  <span>{isSavingPerms ? 'Saving to Database...' : 'Save & Assign Role Permissions'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Categorized Permissions Grid */}
+            <div className="space-y-6">
+              {Object.entries(permsByModule).map(([moduleName, perms]) => {
+                const moduleTitles = {
+                  catalogue: 'Cataloguing & Bibliographic Metadata',
+                  users: 'Patrons, Scholars & Staff User Accounts',
+                  loans: 'Circulation Desk, Checkouts & Returns',
+                  reports: 'Analytics, Institutional Reports & BI',
+                  settings: 'Global Library System & Policies',
+                  audits: 'Security Audit Logs & Telemetry',
+                  rbac: 'Role-Based Access Control & Privileges'
+                };
+
+                return (
+                  <div key={moduleName} className="space-y-3">
+                    <div className="flex items-center gap-2 pb-1 border-b border-slate-800">
+                      <span className="text-xs font-bold uppercase tracking-wider text-indigo-400">
+                        {moduleTitles[moduleName] || moduleName.toUpperCase()}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">({perms.length} permissions)</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {perms.map(p => {
+                        const isGranted = selectedRolePermIds.includes(p.id);
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => {
+                              sounds?.playClick?.();
+                              togglePermission(p.id);
+                            }}
+                            className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 select-none ${
+                              isGranted
+                                ? 'bg-indigo-950/40 border-indigo-500/60 shadow-md shadow-indigo-950/50'
+                                : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700 opacity-80'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isGranted}
+                              onChange={() => {}}
+                              className="mt-0.5 rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0 cursor-pointer"
+                            />
+                            <div className="space-y-0.5 flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className={`text-xs font-bold truncate ${isGranted ? 'text-white' : 'text-slate-300'}`}>
+                                  {p.name}
+                                </span>
+                                <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono shrink-0 ${
+                                  isGranted ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-slate-900 text-slate-500'
+                                }`}>
+                                  {isGranted ? 'ACTIVE' : 'OFF'}
+                                </span>
+                              </div>
+                              <div className="text-[10px] font-mono text-indigo-400">{p.slug}</div>
+                              <p className="text-[11px] text-slate-400 leading-tight mt-0.5">{p.description}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
           MODAL 1: EDIT TIER POLICY
           ========================================================================= */}
       {editingTierPolicy && (
@@ -1094,11 +1393,13 @@ FCC/FAC/2026/001, Dr. Samuel K. Johnson, s.johnson@fccibadan.edu.ng, Computer Sc
                   onChange={e => setEditingUserRole({ ...editingUserRole, role: e.target.value })}
                   className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-semibold"
                 >
-                  <option value="student">Student Scholar</option>
-                  <option value="faculty">Academic Faculty Member</option>
+                  <option value="admin">Library Administrator (System Admin)</option>
+                  <option value="chief_librarian">Chief College Librarian</option>
+                  <option value="cataloguer">Cataloguing Librarian</option>
+                  <option value="circulation_clerk">Circulation Desk Staff</option>
                   <option value="hod">Head of Department (HOD)</option>
-                  <option value="librarian">Operational Librarian</option>
-                  <option value="super_admin">Super Admin & Chief Librarian</option>
+                  <option value="faculty">Academic Faculty Member</option>
+                  <option value="student">Student Scholar</option>
                 </select>
               </div>
 
@@ -1162,10 +1463,10 @@ FCC/FAC/2026/001, Dr. Samuel K. Johnson, s.johnson@fccibadan.edu.ng, Computer Sc
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
                   <UserPlus size={16} className="text-indigo-400" />
-                  <span>Register Institutional Staff</span>
+                  <span>Register Institutional Staff / Admin</span>
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Create librarian or faculty staff account directly in SQLite database.
+                  Create administrator, librarian or staff account directly into institutional database (MySQL users, user_roles & SQLite).
                 </p>
               </div>
               <button
@@ -1193,12 +1494,27 @@ FCC/FAC/2026/001, Dr. Samuel K. Johnson, s.johnson@fccibadan.edu.ng, Computer Sc
                 <label className="text-slate-300 font-semibold">Institutional Email *</label>
                 <input
                   type="email"
-                  placeholder="e.g. a.johnson@fccibadan.edu.ng"
+                  placeholder="e.g. a.johnson@fccibadanlibrary.com.ng"
                   value={newStaffEmail}
                   onChange={e => setNewStaffEmail(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono"
                   required
                 />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-300 font-semibold">Account Password / Access PIN *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. admin2026 or 1234"
+                  value={newStaffPin}
+                  onChange={e => setNewStaffPin(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono"
+                  required
+                />
+                <p className="text-[10px] text-slate-500">
+                  Direct login password/PIN stored securely with bcrypt hashing in institutional users table.
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1209,9 +1525,13 @@ FCC/FAC/2026/001, Dr. Samuel K. Johnson, s.johnson@fccibadan.edu.ng, Computer Sc
                     onChange={e => setNewStaffRole(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-semibold"
                   >
-                    <option value="librarian">Operational Librarian</option>
-                    <option value="faculty">Academic Faculty</option>
-                    <option value="super_admin">Library Administrator</option>
+                    <option value="admin">System & Library Administrator (Full Access)</option>
+                    <option value="chief_librarian">Chief College Librarian</option>
+                    <option value="cataloguer">Cataloguing Librarian</option>
+                    <option value="circulation_clerk">Circulation Desk Staff</option>
+                    <option value="hod">Head of Department (HOD)</option>
+                    <option value="faculty">Academic Faculty Member</option>
+                    <option value="student">Student Scholar</option>
                   </select>
                 </div>
 

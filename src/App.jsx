@@ -1084,30 +1084,6 @@ export default function App() {
         currentUser={currentUser}
       />
 
-      {/* Floating Developer God Mode Dock */}
-      {typeof window !== 'undefined' && 
-        localStorage.getItem('fcc_developer_session') === 'active' && 
-        viewMode !== 'developer' && 
-        viewMode !== 'admin_login' && 
-        viewMode !== 'hod' && 
-        viewMode !== 'hod_login' && 
-        !window.location.hash.includes('login') && 
-        !window.location.hash.includes('hod') && (
-        <aside aria-label="Developer Master Controls" className="fixed bottom-4 left-4 z-50 flex items-center gap-2 p-2 rounded-2xl bg-[#040915]/95 border-2 border-cyan-400 text-cyan-300 shadow-2xl backdrop-blur-xl font-mono text-xs">
-          <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping ml-1" />
-          <span className="font-bold tracking-wider">DEV ROOT</span>
-          <button
-            type="button"
-            onClick={() => {
-              setViewMode('developer');
-              navigateTo('/developer');
-            }}
-            className="px-2.5 py-1 rounded-xl bg-cyan-950 border border-cyan-500 hover:bg-cyan-900 text-white font-bold transition text-[11px]"
-          >
-            Master Deck &rarr;
-          </button>
-        </aside>
-      )}
 
       {/* Global PWA Mobile Pass Install Modal */}
       <PwaInstallPromptModal autoPromptOnMobile={true} />

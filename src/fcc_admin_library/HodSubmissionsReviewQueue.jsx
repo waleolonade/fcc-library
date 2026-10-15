@@ -38,7 +38,7 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
     hod_email: '',
     hod_pin: '1234',
     faculty: 'School of Academic & Professional Studies',
-    student_count: 150,
+    student_count: 0,
     faculty_count: 8
   });
 
@@ -218,7 +218,7 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
       hod_email: '',
       hod_pin: '1234',
       faculty: 'School of Academic & Professional Studies',
-      student_count: 200,
+      student_count: 0,
       faculty_count: 10
     });
     setShowAddDeptModal(true);
@@ -234,7 +234,7 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
       hod_email: dept.hod_email || dept.hodEmail || '',
       hod_pin: dept.hod_pin || dept.pin || '1234',
       faculty: dept.faculty || 'School of Academic & Professional Studies',
-      student_count: dept.student_count || dept.studentCount || 150,
+      student_count: dept.student_count ?? dept.studentCount ?? 0,
       faculty_count: dept.faculty_count || dept.facultyCount || 8
     });
     setShowAddDeptModal(true);

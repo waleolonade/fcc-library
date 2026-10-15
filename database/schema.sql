@@ -1,5 +1,5 @@
 -- =========================================================================
--- DATABASE SCHEMA: brainfeels_library (Federal Co-operative College)
+-- DATABASE SCHEMA: gsashtub_brainfeels_library (Federal Co-operative College)
 -- Enterprise Normalized Relational Schema for Production OPAC System
 -- Standard: ANSI SQL / MySQL 8.0+ / SQLite 3 Compatible
 -- =========================================================================

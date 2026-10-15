@@ -1,29 +1,64 @@
-import React, { useState, useEffect, useRef } from 'react';
 import {
-  Terminal, ShieldAlert, Cpu, Database, Key, Lock, Unlock, ArrowRight, Eye, EyeOff,
-  Sparkles, CheckCircle2, RefreshCw, AlertTriangle, Users, BookOpen, Layers,
-  Building2, Monitor, Smartphone, Globe, Zap, ArrowLeft, Radio, Flame, Server,
-  Sliders, HardDrive, Check, Play, UserCheck, ShieldCheck, Palette, Layout,
-  ToggleLeft, ToggleRight, Power, Upload, Trash2, Edit3, UserX, UserPlus,
-  Search, Shield, Phone, MessageSquare, Download, FileText, ChevronUp, ChevronDown,
-  X, HelpCircle, Save, ExternalLink,
-  LogOut, Menu, ChevronLeft, ChevronRight, PanelLeftClose, PanelLeftOpen, Activity, Wifi, Wrench
+    Activity,
+    AlertTriangle,
+    ArrowLeft,
+    ArrowRight,
+    BookOpen,
+    Building2,
+    Check,
+    ChevronDown,
+    ChevronLeft, ChevronRight,
+    ChevronUp,
+    Cpu, Database,
+    Download,
+    Edit3,
+    ExternalLink,
+    Eye, EyeOff,
+    Flame,
+    HardDrive,
+    Key,
+    Layers,
+    Layout,
+    Lock,
+    LogOut, Menu,
+    Monitor,
+    Palette,
+    Play,
+    Power,
+    Radio,
+    RefreshCw,
+    Save,
+    Search,
+    ShieldAlert,
+    ShieldCheck,
+    Sliders,
+    Sparkles,
+    Terminal,
+    ToggleRight,
+    Trash2,
+    Unlock,
+    Upload,
+    UserCheck,
+    UserPlus,
+    Users,
+    UserX,
+    X,
+    Zap
 } from 'lucide-react';
-import { INSTITUTION } from '../data/institutionalSeedData';
-import { institutionalConfigService } from '../services/institutionalConfigService';
-import { navigateTo } from '../utils/router';
-import { PATTERNS } from '../utils/backgroundPatterns';
+import { useEffect, useRef, useState } from 'react';
 import { getInstitutionalLogo } from '../assets/logo';
-import { sounds } from '../utils/soundEffects';
-import {
-  developerConfigService,
-  THEME_PRESETS
-} from '../services/developerConfigService';
-import DeveloperAuditTrail from './DeveloperAuditTrail';
-import DeveloperAdminOverview from './DeveloperAdminOverview';
-import DeveloperBookStudio from './DeveloperBookStudio';
 import InstitutionalFooter from '../common/InstitutionalFooter';
-import { Ban } from 'lucide-react';
+import {
+    developerConfigService,
+    THEME_PRESETS
+} from '../services/developerConfigService';
+import { institutionalConfigService } from '../services/institutionalConfigService';
+import { PATTERNS } from '../utils/backgroundPatterns';
+import { navigateTo } from '../utils/router';
+import { sounds } from '../utils/soundEffects';
+import DeveloperAdminOverview from './DeveloperAdminOverview';
+import DeveloperAuditTrail from './DeveloperAuditTrail';
+import DeveloperBookStudio from './DeveloperBookStudio';
 
 const DEV_CREDENTIALS = {
   username: 'fcc_developer',
@@ -920,7 +955,7 @@ export default function DeveloperMasterPortal({ onImpersonate, onLogout }) {
       id: 999,
       role: 'admin',
       name: 'Alhaji Balogun O. (College Chief Librarian)',
-      email: 'admin@fccibadan.com.ng',
+      email: 'admin@fccibadanlibrary.com.ng',
       designation: 'Director of Library Services',
       isDeveloperImpersonation: true
     };

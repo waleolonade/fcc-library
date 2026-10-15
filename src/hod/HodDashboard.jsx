@@ -20,6 +20,8 @@ import { departmentService } from '../services/departmentService';
 import { sounds } from '../utils/soundEffects';
 import { HOD_DIRECTORY } from '../auth/HodLogin';
 import { institutionalConfigService } from '../services/institutionalConfigService';
+import DigitalBookReader from '../common/DigitalBookReader';
+import { getBookCoverUrl } from '../utils/bookCoverResolver';
 
 export const HOD_DEPARTMENT_THEMES = {
   CSC: {
@@ -351,6 +353,12 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
   const [scholarsList, setScholarsList] = useState([]);
   const [isLoadingScholars, setIsLoadingScholars] = useState(false);
 
+  const [catalogBooks, setCatalogBooks] = useState([]);
+  const [isLoadingCatalogBooks, setIsLoadingCatalogBooks] = useState(false);
+  const [activeReaderBook, setActiveReaderBook] = useState(null);
+  const [selectedCatalogBookDossier, setSelectedCatalogBookDossier] = useState(null);
+  const [deptBookSearchQuery, setDeptBookSearchQuery] = useState('');
+
   const [successMsg, setSuccessMsg] = useState('');
   const [filterType, setFilterType] = useState('All');
 
@@ -567,9 +575,71 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
     }
   };
 
+  // 7. Match books to this HOD's department
+  const isBookInDepartment = (book, dept) => {
+    if (!book || !dept) return false;
+    const deptCode = (dept.code || '').trim().toUpperCase();
+    const deptName = (dept.name || '').trim().toLowerCase();
+    const bDept = (book.department || '').trim().toLowerCase();
+    const bCall = (book.call_number || book.callNumber || '').toUpperCase();
+    const bCourse = (book.course_code || book.courseCode || '').toUpperCase();
+
+    if (deptCode && (bCall.includes(`-${deptCode}-`) || bCall.includes(`/${deptCode}/`) || bCourse.startsWith(deptCode))) {
+      return true;
+    }
+    if (deptName && (bDept.includes(deptName) || deptName.includes(bDept))) {
+      return true;
+    }
+    if (deptCode === 'CSC' && (bDept.includes('computer') || bDept.includes('csc'))) {
+      return true;
+    }
+    if (deptCode && bDept.toUpperCase().includes(deptCode)) {
+      return true;
+    }
+    return false;
+  };
+
+  // 8. Fetch Department Catalog Holdings from Central Library Database
+  const fetchCatalogBooks = async () => {
+    setIsLoadingCatalogBooks(true);
+    try {
+      const res = await fetch('/api/catalog');
+      if (res.ok) {
+        const data = await res.json();
+        setCatalogBooks(Array.isArray(data) ? data : []);
+      } else {
+        setCatalogBooks([]);
+      }
+    } catch (e) {
+      console.warn('Backend catalog fetch error:', e);
+      setCatalogBooks([]);
+    } finally {
+      setIsLoadingCatalogBooks(false);
+    }
+  };
+
+  // Derived books for current HOD department
+  const currentDeptCatalogBooks = useMemo(() => {
+    return catalogBooks.filter(b => isBookInDepartment(b, currentDept));
+  }, [catalogBooks, currentDept]);
+
+  const filteredDeptCatalogBooks = useMemo(() => {
+    if (!deptBookSearchQuery.trim()) return currentDeptCatalogBooks;
+    const q = deptBookSearchQuery.trim().toLowerCase();
+    return currentDeptCatalogBooks.filter(b => {
+      const title = (b.title || '').toLowerCase();
+      const author = (b.author || '').toLowerCase();
+      const call = (b.call_number || b.callNumber || '').toLowerCase();
+      const isbn = (b.isbn || '').toLowerCase();
+      const crs = (b.course_code || b.courseCode || '').toLowerCase();
+      return title.includes(q) || author.includes(q) || call.includes(q) || isbn.includes(q) || crs.includes(q);
+    });
+  }, [currentDeptCatalogBooks, deptBookSearchQuery]);
+
   // Initial Load & Route Listener
   useEffect(() => {
     fetchDepartments();
+    fetchCatalogBooks();
   }, []);
 
   useEffect(() => {
@@ -579,6 +649,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
       fetchReserves();
       fetchScholars();
       fetchDepartmentUploads();
+      fetchCatalogBooks();
 
       setProfileForm({
         hod: currentDept.hod_name || currentDept.hod || '',
@@ -1670,7 +1741,22 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
               </div>
 
               {/* Department Key Metrics Tiles */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                <div
+                  onClick={() => {
+                    const el = document.getElementById('department-catalog-holdings-section');
+                    if (el) el.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="p-5 rounded-2xl bg-gradient-to-br from-teal-950/70 via-slate-900 to-slate-900 border border-teal-500/40 hover:border-teal-400 cursor-pointer transition space-y-2 group shadow-lg"
+                >
+                  <div className="flex items-center justify-between text-teal-400">
+                    <span className="text-xs font-semibold">Department Books</span>
+                    <BookOpen size={18} className="group-hover:scale-110 transition" />
+                  </div>
+                  <div className="text-2xl font-black text-white">{currentDeptCatalogBooks.length}</div>
+                  <div className="text-[11px] text-teal-300 font-mono">Catalog Holdings</div>
+                </div>
+
                 <div
                   onClick={() => handleTabSwitch('scholars')}
                   className="p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-teal-500/50 cursor-pointer transition space-y-2"
@@ -1720,22 +1806,192 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                 </div>
               </div>
 
-              {/* Department Books & Materials with Cover Artworks Gallery */}
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3.5">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-2xl bg-emerald-950 text-emerald-400 border border-emerald-800">
-                      <Image size={20} />
+              {/* Department Books & Institutional Catalog Holdings Section */}
+              <div id="department-catalog-holdings-section" className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 space-y-5 shadow-2xl">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+                  <div className="flex items-start sm:items-center gap-3">
+                    <div className="p-3 rounded-2xl bg-teal-950 text-teal-400 border border-teal-800 shadow-md">
+                      <BookOpen size={22} />
                     </div>
                     <div>
-                      <h3 className="text-base font-bold text-white flex items-center gap-2">
-                        <span>Department Books & Cover Artworks</span>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-teal-950 text-teal-300 border border-teal-800">
-                          {uploads.length} Resources
+                      <h3 className="text-lg font-bold text-white flex flex-wrap items-center gap-2">
+                        <span>Department Books & Catalog Holdings</span>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-teal-950 text-teal-300 border border-teal-700">
+                          {currentDeptCatalogBooks.length} Books in {currentDept.code}
                         </span>
                       </h3>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        Front cover artwork presentation of curriculum textbooks & materials for {currentDept.name}.
+                        Official curriculum textbooks and monographs cataloged in central database for <strong>{currentDept.name}</strong>. Open to read or check bibliographic records.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {/* Search inside department books */}
+                    <div className="relative min-w-[200px]">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={deptBookSearchQuery}
+                        onChange={(e) => setDeptBookSearchQuery(e.target.value)}
+                        placeholder={`Search ${currentDept.code} books...`}
+                        className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 transition"
+                      />
+                      {deptBookSearchQuery && (
+                        <button
+                          onClick={() => setDeptBookSearchQuery('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={fetchCatalogBooks}
+                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                      title="Refresh books from database"
+                    >
+                      <RefreshCw size={14} className={isLoadingCatalogBooks ? 'animate-spin text-teal-400' : ''} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Books Grid */}
+                {filteredDeptCatalogBooks.length === 0 ? (
+                  <div className="p-10 text-center bg-slate-950/60 rounded-2xl border border-dashed border-slate-800 space-y-3">
+                    <BookOpen size={32} className="mx-auto text-slate-600" />
+                    <h4 className="text-sm font-bold text-slate-300">
+                      {deptBookSearchQuery ? `No books found matching "${deptBookSearchQuery}"` : `No Catalog Books Found for ${currentDept.name}`}
+                    </h4>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto">
+                      Use the Quick Upload form above to upload curriculum textbooks for this department, or submit them through the Department Upload Studio.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {filteredDeptCatalogBooks.map((book, idx) => {
+                      const coverUrl = getBookCoverUrl(book);
+                      const copiesAvail = book.copies_available ?? book.copiesAvailable ?? 1;
+                      const copiesTot = book.copies_total ?? book.copiesTotal ?? 1;
+
+                      return (
+                        <div
+                          key={book.id || idx}
+                          className="bg-slate-950 rounded-2xl border border-slate-800/90 p-3.5 flex flex-col justify-between space-y-3 hover:border-teal-500/50 hover:shadow-xl transition group relative overflow-hidden"
+                        >
+                          {/* 3D Realistic Cover Artwork Presentation */}
+                          <div
+                            onClick={() => setActiveReaderBook(book)}
+                            className="w-full h-48 rounded-xl overflow-hidden relative shadow-lg shadow-black/80 border border-slate-800 bg-slate-900 group-hover:border-teal-500/60 transition cursor-pointer"
+                            title="Click to Open and Read Book"
+                          >
+                            <img
+                              src={coverUrl}
+                              alt={book.title}
+                              className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                              onError={(e) => {
+                                e.target.onerror = null;
+                                e.target.src = 'https://images.unsplash.com/photo-1532012164546-f432f2e37b73?w=600&auto=format&fit=crop&q=80';
+                              }}
+                            />
+                            {/* Realistic Spine shadow */}
+                            <div className="absolute top-0 bottom-0 left-0 w-2.5 bg-gradient-to-r from-black/80 to-transparent pointer-events-none" />
+                            {/* Subtle glossy sheen */}
+                            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none" />
+
+                            {/* Badge */}
+                            <div className="absolute top-2 right-2 z-10 flex flex-col gap-1 items-end">
+                              <span className="px-2 py-0.5 rounded-md text-[9px] font-bold font-mono bg-black/80 backdrop-blur-sm text-teal-300 border border-teal-500/40 shadow">
+                                {book.course_code || book.courseCode || currentDept.code}
+                              </span>
+                              {(book.hasPdf || book.has_file || book.file_data_url || book.pdf_url) && (
+                                <span className="px-1.5 py-0.5 rounded text-[8px] font-bold font-mono bg-emerald-950/90 text-emerald-300 border border-emerald-600/50">
+                                  PDF E-BOOK
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Hover Read Overlay */}
+                            <div className="absolute inset-0 bg-teal-950/70 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
+                              <span className="px-3.5 py-1.5 rounded-xl bg-teal-500 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-lg transform translate-y-2 group-hover:translate-y-0 transition">
+                                <BookOpen size={14} />
+                                <span>Read Book</span>
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Bibliographic Details */}
+                          <div className="space-y-1.5 flex-1">
+                            <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                              <span className="text-teal-400 truncate max-w-[140px] font-semibold">
+                                {book.call_number || book.callNumber || 'FCC-CALL'}
+                              </span>
+                              <span>{book.publication_year || book.year || '2026'}</span>
+                            </div>
+
+                            <h4
+                              onClick={() => setActiveReaderBook(book)}
+                              className="text-xs font-bold text-white line-clamp-2 leading-snug group-hover:text-teal-300 transition cursor-pointer"
+                              title={book.title}
+                            >
+                              {book.title}
+                            </h4>
+
+                            <p className="text-[11px] text-slate-400 truncate">
+                              By {book.author || 'FCC Faculty Scholar'}
+                            </p>
+
+                            <div className="pt-1 flex items-center justify-between text-[10px] text-slate-400 border-t border-slate-900">
+                              <span className="truncate max-w-[130px]">
+                                {book.shelf_location || book.shelfLocation || 'Main Library Stacks'}
+                              </span>
+                              <span className="text-emerald-400 font-mono font-semibold">
+                                {copiesAvail}/{copiesTot} avail
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div className="pt-2 border-t border-slate-900 flex items-center gap-1.5">
+                            <button
+                              onClick={() => setActiveReaderBook(book)}
+                              className="flex-1 py-1.5 px-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 shadow-md shadow-teal-950 transition active:scale-95"
+                            >
+                              <BookOpen size={13} />
+                              <span>Open & Read</span>
+                            </button>
+                            <button
+                              onClick={() => setSelectedCatalogBookDossier(book)}
+                              className="p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition"
+                              title="Inspect Bibliographic Record & Metadata"
+                            >
+                              <Eye size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Department Upload Submissions Pipeline Gallery */}
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3.5">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-2xl bg-indigo-950 text-indigo-400 border border-indigo-800">
+                      <Layers size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-white flex items-center gap-2">
+                        <span>HOD Upload Submissions Pipeline</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-950 text-indigo-300 border border-indigo-800">
+                          {uploads.length} In Review
+                        </span>
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Track syllabus monographs and materials submitted by HOD for Central Library Directorate approval.
                       </p>
                     </div>
                   </div>
@@ -1746,14 +2002,14 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                       className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition flex items-center gap-1.5"
                     >
                       <Layers size={13} />
-                      <span>View All in Pipeline</span>
+                      <span>Full Submissions Queue</span>
                     </button>
                     <button
                       onClick={fetchDepartmentUploads}
                       className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
                       title="Refresh uploads from database"
                     >
-                      <RefreshCw size={13} className={isLoadingUploads ? 'animate-spin text-teal-400' : ''} />
+                      <RefreshCw size={13} className={isLoadingUploads ? 'animate-spin text-indigo-400' : ''} />
                     </button>
                   </div>
                 </div>
@@ -1761,9 +2017,9 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                 {uploads.length === 0 ? (
                   <div className="p-8 text-center bg-slate-950/60 rounded-2xl border border-dashed border-slate-800 space-y-2">
                     <BookOpen size={28} className="mx-auto text-slate-600" />
-                    <h4 className="text-sm font-bold text-slate-300">No Department Books Uploaded Yet</h4>
+                    <h4 className="text-sm font-bold text-slate-300">No New Uploads Pending in Pipeline</h4>
                     <p className="text-xs text-slate-500">
-                      Use the Quick Upload form above to attach a PDF document and upload a Front Cover Artwork.
+                      Use the Quick Upload form above to submit new textbooks, lecture notes, or past papers to the library catalog.
                     </p>
                   </div>
                 ) : (
@@ -1775,10 +2031,10 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                       return (
                         <div
                           key={up.id || idx}
-                          className="bg-slate-950 rounded-2xl border border-slate-800/90 p-3.5 flex flex-col justify-between space-y-3 hover:border-teal-500/50 hover:shadow-xl transition group relative overflow-hidden"
+                          className="bg-slate-950 rounded-2xl border border-slate-800/90 p-3.5 flex flex-col justify-between space-y-3 hover:border-indigo-500/50 hover:shadow-xl transition group relative overflow-hidden"
                         >
                           {/* Front Cover Artwork Presentation */}
-                          <div className="w-full h-44 rounded-xl overflow-hidden relative shadow-lg shadow-black/80 border border-slate-800 bg-slate-900 group-hover:border-teal-500/60 transition">
+                          <div className="w-full h-40 rounded-xl overflow-hidden relative shadow-lg shadow-black/80 border border-slate-800 bg-slate-900 group-hover:border-indigo-500/60 transition">
                             {up.cover_image ? (
                               <img
                                 src={up.cover_image}
@@ -1786,12 +2042,12 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                                 className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
                               />
                             ) : (
-                              <div className="w-full h-full p-3 flex flex-col justify-between text-left relative overflow-hidden bg-gradient-to-br from-teal-950 via-slate-900 to-black">
+                              <div className="w-full h-full p-3 flex flex-col justify-between text-left relative overflow-hidden bg-gradient-to-br from-indigo-950 via-slate-900 to-black">
                                 <div className="space-y-1 relative z-10">
-                                  <span className="text-[7.5px] font-mono text-teal-400 font-bold uppercase tracking-wider block">
+                                  <span className="text-[7.5px] font-mono text-indigo-400 font-bold uppercase tracking-wider block">
                                     FCC • {currentDept.code}
                                   </span>
-                                  <div className="h-0.5 w-4 bg-teal-400 rounded-full" />
+                                  <div className="h-0.5 w-4 bg-indigo-400 rounded-full" />
                                   <h4 className="text-[10px] font-bold text-white line-clamp-3 leading-snug font-serif">
                                     {up.title}
                                   </h4>
@@ -1801,13 +2057,10 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                                 </div>
                               </div>
                             )}
-                            {/* Spine shadow */}
                             <div className="absolute top-0 bottom-0 left-0 w-2.5 bg-gradient-to-r from-black/70 to-transparent pointer-events-none" />
-                            {/* Sheen */}
                             <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none" />
-                            {/* Level Badge in top corner */}
                             <div className="absolute top-2 right-2 z-10">
-                              <span className="px-2 py-0.5 rounded-md text-[9px] font-bold font-mono bg-black/80 backdrop-blur-sm text-teal-300 border border-teal-500/40 shadow">
+                              <span className="px-2 py-0.5 rounded-md text-[9px] font-bold font-mono bg-black/80 backdrop-blur-sm text-indigo-300 border border-indigo-500/40 shadow">
                                 {up.course_code || currentDept.code}
                               </span>
                             </div>
@@ -1830,7 +2083,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                               </span>
                             </div>
 
-                            <h4 className="text-xs font-bold text-white line-clamp-2 leading-snug group-hover:text-teal-300 transition">
+                            <h4 className="text-xs font-bold text-white line-clamp-2 leading-snug group-hover:text-indigo-300 transition">
                               {up.title}
                             </h4>
                             <p className="text-[11px] text-slate-400 truncate">
@@ -1840,7 +2093,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
 
                           {/* Cover Actions Footer */}
                           <div className="pt-2 border-t border-slate-900 flex items-center justify-between gap-1 text-[11px]">
-                            <label className="cursor-pointer px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-teal-300 text-[10px] font-semibold transition border border-teal-500/30 hover:border-teal-400 flex items-center gap-1">
+                            <label className="cursor-pointer px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-indigo-300 text-[10px] font-semibold transition border border-indigo-500/30 hover:border-indigo-400 flex items-center gap-1">
                               <Image size={11} />
                               <span>{up.cover_image ? 'Update Cover' : 'Attach Cover'}</span>
                               <input
@@ -3399,6 +3652,126 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen Digital Book Reader Modal for HOD */}
+      {activeReaderBook && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-fadeIn">
+          <div className="w-full h-full max-w-7xl bg-slate-950 rounded-3xl overflow-hidden shadow-2xl border border-teal-500/30 flex flex-col relative">
+            <DigitalBookReader
+              book={activeReaderBook}
+              onClose={() => setActiveReaderBook(null)}
+              user={currentUser}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Catalog Book Bibliographic Dossier Modal for HOD */}
+      {selectedCatalogBookDossier && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+          <div className="w-full max-w-2xl bg-slate-900 border border-teal-500/40 rounded-3xl p-6 shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <BookOpen size={20} className="text-teal-400" />
+                <h4 className="text-base font-bold text-white">Curriculum Book Dossier</h4>
+              </div>
+              <button
+                onClick={() => setSelectedCatalogBookDossier(null)}
+                className="text-slate-400 hover:text-white text-xs px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 transition"
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="w-32 h-44 rounded-xl overflow-hidden border border-slate-800 shrink-0 shadow-lg relative bg-slate-950">
+                <img
+                  src={getBookCoverUrl(selectedCatalogBookDossier)}
+                  alt={selectedCatalogBookDossier.title}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute top-0 bottom-0 left-0 w-2 bg-gradient-to-r from-black/80 to-transparent pointer-events-none" />
+              </div>
+
+              <div className="space-y-2 flex-1">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-teal-950 text-teal-300 border border-teal-800">
+                  {selectedCatalogBookDossier.course_code || selectedCatalogBookDossier.courseCode || currentDept.code}
+                </span>
+                <h3 className="text-sm font-bold text-white leading-snug">
+                  {selectedCatalogBookDossier.title}
+                </h3>
+                <p className="text-xs text-slate-300">
+                  Author: <strong className="text-teal-300">{selectedCatalogBookDossier.author || 'FCC Faculty Scholar'}</strong>
+                </p>
+                <p className="text-xs text-slate-400">
+                  Department: <strong className="text-white">{selectedCatalogBookDossier.department || currentDept.name}</strong>
+                </p>
+              </div>
+            </div>
+
+            {/* Metadata Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+              <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">CALL NUMBER</span>
+                <span className="font-mono text-teal-300 font-bold text-[11px] truncate block">
+                  {selectedCatalogBookDossier.call_number || selectedCatalogBookDossier.callNumber || 'FCC-CALL'}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">ISBN</span>
+                <span className="font-mono text-white text-[11px] truncate block">
+                  {selectedCatalogBookDossier.isbn || 'FCC-DIGITAL'}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">YEAR</span>
+                <span className="text-emerald-400 font-bold text-[11px]">
+                  {selectedCatalogBookDossier.publication_year || selectedCatalogBookDossier.year || '2026'}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                <span className="text-[10px] text-slate-500 block">HOLDINGS</span>
+                <span className="text-white font-bold text-[11px]">
+                  {selectedCatalogBookDossier.copies_available ?? 1}/{selectedCatalogBookDossier.copies_total ?? 1} copies
+                </span>
+              </div>
+            </div>
+
+            {/* Abstract */}
+            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 leading-relaxed">
+              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider block mb-1">
+                Monograph Abstract & Syllabus Description:
+              </span>
+              {selectedCatalogBookDossier.abstract || (
+                <span className="text-slate-400">
+                  Official peer-reviewed curriculum reading resource approved for Federal Cooperative College, Ibadan degree and higher national diploma examinations.
+                </span>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="pt-2 border-t border-slate-800 flex items-center justify-end gap-2.5">
+              <button
+                onClick={() => setSelectedCatalogBookDossier(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  const b = selectedCatalogBookDossier;
+                  setSelectedCatalogBookDossier(null);
+                  setActiveReaderBook(b);
+                }}
+                className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold shadow-lg shadow-teal-950 flex items-center gap-2 transition active:scale-95"
+              >
+                <BookOpen size={14} />
+                <span>Open in Digital Reader</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

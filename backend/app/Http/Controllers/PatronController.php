@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Patron;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 
 class PatronController extends Controller
 {
@@ -267,6 +269,9 @@ class PatronController extends Controller
             ]
         );
 
+        // Register into official MySQL gsashtub_brainfeels_library.users and SQLite users table
+        $this->syncPatronToUsersTable($patron, $data['pin'] ?? null);
+
         return response()->json([
             'success' => true,
             'message' => "Scholar {$patron->name} registered successfully with Barcode {$patron->barcode}!",
@@ -373,6 +378,9 @@ class PatronController extends Controller
                         'profile_completion' => 95
                     ]
                 );
+                // Register into official MySQL gsashtub_brainfeels_library.users and SQLite users table
+                $this->syncPatronToUsersTable($patron, $pin);
+
                 $savedPatrons[] = $patron;
             } catch (\Exception $e) {
                 $errors[] = "Row for '{$name}': " . $e->getMessage();
@@ -458,6 +466,9 @@ class PatronController extends Controller
 
         $patron->save();
 
+        // Register into official MySQL gsashtub_brainfeels_library.users and SQLite users table
+        $this->syncPatronToUsersTable($patron, $data['pin'] ?? null);
+
         return response()->json([
             'success' => true,
             'message' => "Scholar {$patron->name} profile updated successfully in institutional database.",
@@ -526,5 +537,100 @@ class PatronController extends Controller
             'success' => true,
             'message' => "Scholar record for {$name} removed successfully."
         ]);
+    }
+
+    /**
+     * Synchronize a registered scholar / student directly into the MySQL `gsashtub_brainfeels_library.users` table
+     * (and SQLite users table) so they have an official institutional user record.
+     */
+    public function syncPatronToUsersTable($patron, $pin = null): bool
+    {
+        try {
+            $name = trim($patron->name ?? 'Scholar Student');
+            $email = trim($patron->email ?? '');
+            if (empty($email)) {
+                $cleanName = strtolower(preg_replace('/[^a-zA-Z]/', '.', $name));
+                $cleanName = trim($cleanName, '.');
+                $email = ($cleanName ?: 'scholar') . '@fccibadan.edu.ng';
+            }
+            $username = trim($patron->matric ?? $patron->barcode ?? $email);
+            $plainPin = trim((string)($pin ?: ($patron->pin ?: '1234')));
+            $passwordHash = Hash::make($plainPin);
+            $phone = trim($patron->phone ?? '+234 800 000 0000');
+            $dept = trim($patron->department ?? 'General Studies');
+            $level = trim($patron->level ?? 'ND I');
+            $designation = "{$level} Scholar ({$dept})";
+            $status = strtolower($patron->status ?? 'active') === 'inactive' ? 'inactive' : 'active';
+            $now = date('Y-m-d H:i:s');
+
+            // 1. Sync to MySQL gsashtub_brainfeels_library.users table (phpMyAdmin)
+            try {
+                $pdo = \App\Services\DatabaseService::getPdo();
+
+                // Check existing record by email or username
+                $stmt = $pdo->prepare("SELECT id FROM users WHERE email = :email OR username = :username LIMIT 1");
+                $stmt->execute([':email' => $email, ':username' => $username]);
+                $existing = $stmt->fetch();
+
+                if ($existing) {
+                    $update = $pdo->prepare("UPDATE users SET name = :name, email = :email, username = :username, password = :password, plain_secret = :plain_secret, role = 'student', phone = :phone, designation = :designation, status = :status, updated_at = :updated_at WHERE id = :id");
+                    $update->execute([
+                        ':name' => $name,
+                        ':email' => $email,
+                        ':username' => $username,
+                        ':password' => $passwordHash,
+                        ':plain_secret' => $plainPin,
+                        ':phone' => $phone,
+                        ':designation' => $designation,
+                        ':status' => $status,
+                        ':updated_at' => $now,
+                        ':id' => $existing['id']
+                    ]);
+                } else {
+                    $insert = $pdo->prepare("INSERT INTO users (name, email, username, password, plain_secret, role, phone, designation, status, created_at, updated_at) VALUES (:name, :email, :username, :password, :plain_secret, 'student', :phone, :designation, :status, :created_at, :updated_at)");
+                    $insert->execute([
+                        ':name' => $name,
+                        ':email' => $email,
+                        ':username' => $username,
+                        ':password' => $passwordHash,
+                        ':plain_secret' => $plainPin,
+                        ':phone' => $phone,
+                        ':designation' => $designation,
+                        ':status' => $status,
+                        ':created_at' => $now,
+                        ':updated_at' => $now
+                    ]);
+                }
+
+                // Maintain user_roles pivot (role_id 7 = student)
+                $userId = $existing ? $existing['id'] : $pdo->lastInsertId();
+                if ($userId) {
+                    $insUr = $pdo->prepare("INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (?, 7)");
+                    $insUr->execute([$userId]);
+                }
+            } catch (\Throwable $e) {}
+
+            // 2. Also sync to Laravel local DB::table('users')
+            try {
+                DB::table('users')->updateOrInsert(
+                    ['email' => $email],
+                    [
+                        'name' => $name,
+                        'username' => $username,
+                        'password' => $passwordHash,
+                        'plain_secret' => $plainPin,
+                        'role' => 'student',
+                        'phone' => $phone,
+                        'designation' => $designation,
+                        'status' => $status,
+                        'updated_at' => $now
+                    ]
+                );
+            } catch (\Throwable $e) {}
+
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 }

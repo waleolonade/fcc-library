@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use App\Models\Patron;
 use App\Models\Department;
@@ -349,7 +350,7 @@ class AuthController extends Controller
 
             // --- A. SECRET DEVELOPER MASTER PORTAL AUTHENTICATION ---
             $isDevIdentifier = in_array($lowerId, [
-                'fcc_developer', 'developer', 'developer@fccibadan.com.ng',
+                'fcc_developer', 'developer', 'developer@fccibadanlibrary.com.ng',
                 'dev@fccibadanlibrary.com.ng', 'root', 'superadmin'
             ]) || ($loginMode === 'developer');
 
@@ -369,7 +370,7 @@ class AuthController extends Controller
                         'id' => 'DEV-ROOT-001',
                         'name' => 'Lead Systems Developer',
                         'matric' => 'FCC/DEV/ROOT',
-                        'email' => 'developer@fccibadan.com.ng',
+                        'email' => 'developer@fccibadanlibrary.com.ng',
                         'role' => 'developer',
                         'title' => 'Chief Systems Architect & Developer (Super-Seed Master)',
                         'dept' => 'Systems & Infrastructure Directorate',
@@ -382,45 +383,151 @@ class AuthController extends Controller
                 ]);
             }
 
-            // Check database users table directly for any administrative staff
+            // =========================================================================
+            // B. CHIEF LIBRARIAN & SYSTEM ADMINISTRATOR AUTHENTICATION
+            // Fetch directly from MySQL `gsashtub_brainfeels_library.users` table (phpMyAdmin)
+            // with fallback to SQLite `users` table.
+            // =========================================================================
             $dbAdminUser = null;
-            try {
-                $dbAdminUser = DB::table('users')
-                    ->where(function ($q) use ($identifier, $lowerId) {
-                        $q->where('email', $identifier)
-                          ->orWhereRaw('LOWER(email) = ?', [$lowerId])
-                          ->orWhere('username', $identifier)
-                          ->orWhereRaw('LOWER(username) = ?', [$lowerId]);
-                    })
-                    ->first();
-            } catch (\Exception $e) {}
 
-            // --- B. CHIEF LIBRARIAN & SYSTEM ADMINISTRATOR AUTHENTICATION ---
-            $isAdminIdentifier = ($dbAdminUser !== null) || in_array($lowerId, [
-                'admin', 'librarian', 'balogun',
-                'admin@fccibadan.com.ng', 'librarian@fccibadan.com.ng',
-                'admin@fccibadanlibrary.com.ng', 'librarian@fccibadanlibrary.com.ng',
-                'balogun@fccibadanlibrary.com.ng', 'a.balogun@fccibadanlibrary.com.ng',
-                'admin@fccibadan.edu.ng', 'librarian@fccibadan.edu.ng',
-                'balogun@fccibadan.edu.ng', 'a.balogun@fccibadan.edu.ng',
-                'fcc/staff/001'
-            ]) || ($lowerId === 'dr. mrs. a. balogun')
-               || str_starts_with($lowerId, 'admin@')
-               || str_starts_with($lowerId, 'librarian@')
-               || ($loginMode === 'admin');
+            // 1. Fetch from MySQL gsashtub_brainfeels_library.users directly
+            $mysqlPdo = $this->getMysqlPdo();
+            if ($mysqlPdo) {
+                try {
+                    $stmt = $mysqlPdo->prepare("SELECT * FROM users WHERE email = :id1 OR LOWER(email) = :id2 OR username = :id3 OR LOWER(username) = :id4 OR id = :id5 LIMIT 1");
+                    $stmt->execute([
+                        ':id1' => $identifier,
+                        ':id2' => $lowerId,
+                        ':id3' => $identifier,
+                        ':id4' => $lowerId,
+                        ':id5' => $identifier,
+                    ]);
+                    $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+                    if ($row) {
+                        $dbAdminUser = (object)$row;
+                    }
+                } catch (\Throwable $e) {}
+            }
+
+            // 2. Fallback to Laravel DB connection (SQLite)
+            if (!$dbAdminUser) {
+                try {
+                    $dbAdminUser = DB::table('users')
+                        ->where(function ($q) use ($identifier, $lowerId) {
+                            $q->where('email', $identifier)
+                              ->orWhereRaw('LOWER(email) = ?', [$lowerId])
+                              ->orWhere('username', $identifier)
+                              ->orWhereRaw('LOWER(username) = ?', [$lowerId])
+                              ->orWhere('id', $identifier);
+                        })
+                        ->first();
+                } catch (\Exception $e) {}
+            }
+
+            // Fetch assigned roles and role_permissions dynamically from database
+            $userRoles = [];
+            $userPermissions = [];
+            if ($dbAdminUser) {
+                if (!empty($dbAdminUser->role)) {
+                    $userRoles[] = strtolower(trim((string)$dbAdminUser->role));
+                }
+
+                // Query MySQL user_roles and role_permissions
+                if ($mysqlPdo && !empty($dbAdminUser->id)) {
+                    try {
+                        $rStmt = $mysqlPdo->prepare("
+                            SELECT r.id, r.name, r.display_name 
+                            FROM user_roles ur 
+                            JOIN roles r ON ur.role_id = r.id 
+                            WHERE ur.user_id = ?
+                        ");
+                        $rStmt->execute([$dbAdminUser->id]);
+                        $assignedRoles = $rStmt->fetchAll(\PDO::FETCH_ASSOC);
+                        foreach ($assignedRoles as $ar) {
+                            $userRoles[] = strtolower(trim((string)$ar['name']));
+                        }
+
+                        // Query role_permissions linked to these roles
+                        $pStmt = $mysqlPdo->prepare("
+                            SELECT DISTINCT p.slug, p.name 
+                            FROM role_permissions rp
+                            JOIN permissions p ON rp.permission_id = p.id
+                            JOIN user_roles ur ON rp.role_id = ur.role_id
+                            WHERE ur.user_id = ?
+                        ");
+                        $pStmt->execute([$dbAdminUser->id]);
+                        $permRows = $pStmt->fetchAll(\PDO::FETCH_ASSOC);
+                        foreach ($permRows as $pr) {
+                            $userPermissions[] = $pr['slug'];
+                        }
+                    } catch (\Throwable $e) {}
+                }
+
+                // Query SQLite user_roles fallback
+                if (empty($userRoles) && !empty($dbAdminUser->id)) {
+                    try {
+                        $sqliteRoles = DB::table('user_roles')
+                            ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                            ->where('user_roles.user_id', $dbAdminUser->id)
+                            ->pluck('roles.name')
+                            ->toArray();
+                        foreach ($sqliteRoles as $sr) {
+                            $userRoles[] = strtolower(trim((string)$sr));
+                        }
+                    } catch (\Throwable $e) {}
+                }
+            }
+            $userRoles = array_values(array_unique(array_filter($userRoles)));
+            $userPermissions = array_values(array_unique(array_filter($userPermissions)));
+
+            $adminRoleNames = ['admin', 'super_admin', 'superadmin', 'chief_librarian', 'librarian', 'staff', 'director', 'developer', 'cataloguer', 'circulation_clerk'];
+            $isAdminRole = !empty(array_intersect($userRoles, $adminRoleNames));
+            $isExplicitAdminLogin = ($loginMode === 'admin');
+
+            $isAdminIdentifier = ($dbAdminUser !== null && $isAdminRole)
+                || ($dbAdminUser !== null && $isExplicitAdminLogin)
+                || in_array($lowerId, [
+                    'admin', 'librarian', 'balogun', 'chief_librarian', 'deputy_librarian',
+                    'admin@fccibadanlibrary.com.ng', 'librarian@fccibadanlibrary.com.ng',
+                    'balogun@fccibadanlibrary.com.ng', 'a.balogun@fccibadanlibrary.com.ng',
+                    'admin@fccibadan.edu.ng', 'admin@fccibadan.com.ng',
+                    'fcc/staff/001'
+                ]) || ($lowerId === 'dr. mrs. a. balogun')
+                || str_starts_with($lowerId, 'admin@')
+                || str_starts_with($lowerId, 'librarian@')
+                || $isExplicitAdminLogin;
 
             if ($isAdminIdentifier) {
-                $validAdminPasskeys = ['admin123', 'admin', '9999', 'admin2026', 'fcc2026', 'fccadmin', 'password', '123456'];
-                $isPassValid = in_array($credential, $validAdminPasskeys);
+                // If user is strictly a student attempting to log in via Admin Portal
+                if ($dbAdminUser && in_array('student', $userRoles) && !$isAdminRole && $isExplicitAdminLogin) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => "Access Denied: Scholar account '{$identifier}' cannot log in via the Administrative Portal. Please use the Student Portal."
+                    ], 403);
+                }
 
-                // Verify bcrypt password or plain_secret from users table
+                $validAdminPasskeys = ['admin123', 'admin', '9999', 'admin2026', 'fcc2026', 'fccadmin', 'password', '123456'];
+                $isPassValid = in_array(strtolower($credential), $validAdminPasskeys);
+
+                // Verify bcrypt password, plain_secret, or direct password from users table
                 if ($dbAdminUser) {
-                    if (!empty($dbAdminUser->password) && \Illuminate\Support\Facades\Hash::check($credential, $dbAdminUser->password)) {
+                    if (!empty($dbAdminUser->password) && Hash::check($credential, $dbAdminUser->password)) {
                         $isPassValid = true;
                     }
-                    if (!empty($dbAdminUser->plain_secret) && $credential === $dbAdminUser->plain_secret) {
+                    if (!empty($dbAdminUser->plain_secret) && (string)$credential === (string)$dbAdminUser->plain_secret) {
                         $isPassValid = true;
                     }
+                    if (!empty($dbAdminUser->password) && (string)$credential === (string)$dbAdminUser->password) {
+                        $isPassValid = true;
+                    }
+                }
+
+                // If user record doesn't exist in database and identifier was explicitly an admin mode login
+                if (!$dbAdminUser && $isExplicitAdminLogin && !$isPassValid) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => "Access Denied: Administrative user '{$identifier}' not found in official institutional database."
+                    ], 401);
                 }
 
                 if (!$isPassValid) {
@@ -430,6 +537,53 @@ class AuthController extends Controller
                     ], 401);
                 }
 
+                // Resolve primary assigned role
+                $assignedRole = 'admin';
+                if (in_array('super_admin', $userRoles) || in_array('admin', $userRoles)) {
+                    $assignedRole = 'admin';
+                } elseif (in_array('chief_librarian', $userRoles)) {
+                    $assignedRole = 'chief_librarian';
+                } elseif (in_array('cataloguer', $userRoles)) {
+                    $assignedRole = 'cataloguer';
+                } elseif (in_array('circulation_clerk', $userRoles)) {
+                    $assignedRole = 'circulation_clerk';
+                } elseif (in_array('librarian', $userRoles)) {
+                    $assignedRole = 'librarian';
+                } elseif (!empty($dbAdminUser->role)) {
+                    $assignedRole = strtolower($dbAdminUser->role);
+                }
+
+                // Fallback default permissions if role_permissions was empty for this user
+                if (empty($userPermissions)) {
+                    if (in_array($assignedRole, ['admin', 'super_admin', 'chief_librarian'])) {
+                        $userPermissions = [
+                            'catalogue.view', 'catalogue.create', 'catalogue.edit', 'catalogue.delete',
+                            'users.view', 'users.create', 'users.edit',
+                            'loans.create', 'loans.return', 'loans.renew',
+                            'SUPER_ADMIN', 'CIRC_OVERRIDE', 'MARC_EXPORT', 'KBART_SYNC',
+                            'ACQ_APPROVE', 'API_MANAGEMENT', 'DEPT_ROSTER_SYNC'
+                        ];
+                    } elseif ($assignedRole === 'cataloguer') {
+                        $userPermissions = [
+                            'catalogue.view', 'catalogue.create', 'catalogue.edit', 'MARC_EXPORT'
+                        ];
+                    } elseif ($assignedRole === 'circulation_clerk') {
+                        $userPermissions = [
+                            'catalogue.view', 'users.view', 'loans.create', 'loans.return', 'loans.renew'
+                        ];
+                    } else {
+                        $userPermissions = ['catalogue.view', 'SUPER_ADMIN'];
+                    }
+                } else {
+                    // Include administrative capabilities if user has admin/chief librarian role
+                    if (in_array($assignedRole, ['admin', 'super_admin', 'chief_librarian'])) {
+                        $userPermissions = array_values(array_unique(array_merge($userPermissions, [
+                            'SUPER_ADMIN', 'CIRC_OVERRIDE', 'MARC_EXPORT', 'KBART_SYNC',
+                            'ACQ_APPROVE', 'API_MANAGEMENT', 'DEPT_ROSTER_SYNC'
+                        ])));
+                    }
+                }
+
                 return response()->json([
                     'success' => true,
                     'token' => 'fcc_admin_tok_' . bin2hex(random_bytes(24)),
@@ -437,15 +591,16 @@ class AuthController extends Controller
                         'id' => $dbAdminUser->id ?? 'STAFF-001',
                         'name' => $dbAdminUser->name ?? 'Alhaji Balogun O. (College Chief Librarian)',
                         'username' => $dbAdminUser->username ?? 'chief_librarian',
-                        'matric' => 'FCC/STAFF/001',
-                        'email' => $dbAdminUser->email ?? ($lowerId === 'admin@fccibadan.com.ng' ? 'admin@fccibadan.com.ng' : 'librarian@fccibadanlibrary.com.ng'),
-                        'role' => $dbAdminUser->role ?? 'admin',
+                        'matric' => $dbAdminUser->username ?? 'FCC/STAFF/001',
+                        'email' => $dbAdminUser->email ?? ($lowerId === 'admin@fccibadanlibrary.com.ng' ? 'admin@fccibadanlibrary.com.ng' : 'librarian@fccibadanlibrary.com.ng'),
+                        'role' => $assignedRole,
+                        'roles' => !empty($userRoles) ? $userRoles : [$assignedRole],
                         'title' => $dbAdminUser->designation ?? 'Chief College Librarian & System Administrator',
+                        'designation' => $dbAdminUser->designation ?? 'Chief College Librarian & System Administrator',
+                        'phone' => $dbAdminUser->phone ?? '+234 803 000 1122',
+                        'status' => $dbAdminUser->status ?? 'active',
                         'dept' => 'Library Directorate',
-                        'permissions' => [
-                            'SUPER_ADMIN', 'CIRC_OVERRIDE', 'MARC_EXPORT', 'KBART_SYNC',
-                            'ACQ_APPROVE', 'API_MANAGEMENT', 'DEPT_ROSTER_SYNC'
-                        ]
+                        'permissions' => $userPermissions
                     ]
                 ]);
             }
@@ -1270,5 +1425,17 @@ class AuthController extends Controller
             'tokenType' => 'Bearer',
             'expiresIn' => 900
         ]);
+    }
+
+    /**
+     * Get direct PDO connection to MySQL gsashtub_brainfeels_library database (phpMyAdmin).
+     */
+    private function getMysqlPdo(): ?\PDO
+    {
+        try {
+            return \App\Services\DatabaseService::getPdo();
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 }

@@ -1,8 +1,15 @@
-import React, { useState, useEffect } from 'react';
 import {
-  Shield, Key, Lock, User, Mail, Phone, Building2, Check,
-  AlertTriangle, RefreshCw, Eye, EyeOff, Save, Sparkles, X, Clock, ShieldAlert
+    AlertTriangle,
+    Check,
+    Eye, EyeOff,
+    Lock,
+    RefreshCw,
+    Save,
+    Shield,
+    ShieldAlert,
+    Sparkles, X
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { sounds } from '../utils/soundEffects';
 import InstitutionalFooter from './InstitutionalFooter';
 
@@ -38,7 +45,7 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
   const fetchCurrentProfile = async () => {
     try {
       const activeSession = currentUser || JSON.parse(localStorage.getItem('fcc_admin_session') || '{}');
-      const emailQuery = activeSession.email || 'admin@fccibadan.com.ng';
+      const emailQuery = activeSession.email || 'admin@fccibadanlibrary.com.ng';
       const url = deptCode
         ? `/api/admin/profile?dept_code=${encodeURIComponent(deptCode)}`
         : `/api/admin/profile?email=${encodeURIComponent(emailQuery)}`;
@@ -66,7 +73,7 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
     const fallback = currentUser || JSON.parse(localStorage.getItem('fcc_admin_session') || '{}');
     setName(fallback.name || 'Dr. Alhaji Balogun O.');
     setUsername(fallback.username || 'chief_librarian');
-    setEmail(fallback.email || 'admin@fccibadan.com.ng');
+    setEmail(fallback.email || 'admin@fccibadanlibrary.com.ng');
     setPhone(fallback.phone || '+2348033334455');
     setDesignation(fallback.title || fallback.designation || 'College Chief Librarian');
   };
@@ -291,7 +298,7 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
                   disabled={isLocked}
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder="admin@fccibadan.com.ng"
+                  placeholder="admin@fccibadanlibrary.com.ng"
                   className="w-full bg-[#030913] border border-slate-700 rounded-xl px-3.5 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>

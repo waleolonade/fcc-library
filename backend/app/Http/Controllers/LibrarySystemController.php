@@ -26,7 +26,7 @@ class LibrarySystemController extends Controller
         return response()->json([
             'status' => 'Healthy',
             'framework' => 'Laravel 11.57.0 (PHP 8.2)',
-            'database' => 'brainfeels_library (SQLite & Eloquent ORM)',
+            'database' => 'gsashtub_brainfeels_library (SQLite & Eloquent ORM)',
             'latencyMs' => 12,
             'timestamp' => Carbon::now()->toIso8601String(),
             'counts' => [
@@ -477,4 +477,62 @@ class LibrarySystemController extends Controller
             ->get();
         return response()->json($res);
     }
+
+    // -------------------------------------------------------------
+    // Database Management & init-db Endpoint
+    // -------------------------------------------------------------
+    public function getDatabaseStatus()
+    {
+        $dbName = env('DB_MYSQL_DATABASE', 'gsashtub_brainfeels_library');
+        $host = env('DB_MYSQL_HOST', '127.0.0.1');
+        $port = env('DB_MYSQL_PORT', '3306');
+        $user = env('DB_MYSQL_USER', 'gsashtub_brainfeels_library');
+        $pass = env('DB_MYSQL_PASSWORD', '');
+
+        $counts = [];
+        $status = 'Connected';
+
+        try {
+            $pdo = new \PDO("mysql:host={$host};port={$port};dbname={$dbName}", $user, $pass, [
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_SILENT,
+                \PDO::ATTR_TIMEOUT => 2
+            ]);
+
+            $tables = ['users', 'roles', 'permissions', 'role_permissions', 'user_roles', 'departments', 'department_uploads', 'books', 'patrons', 'loans', 'library_apis'];
+            foreach ($tables as $t) {
+                try {
+                    $cnt = $pdo->query("SELECT count(*) FROM `{$t}`")->fetchColumn();
+                    $counts[$t] = (int) $cnt;
+                } catch (\Throwable $e) {
+                    $counts[$t] = 0;
+                }
+            }
+            $totalTables = count($pdo->query("SHOW TABLES")->fetchAll());
+        } catch (\Throwable $e) {
+            $status = 'Degraded (' . $e->getMessage() . ')';
+            $totalTables = 0;
+        }
+
+        return response()->json([
+            'database' => $dbName,
+            'engine' => 'MySQL / phpMyAdmin (port ' . $port . ')',
+            'status' => $status,
+            'totalTables' => $totalTables,
+            'tableCounts' => $counts
+        ]);
+    }
+
+    public function initDatabase()
+    {
+        ob_start();
+        require base_path('../database/init-db.php');
+        $output = ob_get_clean();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Database gsashtub_brainfeels_library initialized successfully via init-db!',
+            'output' => $output
+        ]);
+    }
 }
+

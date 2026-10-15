@@ -405,10 +405,7 @@ class CatalogController extends Controller
     private function syncBookToMysql($book): void
     {
         try {
-            $pdo = new \PDO("mysql:host=127.0.0.1;port=3306;dbname=brainfeels_library", "root", "", [
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_SILENT,
-                \PDO::ATTR_TIMEOUT => 2
-            ]);
+            $pdo = \App\Services\DatabaseService::getPdo();
             $stmt = $pdo->prepare("
                 INSERT INTO books (id, title, subtitle, author, department, course_code, target_level, call_number, shelf_location, isbn, doi, publisher, year, pdf_pages, file_size, file_name, file_data_url, cover_image, is_digital, access_level, copies_total, copies_available, uploaded_at, uploaded_by)
                 VALUES (:id, :title, :subtitle, :author, :department, :course_code, :target_level, :call_number, :shelf_location, :isbn, :doi, :publisher, :year, :pdf_pages, :file_size, :file_name, :file_data_url, :cover_image, :is_digital, :access_level, :copies_total, :copies_available, :uploaded_at, :uploaded_by)
