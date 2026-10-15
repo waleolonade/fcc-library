@@ -9,6 +9,7 @@ import { sounds } from '../utils/soundEffects';
 import { BarcodeSvg } from '../common/BarcodeQrStudio';
 import { PATTERNS } from '../utils/backgroundPatterns';
 import { QrPhoneLogin } from './QrPhoneLogin';
+import { showPwaInstallModal } from '../common/PwaInstallPromptModal';
 
 export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
   const [authRole, setAuthRole] = useState('student'); // 'student' | 'staff'
@@ -398,6 +399,28 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
                         >
                           <Smartphone size={13} />
                           <span>Forgot Password / PIN? Sign in with Mobile Pass / QR</span>
+                        </button>
+                      </div>
+
+                      {/* PWA Mobile Pass Install Trigger */}
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => showPwaInstallModal()}
+                          className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-950/90 via-[#032317] to-teal-950/90 border border-emerald-600/70 hover:border-emerald-400 text-emerald-300 hover:text-white text-xs font-semibold flex items-center justify-between gap-2 shadow-sm transition hover:scale-[1.01] cursor-pointer"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-lg bg-emerald-800/80 text-emerald-200 flex items-center justify-center shrink-0">
+                              <Smartphone size={13} />
+                            </span>
+                            <span className="text-left leading-tight">
+                              <strong className="block text-white text-[11px]">Install Mobile Pass App (PWA)</strong>
+                              <span className="text-[10px] text-emerald-400">Add to phone for quick workstation sign in</span>
+                            </span>
+                          </span>
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-600/30 text-emerald-200 border border-emerald-500/40">
+                            INSTALL 📲
+                          </span>
                         </button>
                       </div>
                     </>

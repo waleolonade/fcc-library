@@ -19,6 +19,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 // Register PWA Service Worker for OS-wide installability (Android, iOS, Windows, macOS, Linux)
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    const swPath = window.location.pathname.includes('/fcclibrary') ? '/fcclibrary/sw.js' : '/sw.js';
+    navigator.serviceWorker.register(swPath).catch(() => {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    });
   });
 }

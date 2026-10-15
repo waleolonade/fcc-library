@@ -21,6 +21,7 @@ import StudentPortal from './student/StudentPortal';
 import DeveloperMasterPortal from './developer/DeveloperMasterPortal';
 import PageMaintenanceGuard from './common/PageMaintenanceGuard';
 import InstitutionalFooter from './common/InstitutionalFooter';
+import PwaInstallPromptModal from './common/PwaInstallPromptModal';
 import { developerConfigService } from './services/developerConfigService';
 import { PATTERNS } from './utils/backgroundPatterns';
 import { getBookCoverUrl } from './utils/bookCoverResolver';
@@ -1107,6 +1108,9 @@ export default function App() {
           </button>
         </aside>
       )}
+
+      {/* Global PWA Mobile Pass Install Modal */}
+      <PwaInstallPromptModal autoPromptOnMobile={true} />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { sounds } from '../utils/soundEffects';
 import InstitutionalFooter from '../common/InstitutionalFooter';
+import { showPwaInstallModal } from '../common/PwaInstallPromptModal';
 
 /**
  * MobilePassVerificationModal
@@ -46,6 +47,7 @@ export default function MobilePassVerificationModal({
   const [verifiedUser, setVerifiedUser] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pwaPrompt, setPwaPrompt] = useState(null);
+  const [countdown, setCountdown] = useState(3);
 
   // Capture PWA install prompt if available
   useEffect(() => {
@@ -57,17 +59,40 @@ export default function MobilePassVerificationModal({
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
   }, []);
 
-  // Check on mount if pass is already installed on this phone
+  // Auto-close countdown when workstation is approved
+  useEffect(() => {
+    if (phase === 'workstation_approved') {
+      setCountdown(3);
+      const interval = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            if (onClose) {
+              onClose();
+            } else {
+              try { window.close(); } catch (e) {}
+              window.location.hash = '#/mobile-pass';
+            }
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [phase, onClose]);
+
+  // Check on mount if user details were stored before on this phone
   useEffect(() => {
     const checkInstalledPass = async () => {
       setPhase('checking');
       setError('');
 
       try {
-        const isInstalled = isAppAlreadyInstalled();
         const savedPassUser = localStorage.getItem('fcc_mobile_pass_user') || localStorage.getItem('fcc_student_session');
 
-        if (isInstalled && savedPassUser) {
+        // IF user has signed in before on this phone, immediately read stored details!
+        if (savedPassUser) {
           const user = JSON.parse(savedPassUser);
           if (user && (user.matric || user.barcode)) {
             setVerifiedUser(user);
@@ -109,7 +134,7 @@ export default function MobilePassVerificationModal({
                 }
                 localStorage.setItem('fcc_mobile_pass_installed', 'true');
                 sounds.playSuccessChime();
-                // Keep mobile on confirmation screen alone (do NOT redirect mobile!)
+                // Workstation is approved! Auto-closes in 3s
                 setPhase('workstation_approved');
                 return;
               } else {
@@ -127,7 +152,7 @@ export default function MobilePassVerificationModal({
           }
         }
 
-        // Not installed or first time -> Show verification details form
+        // First time on this phone -> Show verification details form
         setPhase('fill_details');
       } catch (err) {
         console.warn('Error checking installed pass:', err);
@@ -384,31 +409,44 @@ export default function MobilePassVerificationModal({
     sounds.playSuccessChime();
     setVerifiedUser(user);
     setIsSubmitting(false);
-    if (isAppAlreadyInstalled()) {
-      // If software is already installed, go directly to workstation approved confirmation
+
+    // Store user details permanently so subsequent QR scans never need any input!
+    localStorage.setItem('fcc_mobile_pass_installed', 'true');
+    localStorage.setItem('fcc_mobile_pass_user', JSON.stringify(user));
+
+    if (challengeId && challengeId !== 'mobile-direct') {
+      // Workstation is approved -> auto-close after countdown!
       setPhase('workstation_approved');
+    } else if (isAppAlreadyInstalled()) {
+      setPhase('pass_card');
     } else {
-      // First-time install prompt
       setPhase('match_install');
     }
   };
 
-  const handleInstallPassAndLogin = () => {
+  const handleInstallPassAndLogin = async () => {
     sounds.playSuccessChime();
 
     // 1. Mark pass as installed on this phone
     localStorage.setItem('fcc_mobile_pass_installed', 'true');
-    localStorage.setItem('fcc_mobile_pass_user', JSON.stringify(verifiedUser));
-
-    // 2. Trigger browser PWA install prompt if available
-    if (pwaPrompt) {
-      try {
-        pwaPrompt.prompt();
-      } catch (e) {}
+    if (verifiedUser) {
+      localStorage.setItem('fcc_mobile_pass_user', JSON.stringify(verifiedUser));
     }
 
-    // Keep mobile on confirmation screen alone (do NOT redirect mobile!)
-    setPhase('workstation_approved');
+    // 2. Trigger browser PWA install prompt if available, otherwise show install guide modal
+    if (pwaPrompt) {
+      try {
+        await pwaPrompt.prompt();
+        const choice = await pwaPrompt.userChoice;
+        if (choice && choice.outcome === 'accepted') {
+          return;
+        }
+      } catch (e) {
+        showPwaInstallModal();
+      }
+    } else {
+      showPwaInstallModal();
+    }
   };
 
   const proceedLogin = (user) => {
@@ -441,14 +479,25 @@ export default function MobilePassVerificationModal({
               </p>
             </div>
           </div>
-          {onClose && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={onClose}
-              className="text-emerald-400 hover:text-white p-1 rounded-lg text-xs"
+              type="button"
+              onClick={handleInstallPassAndLogin}
+              className="py-1.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:to-teal-500 text-white font-mono font-bold text-[10px] border border-emerald-400 shadow-md flex items-center gap-1.5 transition cursor-pointer"
+              title="Install FCC Mobile Pass on Phone"
             >
-              ✕
+              <Download size={12} className="animate-bounce" />
+              <span>INSTALL PWA 📲</span>
             </button>
-          )}
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="text-emerald-400 hover:text-white p-1 rounded-lg text-xs"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
 
         {/* -----------------------------------------------------------------
@@ -503,12 +552,24 @@ export default function MobilePassVerificationModal({
         ----------------------------------------------------------------- */}
         {phase === 'fill_details' && (
           <form onSubmit={handleVerifyDetails} className="space-y-4">
-            <div className="p-3 rounded-2xl bg-emerald-950/60 border border-emerald-800/80 text-xs text-emerald-300">
-              <div className="font-bold text-white mb-0.5 flex items-center gap-1.5">
-                <Smartphone size={14} className="text-emerald-400" />
-                <span>Link Mobile Pass to this Phone</span>
+            <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-[#022014] to-teal-950/90 border border-emerald-500/70 flex items-center justify-between gap-3 shadow-md">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 border border-emerald-400">
+                  <img src="/assets/fcc-logo.png" alt="FCC Logo" className="w-full h-full object-contain" />
+                </div>
+                <div className="text-left">
+                  <div className="text-xs font-black text-white">Install Mobile Pass on Phone</div>
+                  <div className="text-[10px] text-emerald-300">Official PWA App for easy 1-tap login</div>
+                </div>
               </div>
-              Enter your details registered by your Department HOD to activate password-free mobile login.
+              <button
+                type="button"
+                onClick={handleInstallPassAndLogin}
+                className="py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black shadow-md flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <Download size={13} />
+                <span>INSTALL 📲</span>
+              </button>
             </div>
 
             <div className="space-y-1.5">
@@ -629,50 +690,37 @@ export default function MobilePassVerificationModal({
               </p>
             </div>
 
-            {/* Install Callout Box with School Logo Badge - ONLY SHOWN ONCE IF NOT ALREADY ON PHONE */}
-            {!isAppAlreadyInstalled() ? (
-              <div className="p-4 rounded-2xl bg-[#021810] border-2 border-emerald-500/80 text-left space-y-2.5 shadow-xl">
-                <div className="flex items-center gap-2.5 text-emerald-300 text-xs font-bold">
-                  <div className="w-6 h-6 rounded-lg bg-white p-0.5 border border-emerald-400 shrink-0 flex items-center justify-center">
-                    <img src="/assets/fcc-logo.png" alt="FCC Logo" className="w-full h-full object-contain" />
-                  </div>
-                  <span>Install FCC Smart Library on this Phone</span>
+            {/* Install Callout Box with School Logo Badge - ALWAYS VISIBLE */}
+            <div className="p-4 rounded-2xl bg-[#021810] border-2 border-emerald-500/80 text-left space-y-2.5 shadow-xl">
+              <div className="flex items-center gap-2.5 text-emerald-300 text-xs font-bold">
+                <div className="w-6 h-6 rounded-lg bg-white p-0.5 border border-emerald-400 shrink-0 flex items-center justify-center">
+                  <img src="/assets/fcc-logo.png" alt="FCC Logo" className="w-full h-full object-contain" />
                 </div>
-                <p className="text-[11px] text-slate-300 leading-relaxed">
-                  Install this app with the official Federal Co-operative College crest on your phone home screen. Next time you scan the QR on any workstation, you are verified in 1 second!
-                </p>
-                {challengeId && challengeId !== 'mobile-direct' && (
-                  <div className="pt-1 text-[11px] text-emerald-400 font-semibold flex items-center gap-1.5">
-                    <Monitor size={13} />
-                    <span>The library computer has signed in automatically.</span>
-                  </div>
-                )}
+                <span>Install FCC Smart Library on this Phone</span>
               </div>
-            ) : (
-              <div className="p-4 rounded-2xl bg-[#021810] border border-emerald-600/80 text-left space-y-1.5 shadow-lg">
-                <div className="flex items-center gap-2 text-emerald-300 text-xs font-bold">
-                  <CheckCircle2 size={16} className="text-emerald-400" />
-                  <span>FCC App Already Installed on this Device</span>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Install this app with the official Federal Co-operative College crest on your phone home screen. Next time you scan the QR on any workstation, you are verified in 1 second!
+              </p>
+              {challengeId && challengeId !== 'mobile-direct' && (
+                <div className="pt-1 text-[11px] text-emerald-400 font-semibold flex items-center gap-1.5">
+                  <Monitor size={13} />
+                  <span>The library computer has signed in automatically.</span>
                 </div>
-                <p className="text-[11px] text-slate-300">
-                  Your device is registered. Workstation authentication is approved and active.
-                </p>
-              </div>
-            )}
+              )}
+            </div>
 
             <div className="space-y-2 pt-1">
-              {!isAppAlreadyInstalled() && (
-                <button
-                  type="button"
-                  onClick={handleInstallPassAndLogin}
-                  className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-xl shadow-emerald-950 flex items-center justify-center gap-2 transition cursor-pointer"
-                >
-                  <div className="w-5 h-5 rounded-md bg-white p-0.5 flex items-center justify-center shrink-0">
-                    <img src="/assets/fcc-logo.png" alt="Logo" className="w-full h-full object-contain" />
-                  </div>
-                  <span>Install App on Phone (School Logo Icon)</span>
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={handleInstallPassAndLogin}
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-white font-extrabold text-xs sm:text-sm shadow-xl shadow-emerald-950 flex items-center justify-center gap-2.5 transition cursor-pointer border border-emerald-300/40"
+              >
+                <div className="w-5 h-5 rounded-md bg-white p-0.5 flex items-center justify-center shrink-0">
+                  <img src="/assets/fcc-logo.png" alt="Logo" className="w-full h-full object-contain" />
+                </div>
+                <span>Install Mobile Pass App on Phone (PWA)</span>
+                <Download size={15} />
+              </button>
 
               {challengeId && challengeId !== 'mobile-direct' ? (
                 <button
@@ -724,36 +772,54 @@ export default function MobilePassVerificationModal({
               </p>
             </div>
 
-            <div className="p-4 rounded-2xl bg-[#021810] border border-emerald-700/80 text-xs text-emerald-200 text-left space-y-2">
+            <div className="p-4 rounded-2xl bg-[#021810] border border-emerald-700/80 text-xs text-emerald-200 text-left space-y-2.5 shadow-lg">
               <div className="font-bold text-emerald-400 flex items-center gap-1.5">
-                <Check size={14} className="stroke-[3]" />
+                <Check size={15} className="stroke-[3]" />
                 <span>Access Granted on Computer Screen</span>
               </div>
               <p className="text-slate-300 text-[11px] leading-relaxed">
-                Your credentials were authenticated against the institutional database. Your Scholar Dashboard is unlocked on <strong className="text-emerald-300">https://fccibadanlibrary.com.ng/#/login</strong> on the library computer screen alone.
+                Your stored credentials were authenticated against the institutional database. The library workstation is unlocked and active.
               </p>
+              <div className="pt-2 text-[11px] text-emerald-400 font-mono font-bold flex items-center justify-between border-t border-emerald-900/60">
+                <span>Closing dialog automatically...</span>
+                <span className="px-2.5 py-0.5 rounded bg-emerald-950 border border-emerald-500 text-emerald-300 animate-pulse">
+                  {countdown}s
+                </span>
+              </div>
             </div>
 
             <div className="space-y-2 pt-2">
               <button
                 type="button"
-                onClick={() => setPhase('pass_card')}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-950 flex items-center justify-center gap-2 transition"
+                onClick={onClose || (() => {
+                  try { window.close(); } catch (e) {}
+                  window.location.hash = '#/mobile-pass';
+                })}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-950 flex items-center justify-center gap-2 transition cursor-pointer"
               >
-                <Smartphone size={14} />
-                <span>Return to Mobile Pass Key</span>
+                <Monitor size={14} className="text-white" />
+                <span>Close Dialog Now &rarr;</span>
               </button>
 
               <button
                 type="button"
-                onClick={onClose || (() => {
-                  try { window.close(); } catch (e) {}
-                  setPhase('pass_card');
-                })}
-                className="w-full py-2.5 rounded-xl border border-emerald-800/80 bg-black/40 hover:bg-emerald-950 text-emerald-300 font-semibold text-xs transition flex items-center justify-center gap-1.5"
+                onClick={handleInstallPassAndLogin}
+                className="w-full py-2.5 rounded-xl border border-emerald-500/70 bg-emerald-950/80 hover:bg-emerald-900 text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow"
               >
-                <Monitor size={13} className="text-emerald-400" />
-                <span>Done — Computer Workstation Active</span>
+                <div className="w-4 h-4 rounded bg-white p-0.5 flex items-center justify-center shrink-0">
+                  <img src="/assets/fcc-logo.png" alt="Logo" className="w-full h-full object-contain" />
+                </div>
+                <span>Install Mobile Pass App on Phone (PWA)</span>
+                <Download size={13} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPhase('pass_card')}
+                className="w-full py-2.5 rounded-xl border border-emerald-800/80 bg-black/40 hover:bg-emerald-950 text-emerald-300 font-semibold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Smartphone size={13} className="text-emerald-400" />
+                <span>View My Mobile Pass Card</span>
               </button>
             </div>
           </div>
@@ -831,11 +897,23 @@ export default function MobilePassVerificationModal({
             <div className="space-y-2 pt-1">
               <button
                 type="button"
+                onClick={handleInstallPassAndLogin}
+                className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-white font-extrabold text-xs shadow-xl shadow-emerald-950 flex items-center justify-center gap-2 transition cursor-pointer border border-emerald-300/40"
+              >
+                <div className="w-5 h-5 rounded-md bg-white p-0.5 flex items-center justify-center shrink-0">
+                  <img src="/assets/fcc-logo.png" alt="Logo" className="w-full h-full object-contain" />
+                </div>
+                <span>Install Mobile Pass App on Phone (PWA)</span>
+                <Download size={14} />
+              </button>
+
+              <button
+                type="button"
                 onClick={() => {
                   const scannerInput = document.getElementById('fcc-camera-qr-input');
                   if (scannerInput) scannerInput.click();
                 }}
-                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-xl shadow-emerald-950 flex items-center justify-center gap-2 transition cursor-pointer"
+                className="w-full py-3.5 rounded-2xl bg-emerald-700/80 hover:bg-emerald-600 text-white font-bold text-xs shadow-lg shadow-emerald-950 flex items-center justify-center gap-2 transition cursor-pointer"
               >
                 <Camera size={16} />
                 <span>Scan Computer Screen QR</span>

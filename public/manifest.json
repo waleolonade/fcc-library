@@ -1,36 +1,36 @@
 {
-  "name": "Federal Co-operative College Smart Library",
-  "short_name": "FCC Library",
-  "description": "Federal Co-operative College, Ibadan - Smart Integrated Library & Digital Repository Services Platform",
-  "id": "/?pwa=true",
-  "start_url": "./#/mobile-pass",
-  "scope": "./",
+  "name": "FCC Smart Library Mobile Pass",
+  "short_name": "FCC Pass",
+  "description": "Federal Co-operative College, Ibadan - Smart Library Mobile Login Pass & Workstation Authenticator",
+  "id": "/?pwa=mobile-pass",
+  "start_url": "/#/mobile-pass",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#021810",
   "theme_color": "#047857",
-  "orientation": "any",
-  "categories": ["education", "books", "productivity"],
+  "orientation": "portrait-primary",
+  "categories": ["education", "utilities", "productivity"],
   "icons": [
     {
-      "src": "./assets/fcc-logo.png",
+      "src": "/assets/fcc-logo.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./assets/fcc-logo.png",
+      "src": "/assets/fcc-logo.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "./fcc-logo.png",
+      "src": "/fcc-logo.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./fcc-logo.png",
+      "src": "/fcc-logo.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
@@ -39,12 +39,17 @@
   "shortcuts": [
     {
       "name": "FCC Mobile Pass",
-      "url": "./#/mobile-pass",
+      "url": "/#/mobile-pass",
       "description": "Digital library pass & workstation authenticator"
     },
     {
+      "name": "Scan Workstation QR",
+      "url": "/#/mobile-pass?action=scan",
+      "description": "Scan computer screen to sign in"
+    },
+    {
       "name": "Library Catalog (OPAC)",
-      "url": "./#/opac",
+      "url": "/#/opac",
       "description": "Search library collection and e-resources"
     }
   ]
