@@ -678,11 +678,13 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
     try {
       const defaultAuthorFallback = batchCommon.author || user?.name || matchedDbDept?.hod_name || 'Department Faculty Academic Board';
       const defaultDeptName = matchedDbDept?.name || user?.department_name || `${activeDeptCode} Studies`;
+      const isJournalTarget = bulkCategory === 'journal';
 
-      // 1. Client-Side Deep PDF Extraction (Mozilla PDF.js text layer + Crossref/OpenAlex resolver + Canvas Cover)
+      // 1. Client-Side Deep PDF Extraction (Gemini AI + Mozilla PDF.js text layer + Crossref/OpenAlex resolver + Canvas Cover)
       const analysisPromise = analyzeUploadedPdf(fileObj, {
         defaultDeptCode: activeDeptCode || 'CEM',
-        defaultAuthor: defaultAuthorFallback
+        defaultAuthor: defaultAuthorFallback,
+        category: isJournalTarget ? 'journal' : 'book'
       });
 
       // 2. Parallel Backend GROBID / OCR / Crossref Service attempt (with 3.5s timeout)
@@ -732,9 +734,9 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
           const nextDoi = bMeta.doi || ext.doi || it.doi || '';
           const nextJournalName = bMeta.journal_name || ext.journalName || it.journal_name || '';
 
-          const provenanceSummary = bProv.title
-            ? bProv.title
-            : (ext.titleSource ? ext.titleSource : 'PDF Text Layer');
+          const provenanceSummary = ext.titleSource
+            ? ext.titleSource
+            : (bProv.title ? bProv.title : 'PDF Text Layer');
 
           return {
             ...it,
@@ -743,7 +745,9 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
             title: nextTitle,
             title_source: provenanceSummary,
             author: nextAuthor,
-            author_source: bProv.author || ext.authorSource || 'PDF Deep Scan',
+            author_source: ext.authorSource || bProv.author || 'Gemini AI',
+            gemini_ai_used: ext.geminiAiUsed || Boolean(provenanceSummary.includes('Gemini')),
+            gemini_ai_model: ext.geminiAiModel || null,
             faculty_unit: nextFacultyUnit,
             course_code: nextCourse,
             target_level: nextLevel,
@@ -753,11 +757,12 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
             issn: nextIssn,
             publication_year: nextPubYear,
             doi: nextDoi,
+            abstract: ext.abstract || it.abstract || '',
             watermark_protection: true,
             page_count: analysis.fileMeta?.pageCount || it.page_count || 0,
             has_extracted_cover: Boolean(extractedCover),
             cover_source_label: ext.coverSourceLabel || '',
-            confidence_score: backendMeta?.confidence?.title || ext.confidenceScore || 90,
+            confidence_score: ext.confidenceScore || backendMeta?.confidence?.title || (ext.geminiAiUsed ? 98 : 90),
             cover_image: extractedCover
               ? extractedCover
               : generateProceduralCover(
@@ -1552,7 +1557,8 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
         const defaultAuthorFallback = user?.name || matchedDbDept?.hod_name || 'Department Faculty Academic Board';
         const analysis = await analyzeUploadedPdf(file, {
           defaultDeptCode: activeDeptCode || 'CEM',
-          defaultAuthor: defaultAuthorFallback
+          defaultAuthor: defaultAuthorFallback,
+          category: uploadCategory === 'journal' ? 'journal' : 'book'
         });
 
         clearInterval(progressTimer);
@@ -1570,7 +1576,12 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
           setFormData(prev => ({
             ...prev,
             title: ext.title || prev.title,
+            title_source: ext.titleSource || 'Gemini AI Bibliographic Auto-Scan',
             author: ext.author || prev.author,
+            author_source: ext.authorSource || 'Gemini AI',
+            faculty_unit: ext.facultyUnit || prev.faculty_unit || '',
+            gemini_ai_used: ext.geminiAiUsed,
+            gemini_ai_model: ext.geminiAiModel,
             course_code: ext.courseCode || prev.course_code,
             target_level: ext.targetLevel || prev.target_level,
             semester: ext.semester || prev.semester,
@@ -3168,7 +3179,11 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                                     {isItemJournal ? 'Journal Article Title' : 'Book / Material Title'} <span className="text-rose-400">*</span>
                                   </label>
                                   {item.title_source && (
-                                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300">
+                                    <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                                      item.title_source.includes('Gemini')
+                                        ? 'bg-teal-950/90 border-teal-500/50 text-teal-300'
+                                        : 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300'
+                                    }`}>
                                       ✓ {item.title_source}
                                     </span>
                                   )}
@@ -3190,8 +3205,12 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                                       Author(s) / Lead Researchers <span className="text-rose-400">*</span>
                                     </label>
                                     {item.author_source && (
-                                      <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-slate-800 text-slate-400">
-                                        {item.author_source.slice(0, 16)}
+                                      <span className={`text-[9px] font-mono px-1 py-0.5 rounded ${
+                                        item.author_source.includes('Gemini')
+                                          ? 'bg-teal-950 border border-teal-500/40 text-teal-300'
+                                          : 'bg-slate-800 text-slate-400'
+                                      }`}>
+                                        {item.author_source.slice(0, 20)}
                                       </span>
                                     )}
                                   </div>
@@ -3229,11 +3248,18 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                                 <Sparkles size={11} className="text-amber-400" />
                                 <span>Bibliographic Auto-Scan Metadata (Deep Extracted)</span>
                               </span>
-                              {item.confidence_score && (
-                                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
-                                  Conf: {item.confidence_score}%
-                                </span>
-                              )}
+                              <div className="flex items-center gap-1.5">
+                                {item.gemini_ai_used && (
+                                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-teal-500/20 border border-teal-500/40 text-teal-300 flex items-center gap-1">
+                                    <Sparkles size={9} className="text-amber-400" /> Gemini AI Auto-Scan
+                                  </span>
+                                )}
+                                {item.confidence_score && (
+                                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                                    Conf: {item.confidence_score}%
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
                             {isItemJournal && (

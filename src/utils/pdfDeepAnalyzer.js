@@ -12,6 +12,7 @@
 
 import { departmentService } from '../services/departmentService';
 import { lookupJournalMetadataByIdentifier } from '../services/openSourceJournalsApi';
+import { extractBibliographicMetadataWithGemini } from '../services/geminiExtractionService';
 
 // Academic level patterns
 const LEVEL_PATTERNS = [
@@ -1028,6 +1029,36 @@ export async function analyzeUploadedPdf(file, options = {}) {
     openSourceBiblio = await lookupOpenSourceIsbnMetadata(detectedIsbn);
   }
 
+  // 5b. Gemini AI Deep Bibliographic Auto-Scan (Title, Author, Faculty, Volume/Issue, ISSN, Year, DOI, ISBN, Course Code, Abstract)
+  let geminiBiblio = null;
+  if (!options.skipGeminiAi && (fullCorpus.length > 20 || file.name)) {
+    try {
+      logs.push({ step: 'gemini_ai', label: 'Querying Gemini AI for Bibliographic Deep Extraction...', time: Math.round(performance.now() - startTime) });
+      const geminiRes = await extractBibliographicMetadataWithGemini({
+        textSnippet: fullCorpus.slice(0, 4500),
+        fileName: file.name,
+        category: options.category || (detectedDoi || realIssnFound ? 'journal' : 'book'),
+        defaultDeptCode: options.defaultDeptCode || 'CEM'
+      });
+      if (geminiRes && geminiRes.success && geminiRes.metadata) {
+        geminiBiblio = geminiRes;
+        logs.push({ step: 'gemini_ai_success', label: `Gemini AI (${geminiRes.modelUsed}) deep-extracted bibliographic metadata!`, time: Math.round(performance.now() - startTime) });
+
+        const m = geminiRes.metadata;
+        if (m.doi && !detectedDoi) detectedDoi = m.doi;
+        if (m.issn && !detectedIssn) detectedIssn = m.issn;
+        if (m.volume_issue && !detectedVolumeIssue) detectedVolumeIssue = m.volume_issue;
+        if (m.journal_name && !detectedJournalName) detectedJournalName = m.journal_name;
+        if (m.publication_year && !detectedPubYear) detectedPubYear = m.publication_year;
+        if (m.course_code && !detectedCourseCode) detectedCourseCode = m.course_code;
+        if (m.faculty_unit && !detectedFacultyUnit) detectedFacultyUnit = m.faculty_unit;
+        if (m.isbn && !detectedIsbn) detectedIsbn = m.isbn;
+      }
+    } catch (gErr) {
+      console.warn('Gemini AI deep extraction note:', gErr);
+    }
+  }
+
   // 6. Course Code Auto-Detection (e.g. CEM 411, COM 311, CSC 201, BNF 301, AGR 315, GNS 101)
   let detectedCourseCode = '';
   const courseCodeMatch = fullCorpus.match(/\b([A-Z]{3})\s*[-_]?([1-4][0-9]{2})\b/);
@@ -1099,8 +1130,9 @@ export async function analyzeUploadedPdf(file, options = {}) {
   // 11. Filename Fallback Parser
   const filenameParsed = parseTitleAndAuthorFromFilename(file.name);
 
-  // 12. Final Book / Journal Article Title Synthesis (Priority: Crossref/OpenAlex DOI -> OpenLibrary/GoogleBooks -> Typography Page 1/2 -> PDF Info/XMP -> Clean Filename)
+  // 12. Final Book / Journal Article Title Synthesis (Priority: Gemini AI -> Crossref/OpenAlex DOI -> OpenLibrary/GoogleBooks -> Typography Page 1/2 -> PDF Info/XMP -> Clean Filename)
   let detectedTitle =
+    geminiBiblio?.metadata?.title ||
     openSourceJournalMeta?.title ||
     openSourceBiblio?.title ||
     typographyTitle ||
@@ -1109,7 +1141,9 @@ export async function analyzeUploadedPdf(file, options = {}) {
     filenameParsed.title ||
     'Academic Course Monograph';
 
-  let titleSource = openSourceJournalMeta?.title
+  let titleSource = geminiBiblio?.metadata?.title
+    ? 'Gemini AI Bibliographic Auto-Scan'
+    : openSourceJournalMeta?.title
     ? (openSourceJournalMeta.source || 'OpenAlex / Crossref DOI Registry')
     : openSourceBiblio?.title
     ? openSourceBiblio.source
@@ -1125,7 +1159,7 @@ export async function analyzeUploadedPdf(file, options = {}) {
     if (stripped.length >= 4) detectedTitle = stripped;
   }
 
-  // 13. Final Author / Faculty Unit Synthesis (Priority: OpenLibrary/GoogleBooks -> Typography Attribution/Honorific -> PDF Info/XMP -> Filename Author -> Faculty Unit -> HOD)
+  // 13. Final Author / Faculty Unit Synthesis (Priority: Gemini AI -> OpenLibrary/GoogleBooks -> Typography Attribution/Honorific -> PDF Info/XMP -> Filename Author -> Faculty Unit -> HOD)
   let detectedMatric = '';
   let detectedSupervisor = '';
 
@@ -1140,6 +1174,7 @@ export async function analyzeUploadedPdf(file, options = {}) {
   }
 
   let detectedAuthor =
+    geminiBiblio?.metadata?.author ||
     openSourceJournalMeta?.author ||
     openSourceBiblio?.author ||
     typographyAuthor ||
@@ -1152,7 +1187,9 @@ export async function analyzeUploadedPdf(file, options = {}) {
     detectedDept?.hod ||
     `${detectedDept?.name || 'Department'} Faculty Unit`;
 
-  let authorSource = openSourceJournalMeta?.author
+  let authorSource = geminiBiblio?.metadata?.author
+    ? 'Gemini AI'
+    : openSourceJournalMeta?.author
     ? (openSourceJournalMeta.source || 'OpenAlex / Crossref DOI Registry')
     : openSourceBiblio?.author
     ? openSourceBiblio.source
@@ -1167,9 +1204,9 @@ export async function analyzeUploadedPdf(file, options = {}) {
     : 'Department Faculty Default';
 
   // 14. Abstract / Executive Summary Extraction
-  let detectedAbstract = openSourceBiblio?.abstract || dictSubject;
+  let detectedAbstract = geminiBiblio?.metadata?.abstract || openSourceBiblio?.abstract || dictSubject;
   const abstractMatch = fullCorpus.match(/\b(?:ABSTRACT|EXECUTIVE\s+SUMMARY|PREFACE|COURSE\s+DESCRIPTION)[:\s]+([^.]{25,}?\.(?:[^.]{15,}?\.)?)/i);
-  if (abstractMatch && abstractMatch[1].length > 40) {
+  if (abstractMatch && abstractMatch[1].length > 40 && !geminiBiblio?.metadata?.abstract) {
     detectedAbstract = abstractMatch[1].replace(/\s+/g, ' ').trim();
   }
 
@@ -1178,7 +1215,7 @@ export async function analyzeUploadedPdf(file, options = {}) {
   }
 
   // 15. Keywords / Subject Taxonomy Extraction
-  let detectedKeywords = dictKeywords;
+  let detectedKeywords = geminiBiblio?.metadata?.keywords || dictKeywords;
   if (!detectedKeywords || detectedKeywords.length < 5) {
     const keywordsList = [
       detectedDept.code,
@@ -1209,10 +1246,11 @@ export async function analyzeUploadedPdf(file, options = {}) {
   const simulatedPlagiarismScore = Math.floor(4 + (parseInt(hash.slice(0, 2), 16) % 11));
   const authenticityStatus = simulatedPlagiarismScore <= 15 ? 'AUTHENTIC_VERIFIED' : 'SUPERVISOR_REVIEW_FLAGGED';
 
-  const confidenceScore =
-    (typographyTitle || pdfInfoTitle || openSourceBiblio?.title ? 50 : 38) +
-    (typographyAuthor || pdfInfoAuthor || openSourceBiblio?.author ? 28 : 18) +
-    (hasRealCover ? 20 : 12);
+  const confidenceScore = geminiBiblio?.metadata?.title
+    ? 98
+    : (typographyTitle || pdfInfoTitle || openSourceBiblio?.title ? 50 : 38) +
+      (typographyAuthor || pdfInfoAuthor || openSourceBiblio?.author ? 28 : 18) +
+      (hasRealCover ? 20 : 12);
 
   logs.push({ step: 'complete', label: 'Deep PDF & Cover analysis complete!', time: Math.round(performance.now() - startTime) });
 
@@ -1237,6 +1275,8 @@ export async function analyzeUploadedPdf(file, options = {}) {
       titleSource,
       author: detectedAuthor,
       authorSource,
+      geminiAiUsed: Boolean(geminiBiblio?.metadata?.title),
+      geminiAiModel: geminiBiblio?.modelUsed || null,
       facultyUnit: detectedFacultyUnit || detectedDept.name,
       matric: detectedMatric,
       supervisor: detectedSupervisor,

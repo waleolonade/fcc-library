@@ -3274,7 +3274,11 @@ class DepartmentUploadController extends Controller
 
         try {
             $input = $file ? $file->getRealPath() : ($fileDataUrl ?: $filePath);
-            $analysis = $extractor->extractMetadata($input);
+            $options = [
+                'file_name' => $request->input('file_name', $file ? $file->getClientOriginalName() : ''),
+                'category' => $request->input('category', 'book')
+            ];
+            $analysis = $extractor->extractMetadata($input, $options);
 
             return response()->json($analysis);
         } catch (\Throwable $e) {
