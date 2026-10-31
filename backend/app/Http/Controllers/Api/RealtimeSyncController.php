@@ -146,3 +146,4 @@ class RealtimeSyncController extends Controller
         return $response;
     }
 }
+

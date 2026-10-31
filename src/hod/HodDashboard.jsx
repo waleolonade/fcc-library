@@ -1143,6 +1143,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
       setCatalogBooks(prev => prev.filter(b => b.id !== uploadId && b.id !== targetBookId && b.upload_id !== uploadId && b.book_id !== uploadId && (!targetTitle || b.title !== targetTitle)));
       fetchCourses();
       sounds.playSuccessChime();
+
       publishRealtimeEvent({
         action: 'DELETE',
         entity: 'upload',
@@ -1150,6 +1151,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
         ids: [uploadId, targetBookId].filter(Boolean),
         title: targetTitle
       });
+
       setSubmissionNotification({ type: 'success', message: `Submission "${title}" successfully removed from database.` });
       setTimeout(() => setSubmissionNotification(null), 4000);
     } catch (err) {
@@ -1242,12 +1244,14 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
 
       setSelectedSubmissionIds(new Set());
       sounds.playSuccessChime();
+
       publishRealtimeEvent({
         action: 'DELETE',
         entity: 'upload',
         ids: idsArray,
         title: `${idsArray.length} submissions deleted in bulk`
       });
+
       setSubmissionNotification({
         type: 'success',
         message: `✓ Successfully deleted ${count} submission(s) from the database.`
@@ -1636,10 +1640,11 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
     };
   }, []);
 
-  // Real-Time Synchronizer for HOD Dashboard
+  // Real-Time Cross-System Synchronization for HOD Dashboard
   useEffect(() => {
     const unsubscribe = subscribeRealtimeEvents((event) => {
       if (!event || !event.action) return;
+
       const deletedIds = new Set([
         event.id,
         ...(Array.isArray(event.ids) ? event.ids : [])
@@ -1668,6 +1673,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
           }
           return prev;
         });
+
         setSelectedCatalogBookDossier(prev => (prev && matchesTarget(prev) ? null : prev));
         setUploads(prev => prev.filter(u => !matchesTarget(u)));
         setCatalogBooks(prev => prev.filter(b => !matchesTarget(b)));
@@ -1677,9 +1683,11 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
         setActiveReaderBook(prev => (prev && matchesTarget(prev) && event.data ? { ...prev, ...event.data } : prev));
       }
     });
-    return () => unsubscribe();
-  }, []);
 
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     if (currentDept) {
