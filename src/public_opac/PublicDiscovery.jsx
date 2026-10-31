@@ -608,13 +608,17 @@ export default function PublicDiscovery({
   // Filtered Books with Multi-Field, Category, and Advanced Facets
   const filteredBooks = useMemo(() => {
     return books.filter(b => {
+      const isOnline = Boolean(b.isLiveExternalJournal || b.sourceApi || (b.id && (String(b.id).startsWith('OA-') || String(b.id).startsWith('CR-') || String(b.id).startsWith('EPMC-') || String(b.id).startsWith('W'))));
       const resTypeStr = String(b.resource_type || b.resourceType || '').toLowerCase();
       const isProject = b.category === 'Student Project' || b.materialType === 'Thesis' || b.materialType === 'Dissertation' || (b.id && (String(b.id).startsWith('TH-') || String(b.id).startsWith('FCC-PRJ-'))) || resTypeStr.includes('project') || resTypeStr.includes('thesis') || resTypeStr.includes('dissertation');
-      const isJournal = b.category === 'Journal' || b.materialType === 'Journal' || Boolean(b.issn) || (b.id && (String(b.id).startsWith('FCC-JRN-') || String(b.id).startsWith('OA-') || String(b.id).startsWith('CR-') || String(b.id).startsWith('EPMC-'))) || resTypeStr.includes('journal') || resTypeStr.includes('article');
+      const isJournal = isOnline || b.category === 'Journal' || b.materialType === 'Journal' || Boolean(b.issn) || (b.id && (String(b.id).startsWith('FCC-JRN-') || String(b.id).startsWith('OA-') || String(b.id).startsWith('CR-') || String(b.id).startsWith('EPMC-'))) || resTypeStr.includes('journal') || resTypeStr.includes('article');
       const isBook = !isProject && !isJournal;
 
-      // Category filter
+      // Category filter (Strictly separates local uploads from external online API journals)
       if (resourceCategory === 'Bookmarked' && !savedBooks.includes(b.id)) return false;
+      if (resourceCategory === 'LocalBooks' && (isOnline || !isBook)) return false;
+      if (resourceCategory === 'LocalJournals' && (isOnline || (!isJournal && !isProject))) return false;
+      if (resourceCategory === 'OnlineJournals' && !isOnline) return false;
       if (resourceCategory === 'Book' && !isBook) return false;
       if (resourceCategory === 'Journal' && !isJournal) return false;
       if (resourceCategory === 'Student Project' && !isProject) return false;
@@ -832,6 +836,30 @@ export default function PublicDiscovery({
   const bookCount = useMemo(() => books.filter(b => b.category !== 'Journal' && b.category !== 'Student Project' && !String(b.id || '').startsWith('TH-') && !String(b.resourceType || '').toLowerCase().includes('project') && !String(b.resourceType || '').toLowerCase().includes('journal')).length, [books]);
   const journalCount = useMemo(() => books.filter(b => b.category === 'Journal' || b.materialType === 'Journal' || Boolean(b.issn) || String(b.resourceType || '').toLowerCase().includes('journal')).length, [books]);
   const projectCount = useMemo(() => books.filter(b => b.category === 'Student Project' || b.materialType === 'Thesis' || b.materialType === 'Dissertation' || String(b.id || '').startsWith('TH-') || String(b.resourceType || '').toLowerCase().includes('project')).length, [books]);
+
+  const localBooksCount = useMemo(() => {
+    return books.filter(b => {
+      const isOnline = Boolean(b.isLiveExternalJournal || b.sourceApi || (b.id && (String(b.id).startsWith('OA-') || String(b.id).startsWith('CR-') || String(b.id).startsWith('EPMC-') || String(b.id).startsWith('W'))));
+      const resTypeStr = String(b.resource_type || b.resourceType || '').toLowerCase();
+      const isProject = b.category === 'Student Project' || b.materialType === 'Thesis' || b.materialType === 'Dissertation' || (b.id && (String(b.id).startsWith('TH-') || String(b.id).startsWith('FCC-PRJ-'))) || resTypeStr.includes('project') || resTypeStr.includes('thesis') || resTypeStr.includes('dissertation');
+      const isJournal = isOnline || b.category === 'Journal' || b.materialType === 'Journal' || Boolean(b.issn) || (b.id && (String(b.id).startsWith('FCC-JRN-') || String(b.id).startsWith('OA-') || String(b.id).startsWith('CR-') || String(b.id).startsWith('EPMC-'))) || resTypeStr.includes('journal') || resTypeStr.includes('article');
+      return !isOnline && !isProject && !isJournal;
+    }).length;
+  }, [books]);
+
+  const localJournalsCount = useMemo(() => {
+    return books.filter(b => {
+      const isOnline = Boolean(b.isLiveExternalJournal || b.sourceApi || (b.id && (String(b.id).startsWith('OA-') || String(b.id).startsWith('CR-') || String(b.id).startsWith('EPMC-') || String(b.id).startsWith('W'))));
+      const resTypeStr = String(b.resource_type || b.resourceType || '').toLowerCase();
+      const isProject = b.category === 'Student Project' || b.materialType === 'Thesis' || b.materialType === 'Dissertation' || (b.id && (String(b.id).startsWith('TH-') || String(b.id).startsWith('FCC-PRJ-'))) || resTypeStr.includes('project') || resTypeStr.includes('thesis') || resTypeStr.includes('dissertation');
+      const isJournal = b.category === 'Journal' || b.materialType === 'Journal' || Boolean(b.issn) || (b.id && (String(b.id).startsWith('FCC-JRN-'))) || resTypeStr.includes('journal') || resTypeStr.includes('article');
+      return !isOnline && (isJournal || isProject);
+    }).length;
+  }, [books]);
+
+  const onlineJournalsCount = useMemo(() => {
+    return books.filter(b => Boolean(b.isLiveExternalJournal || b.sourceApi || (b.id && (String(b.id).startsWith('OA-') || String(b.id).startsWith('CR-') || String(b.id).startsWith('EPMC-') || String(b.id).startsWith('W'))))).length;
+  }, [books]);
 
   const totalResults = filteredBooks.length;
   const totalPages = Math.max(1, Math.ceil(totalResults / pageSize));
@@ -1832,15 +1860,15 @@ export default function PublicDiscovery({
                 </div>
               </div>
 
-              {/* Category Filter Pills (Books, Journals, Student Projects, Bookmarked) */}
+              {/* Category Filter Pills (Strictly Separates Local Institutional Uploads vs Online API Journals) */}
               <div className="flex flex-wrap items-center justify-between gap-2 p-1.5 rounded-2xl bg-[#021810] border border-emerald-800/80">
                 <div className="flex flex-wrap items-center gap-2">
                   {[
-                    { id: 'All', label: 'All Holdings', icon: Layers, count: books.length },
-                    { id: 'Book', label: 'Books & Monograms', icon: BookOpen, count: bookCount },
-                    { id: 'Journal', label: 'Academic Journals', icon: Newspaper, count: journalCount },
-                    { id: 'Student Project', label: 'Student Projects & Theses', icon: Award, count: projectCount },
-                    { id: 'Bookmarked', label: 'Bookmarked Titles', icon: Bookmark, count: savedBooks.length }
+                    { id: 'LocalBooks', label: '📚 Local Campus Books (HODs / Admin)', icon: BookOpen, count: localBooksCount },
+                    { id: 'LocalJournals', label: '🏛️ Local Research & Theses (HODs / Faculty)', icon: Building2, count: localJournalsCount },
+                    { id: 'OnlineJournals', label: '🌐 Online Academic Journals (OpenAlex API)', icon: Globe, count: onlineJournalsCount },
+                    { id: 'All', label: '🌟 All Collections', icon: Layers, count: books.length },
+                    { id: 'Bookmarked', label: '🔖 Bookmarked Titles', icon: Bookmark, count: savedBooks.length }
                   ].map(cat => {
                     const Icon = cat.icon;
                     const isActive = resourceCategory === cat.id;
@@ -1862,7 +1890,7 @@ export default function PublicDiscovery({
                           }
                           setResourceCategory(cat.id);
                           sounds.playClick();
-                          if ((cat.id === 'Journal' && liveApiJournals.length === 0) || (cat.id === 'Student Project' && liveApiProjects.length === 0)) {
+                          if (cat.id === 'OnlineJournals' && liveApiJournals.length === 0) {
                             loadLiveOpenSourceJournalsAndProjects(searchQuery);
                           }
                         }}
@@ -1884,7 +1912,7 @@ export default function PublicDiscovery({
                   })}
                 </div>
 
-                {(resourceCategory === 'Journal' || resourceCategory === 'Student Project') && (
+                {(resourceCategory === 'OnlineJournals' || resourceCategory === 'All') && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1897,7 +1925,7 @@ export default function PublicDiscovery({
                     title="Fetch latest peer-reviewed Open-Access Journals & Theses from OpenAlex, Crossref & Europe PMC APIs + Local HOD Database"
                   >
                     <RefreshCw size={12} className={isFetchingLiveJournals ? 'animate-spin text-teal-300' : 'text-teal-400'} />
-                    <span>{isFetchingLiveJournals ? 'Fetching OpenAlex & Crossref...' : 'Refresh Open-Access API + HOD Uploads'}</span>
+                    <span>{isFetchingLiveJournals ? 'Fetching OpenAlex & Crossref...' : 'Refresh OpenAlex API Journals'}</span>
                   </button>
                 )}
               </div>
@@ -1906,15 +1934,24 @@ export default function PublicDiscovery({
               {displayedBooks.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {displayedBooks.map((b) => {
+                    const isOnline = Boolean(
+                      b.isLiveExternalJournal ||
+                      b.sourceApi ||
+                      (b.id && (String(b.id).startsWith('OA-') || String(b.id).startsWith('CR-') || String(b.id).startsWith('EPMC-') || String(b.id).startsWith('W')))
+                    );
+                    const isLocal = !isOnline;
+
                     const isProject = b.category === 'Student Project' || b.materialType === 'Thesis' || b.materialType === 'Dissertation' || (b.id && String(b.id).startsWith('TH-')) || (b.resourceType && String(b.resourceType).toLowerCase().includes('project'));
-                    const isJournal = b.category === 'Journal' || b.materialType === 'Journal' || Boolean(b.issn) || (b.resourceType && String(b.resourceType).toLowerCase().includes('journal'));
+                    const isJournal = b.category === 'Journal' || b.materialType === 'Journal' || Boolean(b.issn) || (b.resourceType && String(b.resourceType).toLowerCase().includes('journal')) || isOnline;
 
                     const deptLower = (b.department || '').toLowerCase();
                     const isCS = deptLower.includes('computer') || deptLower.includes('technology');
                     const isBank = deptLower.includes('bank') || deptLower.includes('finance');
                     const isAgric = deptLower.includes('agric');
 
-                    const coverGradient = isProject
+                    const coverGradient = isOnline
+                      ? 'from-sky-950 via-slate-900 to-[#021620] border-sky-600/50'
+                      : isProject
                       ? 'from-amber-950 via-slate-900 to-[#021810] border-amber-600/40'
                       : isJournal
                       ? 'from-teal-950 via-slate-900 to-[#021810] border-teal-600/40'
@@ -1926,7 +1963,9 @@ export default function PublicDiscovery({
                       ? 'from-lime-950 via-emerald-950 to-[#021810] border-lime-600/40'
                       : 'from-emerald-900 via-teal-950 to-[#021810] border-emerald-600/40';
 
-                    const deptBadgeColor = isProject
+                    const deptBadgeColor = isOnline
+                      ? 'bg-sky-950 text-sky-300 border-sky-700'
+                      : isProject
                       ? 'bg-amber-950 text-amber-300 border-amber-700'
                       : isJournal
                       ? 'bg-teal-950 text-teal-300 border-teal-700'
@@ -1945,44 +1984,48 @@ export default function PublicDiscovery({
                       <div
                         key={b.id}
                         onClick={() => onSelectBook(b)}
-                        className="p-4 rounded-2xl bg-[#032317] border border-emerald-800/80 hover:border-emerald-400/90 transition-all duration-300 hover:-translate-y-1.5 shadow-xl hover:shadow-2xl hover:shadow-emerald-950 flex flex-col justify-between cursor-pointer group relative overflow-hidden"
+                        className={`p-4 rounded-2xl transition-all duration-300 hover:-translate-y-1.5 shadow-xl hover:shadow-2xl flex flex-col justify-between cursor-pointer group relative overflow-hidden ${
+                          isOnline
+                            ? 'bg-[#021c27] border border-sky-800/80 hover:border-sky-400/90 hover:shadow-sky-950/80'
+                            : 'bg-[#032317] border border-emerald-800/80 hover:border-emerald-400/90 hover:shadow-emerald-950/80'
+                        }`}
                       >
                         <div className="space-y-3">
-                          {/* Top Badges & Bookmark */}
+                          {/* Top Badges: Origin Tag (LOCAL vs ONLINE API) & Call Number */}
                           <div className="flex justify-between items-center gap-2">
                             <div className="flex items-center gap-1.5 truncate">
-                              <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 text-[10px] font-mono font-bold border border-emerald-800 truncate">
-                                {b.callNumber || 'STACK ITEM'}
-                              </span>
-                              {isProject ? (
-                                <span className="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 text-[9.5px] font-bold border border-amber-700/80 flex items-center gap-1 shrink-0">
-                                  🎓 Project
-                                </span>
-                              ) : isJournal ? (
-                                <span className="px-1.5 py-0.5 rounded bg-teal-950 text-teal-300 text-[9.5px] font-bold border border-teal-700/80 flex items-center gap-1 shrink-0">
-                                  📰 Journal
+                              {isOnline ? (
+                                <span className="px-2 py-0.5 rounded bg-sky-950/90 text-sky-300 text-[10px] font-black border border-sky-600 flex items-center gap-1 shadow-sm shrink-0">
+                                  🌐 ONLINE JOURNAL (API)
                                 </span>
                               ) : (
-                                <span className="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 text-[9.5px] font-bold border border-emerald-700/80 flex items-center gap-1 shrink-0">
-                                  📚 Book
+                                <span className="px-2 py-0.5 rounded bg-emerald-950/90 text-emerald-300 text-[10px] font-black border border-emerald-600 flex items-center gap-1 shadow-sm shrink-0">
+                                  🏛️ LOCAL CAMPUS (HOD/ADMIN)
                                 </span>
                               )}
+                              <span className="px-1.5 py-0.5 rounded bg-black/50 text-slate-300 text-[10px] font-mono font-bold border border-white/10 truncate">
+                                {b.callNumber || (isOnline ? 'OPEN ACCESS' : 'LOCAL STACK')}
+                              </span>
                             </div>
                             <button
                               onClick={(e) => handleToggleSaveBook(b.id, e, b.title)}
                               className={`p-1.5 rounded-lg transition shrink-0 flex items-center gap-1 ${
                                 isSaved
                                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                                  : 'hover:bg-[#021810] text-emerald-400 hover:text-white'
+                                  : 'hover:bg-black/40 text-emerald-400 hover:text-white'
                               }`}
-                              title={isSaved ? "Remove from saved books" : "Bookmark this title"}
+                              title={isSaved ? "Remove from saved items" : "Bookmark this title"}
                             >
                               <Bookmark size={15} className={isSaved ? 'fill-amber-400 text-amber-400' : ''} />
                             </button>
                           </div>
 
                           {/* Front Cover Artwork with 3D Spine and Realistic Sheen */}
-                          <div className="w-full h-56 sm:h-64 rounded-xl overflow-hidden relative shadow-2xl shadow-black/80 border border-emerald-900/80 bg-emerald-950/90 group-hover:border-emerald-400/80 group-hover:shadow-emerald-950/80 transition-all duration-300 flex items-center justify-center">
+                          <div className={`w-full h-56 sm:h-64 rounded-xl overflow-hidden relative shadow-2xl shadow-black/80 border transition-all duration-300 flex items-center justify-center ${
+                            isOnline
+                              ? 'border-sky-900/80 bg-sky-950/90 group-hover:border-sky-400/80 group-hover:shadow-sky-950/80'
+                              : 'border-emerald-900/80 bg-emerald-950/90 group-hover:border-emerald-400/80 group-hover:shadow-emerald-950/80'
+                          }`}>
                             <img
                               src={b.cover_image || b.coverImage || b.cover || '/assets/fcc-logo.png'}
                               alt={`Cover of ${b.title}`}
@@ -2002,8 +2045,12 @@ export default function PublicDiscovery({
 
                             {/* Floating Badges on Top of Cover */}
                             <div className="absolute top-2 left-2 right-2 flex items-center justify-between pointer-events-none z-10">
-                              <span className={`text-[9px] font-mono uppercase font-black px-2 py-0.5 rounded shadow-lg backdrop-blur-md border ${deptBadgeColor}`}>
-                                {isProject ? '🎓 CAPSTONE' : isJournal ? '📰 JOURNAL' : (b.courseCode || b.department || 'FCC STACK')}
+                              <span className={`text-[9px] font-mono uppercase font-black px-2 py-0.5 rounded shadow-lg backdrop-blur-md border ${
+                                isOnline
+                                  ? 'bg-sky-950 text-sky-200 border-sky-500'
+                                  : deptBadgeColor
+                              }`}>
+                                {isOnline ? '🌐 OPENALEX API' : isProject ? '🎓 CAPSTONE' : isJournal ? '📰 JOURNAL' : (b.courseCode || b.department || 'FCC STACK')}
                               </span>
                               {b.year && (
                                 <span className="text-[9.5px] font-mono font-bold text-white bg-black/75 px-1.5 py-0.5 rounded backdrop-blur-md border border-white/10 shadow">
@@ -2014,11 +2061,17 @@ export default function PublicDiscovery({
 
                             {/* Bottom Cover Overlay: Format & Digital badge */}
                             <div className="absolute bottom-0 inset-x-0 p-2 bg-gradient-to-t from-black/95 via-black/70 to-transparent flex items-center justify-between text-[10px] font-mono z-10">
-                              <span className="text-emerald-300 truncate max-w-[130px] font-semibold drop-shadow">
-                                {b.studentNames || b.student_names || b.author || 'FCC Scholar'}
+                              <span className={`truncate max-w-[130px] font-semibold drop-shadow ${isOnline ? 'text-sky-300' : 'text-emerald-300'}`}>
+                                {b.studentNames || b.student_names || b.author || (isOnline ? 'External Scholar' : 'FCC Faculty')}
                               </span>
-                              <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${b.isDigital ? 'bg-teal-950/90 text-teal-300 border border-teal-600/70' : 'bg-slate-900/90 text-slate-300 border border-slate-700'}`}>
-                                {b.isDigital ? '⚡ Digital' : 'Physical'}
+                              <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                                isOnline
+                                  ? 'bg-sky-950/90 text-sky-300 border border-sky-600/70'
+                                  : b.isDigital
+                                  ? 'bg-teal-950/90 text-teal-300 border border-teal-600/70'
+                                  : 'bg-slate-900/90 text-slate-300 border border-slate-700'
+                              }`}>
+                                {isOnline ? '🌐 Cloud Journal' : b.isDigital ? '⚡ Local PDF' : 'Physical Stack'}
                               </span>
                             </div>
                             {/* Hover Quick Read Button on Cover */}
@@ -2026,20 +2079,39 @@ export default function PublicDiscovery({
                               <button
                                 type="button"
                                 onClick={(e) => handleReadBook(b, e)}
-                                className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs flex items-center gap-2 shadow-2xl transition transform group-hover:scale-105 active:scale-95 cursor-pointer ring-2 ring-emerald-300/60"
+                                className={`px-4 py-2 rounded-xl text-slate-950 font-black text-xs flex items-center gap-2 shadow-2xl transition transform group-hover:scale-105 active:scale-95 cursor-pointer ring-2 ${
+                                  isOnline
+                                    ? 'bg-gradient-to-r from-sky-400 to-indigo-400 hover:from-sky-300 hover:to-indigo-300 ring-sky-300/60'
+                                    : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 ring-emerald-300/60'
+                                }`}
                               >
                                 <BookOpen size={15} className="text-slate-950" />
-                                <span>READ ONLINE</span>
+                                <span>{isOnline ? 'READ ARTICLE (API)' : 'READ LOCAL FILE'}</span>
                               </button>
                             </div>
                           </div>
 
                           {/* Metadata Details */}
                           <div>
-                            <h3 className="font-bold text-white text-xs line-clamp-2 group-hover:text-emerald-300 transition leading-snug">
+                            <h3 className={`font-bold text-xs line-clamp-2 transition leading-snug ${
+                              isOnline ? 'text-white group-hover:text-sky-300' : 'text-white group-hover:text-emerald-300'
+                            }`}>
                               {b.title}
                             </h3>
-                            {isProject ? (
+                            {isOnline ? (
+                              <div className="mt-1 space-y-0.5 text-[11px] text-sky-200/80">
+                                <p className="truncate">
+                                  Journal: <span className="text-sky-100 font-semibold">{b.journalName || b.journal_name || b.publisher || 'OpenAlex Journal'}</span>
+                                </p>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {b.issn && <span className="font-mono text-[10px] text-sky-300">ISSN: {b.issn}</span>}
+                                  {b.doi && <span className="font-mono text-[10px] text-indigo-300">DOI: {b.doi}</span>}
+                                </div>
+                                <p className="text-[10px] text-sky-400/90 truncate">
+                                  Source: <span className="font-semibold text-sky-300">Live Scholarly API (OpenAlex)</span>
+                                </p>
+                              </div>
+                            ) : isProject ? (
                               <div className="mt-1 space-y-0.5 text-[11px] text-emerald-300/80">
                                 <p className="truncate">
                                   Researcher:{' '}
@@ -2059,45 +2131,43 @@ export default function PublicDiscovery({
                                 </p>
                                 {b.supervisor && (
                                   <p className="truncate text-[10px] text-emerald-400/80">
-                                    Supervisor:{' '}
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSearchField('author');
-                                        setSearchQuery(b.supervisor);
-                                        sounds.playClick();
-                                      }}
-                                      className="hover:underline transition"
-                                      title="Search by supervisor"
-                                    >
-                                      {b.supervisor}
-                                    </button>
+                                    Supervisor: {b.supervisor}
                                   </p>
                                 )}
+                                <p className="text-[10px] text-emerald-400/70 truncate">
+                                  Uploaded by: <span className="font-medium text-emerald-300">{b.uploadedBy || 'HOD / Department Faculty'}</span>
+                                </p>
                               </div>
                             ) : isJournal ? (
                               <div className="mt-1 space-y-0.5 text-[11px] text-emerald-300/80">
-                                <p className="truncate">Journal: <span className="text-emerald-200 font-semibold">{b.journalName || b.journal_name || b.publisher}</span></p>
+                                <p className="truncate">Journal: <span className="text-emerald-200 font-semibold">{b.journalName || b.journal_name || b.publisher || 'Local Department Journal'}</span></p>
                                 {b.issn && <p className="truncate text-[10px] font-mono text-teal-300/80">ISSN: {b.issn}</p>}
+                                <p className="text-[10px] text-emerald-400/70 truncate">
+                                  Uploaded by: <span className="font-medium text-emerald-300">{b.uploadedBy || 'HOD / Library Admin'}</span>
+                                </p>
                               </div>
                             ) : (
-                              <p className="text-[11px] text-emerald-300/80 truncate mt-1">
-                                By{' '}
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSearchField('author');
-                                    setSearchQuery(b.author || '');
-                                    sounds.playClick();
-                                  }}
-                                  className="text-emerald-200 font-medium hover:underline hover:text-emerald-100 transition"
-                                  title={`Search by author: ${b.author}`}
-                                >
-                                  {b.author}
-                                </button>
-                              </p>
+                              <div className="mt-1 space-y-0.5 text-[11px] text-emerald-300/80">
+                                <p className="truncate">
+                                  By{' '}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSearchField('author');
+                                      setSearchQuery(b.author || '');
+                                      sounds.playClick();
+                                    }}
+                                    className="text-emerald-200 font-medium hover:underline hover:text-emerald-100 transition"
+                                    title={`Search by author: ${b.author}`}
+                                  >
+                                    {b.author}
+                                  </button>
+                                </p>
+                                <p className="text-[10px] text-emerald-400/70 truncate">
+                                  Uploaded by: <span className="font-medium text-emerald-300">{b.uploadedBy || 'HOD / Library Admin'}</span>
+                                </p>
+                              </div>
                             )}
                             {b.shelfLocation && (
                               <p className="text-[10px] font-mono text-emerald-400/70 truncate mt-0.5">
@@ -2108,15 +2178,25 @@ export default function PublicDiscovery({
                         </div>
 
                         {/* Bottom Status & Direct Action */}
-                        <div className="pt-3 border-t border-emerald-900/60 flex items-center justify-between text-[11px] mt-3 gap-2">
+                        <div className={`pt-3 border-t flex items-center justify-between text-[11px] mt-3 gap-2 ${
+                          isOnline ? 'border-sky-900/60' : 'border-emerald-900/60'
+                        }`}>
                           <div className="flex items-center gap-1.5 shrink-0">
                             <span className={`w-2 h-2 rounded-full ${
-                              b.isDigital ? 'bg-teal-400 animate-pulse' : (isAvailable ? 'bg-emerald-400' : 'bg-rose-400')
+                              isOnline
+                                ? 'bg-sky-400 animate-pulse'
+                                : b.isDigital
+                                ? 'bg-teal-400 animate-pulse'
+                                : (isAvailable ? 'bg-emerald-400' : 'bg-rose-400')
                             }`}></span>
                             <span className={`font-bold ${
-                              b.isDigital ? 'text-teal-300' : (isAvailable ? 'text-emerald-400' : 'text-rose-400')
+                              isOnline
+                                ? 'text-sky-300'
+                                : b.isDigital
+                                ? 'text-teal-300'
+                                : (isAvailable ? 'text-emerald-400' : 'text-rose-400')
                             }`}>
-                              {b.isDigital ? 'Digital PDF' : (isAvailable ? `${b.copiesAvailable} in Stacks` : 'On Loan')}
+                              {isOnline ? 'Scholarly API' : b.isDigital ? 'Campus Digital' : (isAvailable ? `${b.copiesAvailable} in Stacks` : 'On Loan')}
                             </span>
                           </div>
 
@@ -2124,11 +2204,15 @@ export default function PublicDiscovery({
                             <button
                               type="button"
                               onClick={(e) => handleReadBook(b, e)}
-                              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold flex items-center gap-1.5 text-[11px] shadow-md shadow-emerald-950 transition active:scale-95 cursor-pointer"
-                              title="Open in digital reader"
+                              className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 text-[11px] shadow-md transition active:scale-95 cursor-pointer ${
+                                isOnline
+                                  ? 'bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white shadow-sky-950'
+                                  : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-950'
+                              }`}
+                              title={isOnline ? "Open scholarly article" : "Open in digital reader"}
                             >
                               <BookOpen size={13} />
-                              <span>{isProject ? 'Read Project' : isJournal ? 'Read Article' : 'Read Book'}</span>
+                              <span>{isOnline ? 'Read Online Article' : isProject ? 'Read Project' : isJournal ? 'Read Local Journal' : 'Read Book'}</span>
                             </button>
                             <span className="text-emerald-400 group-hover:translate-x-1 transition font-bold flex items-center gap-0.5 text-[11px]">
                               Details <ChevronRight size={13} />

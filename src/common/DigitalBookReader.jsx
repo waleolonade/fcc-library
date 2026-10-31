@@ -32,6 +32,23 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
   const [readerMode, setReaderMode] = useState('pdf'); // 'pdf' | 'interactive'
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [shelfFilter, setShelfFilter] = useState('all'); // 'all' | 'local' | 'online'
+
+  // Origin detection helpers to strictly distinguish local HOD/Admin uploads from online external journals
+  const isOnlineBook = (b) => Boolean(
+    b?.isLiveExternalJournal ||
+    b?.sourceApi ||
+    (b?.id && (String(b.id).startsWith('OA-') || String(b.id).startsWith('CR-') || String(b.id).startsWith('EPMC-') || String(b.id).startsWith('W')))
+  );
+
+  const localShelfCount = useMemo(() => uploadedBooks.filter(b => !isOnlineBook(b)).length, [uploadedBooks]);
+  const onlineShelfCount = useMemo(() => uploadedBooks.filter(b => isOnlineBook(b)).length, [uploadedBooks]);
+
+  const displayedShelfBooks = useMemo(() => {
+    if (shelfFilter === 'local') return uploadedBooks.filter(b => !isOnlineBook(b));
+    if (shelfFilter === 'online') return uploadedBooks.filter(b => isOnlineBook(b));
+    return uploadedBooks;
+  }, [uploadedBooks, shelfFilter]);
   // Sync initialBook prop changes
   useEffect(() => {
     if (initialBook && (!currentBook || currentBook.id !== initialBook.id)) {
@@ -340,29 +357,67 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
           )}
 
           <div>
-            <div className="text-xs sm:text-sm font-bold text-white flex flex-wrap items-center gap-2">
-              <span className="line-clamp-1 max-w-sm sm:max-w-md">{currentBook.title}</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono shrink-0">
-                {currentBook.callNumber}
-              </span>
-              {currentBook.hasBinaryPdf ? (
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-blue-950 text-blue-300 border border-blue-800 font-mono shrink-0 flex items-center gap-1">
-                  <CheckCircle2 size={11} /> Raw PDF
-                </span>
-              ) : (
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-amber-950 text-amber-300 border border-amber-800 font-mono shrink-0 flex items-center gap-1">
-                  <BookMarked size={11} /> Syllabus Guide
-                </span>
-              )}
-            </div>
+            {(() => {
+              const isOnlineCurrent = isOnlineBook(currentBook);
+              return (
+                <>
+                  <div className="text-xs sm:text-sm font-bold text-white flex flex-wrap items-center gap-2">
+                    <span className="line-clamp-1 max-w-sm sm:max-w-md">{currentBook.title}</span>
+                    {isOnlineCurrent ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-sky-950 text-sky-300 border border-sky-600 font-mono font-black shrink-0 flex items-center gap-1 shadow-sm">
+                        🌐 ONLINE SCHOLARLY JOURNAL (API)
+                      </span>
+                    ) : (
+                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-600 font-mono font-black shrink-0 flex items-center gap-1 shadow-sm">
+                        🏛️ LOCAL CAMPUS REPOSITORY (HOD/ADMIN)
+                      </span>
+                    )}
+                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-black/60 text-slate-300 border border-white/10 font-mono shrink-0">
+                      {currentBook.callNumber || (isOnlineCurrent ? 'OPEN ACCESS' : 'LOCAL STACK')}
+                    </span>
+                    {currentBook.hasBinaryPdf && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-blue-950 text-blue-300 border border-blue-800 font-mono shrink-0 flex items-center gap-1">
+                        <CheckCircle2 size={11} /> Raw PDF
+                      </span>
+                    )}
+                  </div>
 
-            <div className="text-[11px] text-slate-400 flex flex-wrap items-center gap-2 mt-0.5">
-              <span>{currentBook.author}</span>
-              <span>•</span>
-              <span className="text-emerald-400 font-medium">Uploader: {currentBook.uploadedBy}</span>
-              <span>•</span>
-              <span className="font-mono">Page {currentPage} of {totalPages}</span>
-            </div>
+                  <div className="text-[11px] text-slate-400 flex flex-wrap items-center gap-2 mt-0.5">
+                    <span>{currentBook.author}</span>
+                    <span>•</span>
+                    {isOnlineCurrent ? (
+                      <>
+                        <span className="text-sky-300 font-medium">Source: OpenAlex API</span>
+                        {currentBook.journalName && (
+                          <>
+                            <span>•</span>
+                            <span className="text-sky-200">Journal: {currentBook.journalName}</span>
+                          </>
+                        )}
+                        {currentBook.issn && (
+                          <>
+                            <span>•</span>
+                            <span className="font-mono text-sky-400">ISSN: {currentBook.issn}</span>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-emerald-400 font-medium">Uploader: {currentBook.uploadedBy || 'HOD / Library Admin'}</span>
+                        {currentBook.department && (
+                          <>
+                            <span>•</span>
+                            <span className="text-slate-300">{currentBook.department}</span>
+                          </>
+                        )}
+                      </>
+                    )}
+                    <span>•</span>
+                    <span className="font-mono">Page {currentPage} of {totalPages}</span>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
 
@@ -372,19 +427,19 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
           <div className="relative">
             <button
               onClick={() => setShowBookDrawer(!showBookDrawer)}
-              className="px-3 py-1.5 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/80 text-emerald-300 text-xs font-bold flex items-center gap-1.5 transition shadow"
-              title="Select another book uploaded by HODs or Admin"
+              className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 transition shadow"
+              title="Switch between Local HOD/Admin uploads and Online API journals"
             >
-              <BookOpen size={13} />
-              <span>Real Uploads ({uploadedBooks.length})</span>
+              <BookOpen size={13} className="text-emerald-400" />
+              <span>Catalog Switcher ({uploadedBooks.length})</span>
               <ChevronDown size={13} className={`transition-transform duration-200 ${showBookDrawer ? 'rotate-180' : ''}`} />
             </button>
 
             {showBookDrawer && (
-              <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 animate-fadeIn space-y-1 max-h-[400px] overflow-y-auto">
+              <div className="absolute right-0 top-full mt-2 w-84 sm:w-96 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 animate-fadeIn space-y-2 max-h-[460px] overflow-y-auto">
                 <div className="p-2 border-b border-slate-800 flex justify-between items-center text-xs font-bold text-slate-300">
                   <span className="flex items-center gap-1.5">
-                    <Building2 size={13} className="text-emerald-400" /> HOD & Central Library Catalogue
+                    <Building2 size={13} className="text-emerald-400" /> Digital Repository Selector
                   </span>
                   <button
                     onClick={fetchUploadedBooks}
@@ -394,40 +449,90 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
                     <RefreshCw size={12} className={isLoadingList ? 'animate-spin' : ''} />
                   </button>
                 </div>
-                {uploadedBooks.map(b => {
-                  const isSelected = b.id === currentBook.id;
-                  return (
-                    <button
-                      key={b.id}
-                      onClick={() => {
-                        sounds.playClick();
-                        loadBookDetails(b);
-                        setShowBookDrawer(false);
-                      }}
-                      className={`w-full text-left p-2.5 rounded-xl text-xs transition flex items-start gap-2.5 ${
-                        isSelected
-                          ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                          : 'text-slate-300 hover:bg-slate-800 border border-transparent'
-                      }`}
-                    >
-                      <div className="w-8 h-10 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center shrink-0 text-slate-400">
-                        {b.hasBinaryPdf ? <FileText size={16} className="text-emerald-400" /> : <BookOpen size={16} />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-bold truncate text-white">{b.title}</div>
-                        <div className="text-[10px] text-slate-400 truncate">
-                          {b.author} • {b.department}
+
+                {/* Filter pills inside dropdown */}
+                <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-xl border border-slate-800 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setShelfFilter('all')}
+                    className={`px-2 py-1 rounded-lg font-bold transition flex-1 text-center ${
+                      shelfFilter === 'all' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    All ({uploadedBooks.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShelfFilter('local')}
+                    className={`px-2 py-1 rounded-lg font-bold transition flex-1 text-center ${
+                      shelfFilter === 'local' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-emerald-300'
+                    }`}
+                  >
+                    🏛️ Local ({localShelfCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShelfFilter('online')}
+                    className={`px-2 py-1 rounded-lg font-bold transition flex-1 text-center ${
+                      shelfFilter === 'online' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-sky-300'
+                    }`}
+                  >
+                    🌐 Online ({onlineShelfCount})
+                  </button>
+                </div>
+
+                <div className="space-y-1">
+                  {displayedShelfBooks.map(b => {
+                    const isSelected = b.id === currentBook.id;
+                    const isOnline = isOnlineBook(b);
+                    return (
+                      <button
+                        key={b.id}
+                        onClick={() => {
+                          sounds.playClick();
+                          loadBookDetails(b);
+                          setShowBookDrawer(false);
+                        }}
+                        className={`w-full text-left p-2.5 rounded-xl text-xs transition flex items-start gap-2.5 border ${
+                          isSelected
+                            ? isOnline
+                              ? 'bg-sky-950/80 text-sky-200 border-sky-600 shadow-lg'
+                              : 'bg-emerald-950/80 text-emerald-200 border-emerald-600 shadow-lg'
+                            : isOnline
+                            ? 'text-slate-300 hover:bg-slate-800 border-transparent hover:border-sky-900/50'
+                            : 'text-slate-300 hover:bg-slate-800 border-transparent hover:border-emerald-900/50'
+                        }`}
+                      >
+                        <div className={`w-8 h-10 rounded-lg flex items-center justify-center shrink-0 border ${
+                          isOnline ? 'bg-sky-950/90 border-sky-800 text-sky-400' : 'bg-emerald-950/90 border-emerald-800 text-emerald-400'
+                        }`}>
+                          {b.hasBinaryPdf ? <FileText size={16} /> : <BookOpen size={16} />}
                         </div>
-                        <div className="text-[9px] text-emerald-400/90 flex items-center gap-1.5 mt-0.5">
-                          <span>By: {b.uploadedBy}</span>
-                          <span className={`px-1.5 py-0.2 rounded font-mono ${b.hasBinaryPdf ? 'bg-blue-900/60 text-blue-300' : 'bg-slate-800 text-slate-400'}`}>
-                            {b.hasBinaryPdf ? 'Raw PDF' : 'Syllabus'}
-                          </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-[8.5px] px-1 py-0.2 rounded font-black font-mono uppercase ${
+                              isOnline ? 'bg-sky-950 text-sky-300 border border-sky-700' : 'bg-emerald-950 text-emerald-300 border border-emerald-700'
+                            }`}>
+                              {isOnline ? '🌐 ONLINE API' : '🏛️ LOCAL'}
+                            </span>
+                            <span className="font-bold truncate text-white">{b.title}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                            {b.author} • {isOnline ? (b.journalName || 'OpenAlex Journal') : b.department}
+                          </div>
+                          <div className="text-[9px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                            <span>{isOnline ? 'Source: OpenAlex' : `By: ${b.uploadedBy}`}</span>
+                            {b.hasBinaryPdf && (
+                              <span className="px-1.5 py-0.2 rounded font-mono bg-blue-900/60 text-blue-300">
+                                Raw PDF
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </button>
-                  );
-                })}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -729,45 +834,96 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
 
             {/* TAB 3: UPLOADED SHELF (SWITCHER) */}
             {activeTab === 'library' && (
-              <div className="space-y-2 max-h-[540px] overflow-y-auto pr-1 animate-fadeIn">
-                <div className="text-[11px] text-slate-400 px-1">
-                  Click any title to load into reader:
+              <div className="space-y-2.5 max-h-[540px] overflow-y-auto pr-1 animate-fadeIn">
+                <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
+                  <span>Browse & Load Collections:</span>
+                  <span className="font-mono text-emerald-400 font-bold">{displayedShelfBooks.length} items</span>
                 </div>
-                {uploadedBooks.map(b => {
-                  const isSelected = b.id === currentBook.id;
-                  return (
-                    <button
-                      key={b.id}
-                      onClick={() => {
-                        sounds.playClick();
-                        loadBookDetails(b);
-                      }}
-                      className={`w-full text-left p-3 rounded-xl text-xs transition space-y-1.5 border ${
-                        isSelected
-                          ? 'bg-emerald-950/70 text-emerald-300 border-emerald-700 shadow-lg'
-                          : 'bg-slate-950/80 text-slate-300 hover:bg-slate-800/80 border-slate-800/80'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-white line-clamp-1">{b.title}</span>
-                        {b.hasBinaryPdf ? (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800 font-mono shrink-0">
-                            RAW PDF
+
+                {/* Filter Pills */}
+                <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-xl border border-slate-800 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setShelfFilter('all')}
+                    className={`px-2 py-1 rounded-lg font-bold transition flex-1 text-center ${
+                      shelfFilter === 'all' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    All ({uploadedBooks.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShelfFilter('local')}
+                    className={`px-2 py-1 rounded-lg font-bold transition flex-1 text-center ${
+                      shelfFilter === 'local' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-emerald-300'
+                    }`}
+                  >
+                    🏛️ Local ({localShelfCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShelfFilter('online')}
+                    className={`px-2 py-1 rounded-lg font-bold transition flex-1 text-center ${
+                      shelfFilter === 'online' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-sky-300'
+                    }`}
+                  >
+                    🌐 Online ({onlineShelfCount})
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {displayedShelfBooks.map(b => {
+                    const isSelected = b.id === currentBook.id;
+                    const isOnline = isOnlineBook(b);
+                    return (
+                      <button
+                        key={b.id}
+                        onClick={() => {
+                          sounds.playClick();
+                          loadBookDetails(b);
+                        }}
+                        className={`w-full text-left p-3 rounded-xl text-xs transition space-y-1.5 border ${
+                          isSelected
+                            ? isOnline
+                              ? 'bg-sky-950/80 text-sky-200 border-sky-600 shadow-xl'
+                              : 'bg-emerald-950/80 text-emerald-200 border-emerald-600 shadow-xl'
+                            : isOnline
+                            ? 'bg-[#021822] text-slate-300 hover:bg-[#032230] border-sky-900/60 hover:border-sky-700'
+                            : 'bg-slate-950/80 text-slate-300 hover:bg-slate-800/80 border-slate-800/80 hover:border-emerald-800/60'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`text-[8.5px] px-1.5 py-0.5 rounded font-black font-mono uppercase ${
+                            isOnline
+                              ? 'bg-sky-950 text-sky-300 border border-sky-600'
+                              : 'bg-emerald-950 text-emerald-300 border border-emerald-600'
+                          }`}>
+                            {isOnline ? '🌐 ONLINE JOURNAL (API)' : '🏛️ LOCAL REPOSITORY'}
                           </span>
-                        ) : (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono shrink-0">
-                            Syllabus
+                          {b.hasBinaryPdf ? (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800 font-mono shrink-0">
+                              RAW PDF
+                            </span>
+                          ) : (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono shrink-0">
+                              {isOnline ? 'Open Access' : 'Campus Copy'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="font-bold text-white line-clamp-1 leading-snug">{b.title}</div>
+                        <div className="text-[11px] text-slate-400 truncate">{b.author}</div>
+                        <div className="text-[10px] text-slate-500 flex justify-between items-center pt-1 border-t border-slate-800/40">
+                          <span className={`font-mono font-bold ${isOnline ? 'text-sky-400' : 'text-emerald-400'}`}>
+                            {isOnline ? (b.issn ? `ISSN: ${b.issn}` : 'ONLINE') : (b.courseCode || 'FCC.LIB')}
                           </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-slate-400 truncate">{b.author}</div>
-                      <div className="text-[10px] text-slate-500 flex justify-between items-center pt-1 border-t border-slate-800/40">
-                        <span className="font-mono text-emerald-400">{b.courseCode}</span>
-                        <span className="truncate max-w-[140px]">By: {b.uploadedBy}</span>
-                      </div>
-                    </button>
-                  );
-                })}
+                          <span className="truncate max-w-[150px]">
+                            {isOnline ? 'OpenAlex Scholarly API' : `By: ${b.uploadedBy || 'HOD'}`}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 

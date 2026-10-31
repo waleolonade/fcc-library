@@ -363,12 +363,12 @@ export default function AcademicJournalsDirectory({
             onClick={() => setActiveSourceTab('institutional')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
               activeSourceTab === 'institutional'
-                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-950'
+                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
             <Building size={14} />
-            <span>FCC Scholar Journals ({filteredInstitutional.length})</span>
+            <span>🏛️ Local FCC Institutional Serials (HODs / Admin) ({filteredInstitutional.length})</span>
           </button>
 
           <button
@@ -376,12 +376,12 @@ export default function AcademicJournalsDirectory({
             onClick={() => setActiveSourceTab('openalex')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
               activeSourceTab === 'openalex'
-                ? 'bg-teal-600 text-white shadow-lg shadow-teal-950'
+                ? 'bg-sky-600 text-white shadow-lg shadow-sky-950'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
             <Globe size={14} />
-            <span>OpenAlex Global Journals API ({openAlexMeta.count > 0 ? openAlexMeta.count.toLocaleString() : '250K+'})</span>
+            <span>🌐 Online Global Journals (OpenAlex API) ({openAlexMeta.count > 0 ? openAlexMeta.count.toLocaleString() : '250K+'})</span>
           </button>
 
           <button
@@ -495,26 +495,31 @@ export default function AcademicJournalsDirectory({
             {filteredInstitutional.map((j) => (
               <div
                 key={j.id}
-                className="bg-slate-900/90 border border-slate-800 hover:border-indigo-600/60 rounded-3xl p-5 space-y-4 shadow-xl flex flex-col justify-between transition group"
+                className="bg-slate-900/90 border border-emerald-900/60 hover:border-emerald-500/70 rounded-3xl p-5 space-y-4 shadow-xl flex flex-col justify-between transition group"
               >
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-950 text-indigo-300 border border-indigo-800/80">
-                      ISSN: {j.issn}
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black bg-emerald-950 text-emerald-300 border border-emerald-700">
+                      🏛️ LOCAL INSTITUTIONAL (HOD/FACULTY)
                     </span>
                     <span className="text-[11px] font-mono text-emerald-400 font-bold bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/60">
                       {j.latestIssue}
                     </span>
                   </div>
 
-                  <h3 className="text-base font-bold text-white font-serif leading-snug group-hover:text-indigo-300 transition">
+                  <h3 className="text-base font-bold text-white font-serif leading-snug group-hover:text-emerald-300 transition">
                     {j.title}
                   </h3>
 
-                  {j.isHodUpload && (
+                  {j.isHodUpload ? (
                     <div className="text-xs text-teal-300 flex items-center gap-1.5 font-mono">
                       <Award size={12} className="text-teal-400" />
-                      <span>HOD Contributor: <strong className="text-white">{j.author}</strong></span>
+                      <span>HOD / Department Contributor: <strong className="text-white">{j.author}</strong></span>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-400 flex items-center gap-1.5 font-mono">
+                      <Building size={12} className="text-emerald-400" />
+                      <span>Institutional Publisher: <strong className="text-slate-200">{j.publisher}</strong></span>
                     </div>
                   )}
 
@@ -524,6 +529,7 @@ export default function AcademicJournalsDirectory({
 
                   <div className="text-xs text-slate-400 bg-slate-950 p-3 rounded-2xl border border-slate-800/80 space-y-1">
                     <div className="text-slate-300"><strong>Publisher:</strong> {j.publisher}</div>
+                    {j.issn && <div className="text-[11px] text-emerald-300 font-mono">ISSN: {j.issn}</div>}
                     <div className="text-[11px] text-slate-400 font-mono">Indexed: {j.indexedIn}</div>
                     <div className="text-[11px] text-slate-400 font-mono">Frequency: {j.frequency}</div>
                   </div>
@@ -609,12 +615,12 @@ export default function AcademicJournalsDirectory({
                 return (
                   <div
                     key={src.id}
-                    className="bg-slate-900/90 border border-slate-800 hover:border-teal-600/60 rounded-3xl p-5 space-y-3 shadow-lg flex flex-col justify-between transition group"
+                    className="bg-slate-900/90 border border-sky-900/60 hover:border-sky-500/70 rounded-3xl p-5 space-y-3 shadow-lg flex flex-col justify-between transition group"
                   >
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-mono text-teal-400 font-bold text-[11px]">
-                          ISSN: {issn}
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-black bg-sky-950 text-sky-300 border border-sky-700">
+                          🌐 ONLINE GLOBAL (API)
                         </span>
                         <div className="flex items-center gap-1 font-mono text-[10px]">
                           {src.is_oa && (
@@ -630,20 +636,19 @@ export default function AcademicJournalsDirectory({
                         </div>
                       </div>
 
-                      <h4 className="text-sm font-bold text-white font-serif leading-snug group-hover:text-teal-300 transition">
+                      <h4 className="text-sm font-bold text-white font-serif leading-snug group-hover:text-sky-300 transition">
                         {src.display_name}
                       </h4>
 
                       <div className="text-xs text-slate-400 space-y-1">
                         <div className="flex items-center gap-1 text-slate-300 text-[11px]">
-                          <Building size={12} className="text-indigo-400 shrink-0" />
+                          <Building size={12} className="text-sky-400 shrink-0" />
                           <span className="truncate">{publisher}</span>
                         </div>
-                        {src.country_code && (
-                          <div className="text-[10px] text-slate-500 font-mono">
-                            Country: {src.country_code.toUpperCase()}
-                          </div>
-                        )}
+                        <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
+                          {issn !== 'N/A' && <span className="text-sky-300">ISSN: {issn}</span>}
+                          {src.country_code && <span>Country: {src.country_code.toUpperCase()}</span>}
+                        </div>
                       </div>
 
                       {/* Metrics bar */}

@@ -586,11 +586,11 @@ export default function StudentResearchHub({
       {/* 2. RESEARCH SUB-NAVIGATION TABS */}
       <div className="bg-[#032317]/90 p-1.5 rounded-2xl border border-emerald-800/80 flex items-center gap-1.5 overflow-x-auto no-scrollbar shadow-lg">
         {[
-          { id: 'hnd_projects', label: 'HND Projects', icon: Award, badge: normalizedTheses.length },
-          { id: 'papers', label: 'Research Papers', icon: Globe, badge: 'OpenAlex' },
-          { id: 'journals', label: 'Journals', icon: FileText, badge: 'ISSN' },
-          { id: 'topics', label: 'Project Topics', icon: Sparkles, badge: isHnd2 ? 'Curated' : undefined },
-          { id: 'references', label: 'References', icon: Quote, badge: 'APA/MLA' },
+          { id: 'hnd_projects', label: '🏛️ Local HND Projects', icon: Award, badge: normalizedTheses.length },
+          { id: 'papers', label: '🌐 Online Scholarly Papers (OpenAlex API)', icon: Globe, badge: 'OpenAlex' },
+          { id: 'journals', label: '📰 Academic Journals & Serials', icon: FileText, badge: 'ISSN' },
+          { id: 'topics', label: 'Project Topics Bank', icon: Sparkles, badge: isHnd2 ? 'Curated' : undefined },
+          { id: 'references', label: 'Citation Builder', icon: Quote, badge: 'APA/MLA' },
         ].map(tab => {
           const Icon = tab.icon;
           const isActive = subTab === tab.id;
