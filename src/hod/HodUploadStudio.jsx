@@ -9,7 +9,7 @@ import {
   FileCheck2, Download, ExternalLink, X
 } from 'lucide-react';
 import { INSTITUTION } from '../data/institutionalSeedData';
-import { navigateTo, copyToClipboardWithFeedback } from '../utils/router';
+import { navigateTo, parseCurrentRoute, copyToClipboardWithFeedback } from '../utils/router';
 import { sounds } from '../utils/soundEffects';
 import { analyzeUploadedPdf } from '../utils/pdfDeepAnalyzer';
 import { compressPdf, compressCoverImage } from '../utils/pdfCompressor';
@@ -174,6 +174,48 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
       window.removeEventListener('fcc-developer-config-updated', handleModeSync);
       window.removeEventListener('fcc-hod-publishing-mode-updated', handleModeSync);
     };
+  }, []);
+
+  // URL Hash Synchronizer: reads URL params to activate mode, category, type, and actions
+  useEffect(() => {
+    const handleUrlHashSync = () => {
+      const { params } = parseCurrentRoute();
+      if (params.mode === 'single' || params.mode === 'bulk') {
+        setStudioMode(params.mode);
+      }
+      if (params.category) {
+        const cat = params.category.toLowerCase();
+        if (cat === 'journal') {
+          setBulkCategory('journal');
+          setUploadCategory('journal');
+        } else if (cat === 'book') {
+          setBulkCategory('book');
+          setUploadCategory('book');
+        } else if (cat === 'project') {
+          setUploadCategory('project');
+        }
+      }
+      if (params.type) {
+        const typ = params.type.toLowerCase();
+        if (typ === 'digital' || typ === 'physical') {
+          setIngestionMode(typ);
+        }
+      }
+      if (params.course) {
+        setFormData(prev => ({ ...prev, course_code: params.course.toUpperCase() }));
+      }
+      if (params.action === 'fetch-db') {
+        stageExistingDatabaseRecords();
+      } else if (params.action === 'add-row') {
+        handleAddManualBatchRow();
+      } else if (params.action === 'scan-all') {
+        handleScanAllBatchItems();
+      }
+    };
+
+    handleUrlHashSync();
+    window.addEventListener('hashchange', handleUrlHashSync);
+    return () => window.removeEventListener('hashchange', handleUrlHashSync);
   }, []);
 
   // Active department derived from session, user props, or database records
@@ -2026,19 +2068,22 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
       {/* STUDIO MODE SWITCHER: BULK INGESTION VS SINGLE STUDIO */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-2.5 bg-slate-900/90 border border-slate-800 rounded-2xl shadow-xl">
         <div className="flex items-center gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800/80">
-          <button
+          <a
             id="tab-studio-bulk"
-            type="button"
-            onClick={() => {
+            href="#/hod/upload?mode=bulk"
+            onClick={(e) => {
+              e.preventDefault();
               setStudioMode('bulk');
+              navigateTo('/hod/upload', { mode: 'bulk', category: bulkCategory });
               sounds.playClick();
             }}
-            className={`px-4 py-2.5 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-lg text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
               studioMode === 'bulk'
                 ? 'text-white shadow-lg'
                 : 'text-slate-400 hover:text-white'
             }`}
             style={studioMode === 'bulk' ? { backgroundColor: theme.solidPrimary } : {}}
+            title="Direct Link: #/hod/upload?mode=bulk"
           >
             <FolderUp size={16} />
             <span>Bulk Batch Ingestion</span>
@@ -2047,25 +2092,28 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
             }`}>
               Up to 20 Books
             </span>
-          </button>
+          </a>
 
-          <button
+          <a
             id="tab-studio-single"
-            type="button"
-            onClick={() => {
+            href="#/hod/upload?mode=single"
+            onClick={(e) => {
+              e.preventDefault();
               setStudioMode('single');
+              navigateTo('/hod/upload', { mode: 'single', category: uploadCategory });
               sounds.playClick();
             }}
-            className={`px-4 py-2.5 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-lg text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
               studioMode === 'single'
                 ? 'text-white shadow-lg'
                 : 'text-slate-400 hover:text-white'
             }`}
             style={studioMode === 'single' ? { backgroundColor: theme.solidPrimary } : {}}
+            title="Direct Link: #/hod/upload?mode=single"
           >
             <BookOpen size={16} />
             <span>Single Monograph Studio</span>
-          </button>
+          </a>
         </div>
 
         <div className="flex items-center gap-3 px-3 text-xs text-slate-400 font-mono">
@@ -2181,9 +2229,10 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                         </div>
 
                         <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => {
+                          <a
+                            href={`#/reader/${encodeURIComponent(up.book_id || up.id)}`}
+                            onClick={(e) => {
+                              e.preventDefault();
                               sounds.playClick();
                               const targetBookId = up.book_id || up.id;
                               setActiveBatchReaderBook({
@@ -2203,12 +2252,12 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                                 pdfUrl: `/api/books/${encodeURIComponent(targetBookId)}/pdf`
                               });
                             }}
-                            className="px-2.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs flex items-center gap-1 shadow transition"
+                            className="px-2.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs flex items-center gap-1 shadow transition inline-flex"
                             title="Open and read newly ingested book in Reader"
                           >
                             <BookOpen size={12} />
                             <span>Read</span>
-                          </button>
+                          </a>
 
                           <a
                             href={`/api/books/${encodeURIComponent(up.book_id || up.id)}/pdf/download`}
@@ -2227,45 +2276,60 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
 
               {/* Action Buttons */}
               <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-800/80">
-                <button
-                  type="button"
-                  onClick={() => navigateTo('/admin/hod-submissions')}
-                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition flex items-center gap-2 shadow-lg shadow-indigo-950"
+                <a
+                  href="#/admin/hod-submissions"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigateTo('/admin/hod-submissions');
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition flex items-center gap-2 shadow-lg shadow-indigo-950 cursor-pointer"
+                  title="Direct Link: #/admin/hod-submissions"
                 >
                   <ShieldCheck size={14} />
                   <span>Review in Chief Librarian Queue</span>
                   <ArrowRight size={14} />
-                </button>
+                </a>
 
-                <button
-                  type="button"
-                  onClick={() => navigateTo('/hod/submissions')}
-                  className="px-5 py-2.5 rounded-xl text-white font-bold text-xs transition flex items-center gap-2 shadow-lg"
+                <a
+                  href="#/hod/submissions"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigateTo('/hod/submissions');
+                  }}
+                  className="px-5 py-2.5 rounded-xl text-white font-bold text-xs transition flex items-center gap-2 shadow-lg cursor-pointer"
                   style={{ backgroundColor: theme.solidPrimary }}
+                  title="Direct Link: #/hod/submissions"
                 >
                   <Eye size={14} />
                   <span>View in HOD Submissions Queue</span>
-                </button>
+                </a>
 
-                <button
-                  type="button"
-                  onClick={() => navigateTo('/opac')}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition flex items-center gap-1.5"
+                <a
+                  href="#/opac"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigateTo('/opac');
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
+                  title="Direct Link: #/opac"
                 >
                   <Search size={14} />
                   <span>Verify in OPAC</span>
-                </button>
+                </a>
 
-                <button
-                  type="button"
-                  onClick={() => {
+                <a
+                  href="#/hod/upload?mode=bulk"
+                  onClick={(e) => {
+                    e.preventDefault();
                     setBatchSuccessData(null);
                     setBatchItems([]);
+                    navigateTo('/hod/upload', { mode: 'bulk' });
                   }}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition ml-auto"
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition ml-auto cursor-pointer"
+                  title="Direct Link: #/hod/upload?mode=bulk"
                 >
                   Upload Another Batch
-                </button>
+                </a>
               </div>
             </div>
           )}
@@ -2335,37 +2399,51 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => stageExistingDatabaseRecords()}
-                    disabled={isLoadingBatchDb}
-                    className="px-3.5 py-2 rounded-xl bg-teal-600/20 hover:bg-teal-600/30 border border-teal-500/40 text-teal-200 text-xs font-bold transition flex items-center gap-1.5"
-                    title="Fetch existing department books from the database into the batch editor to modify manually"
+                  <a
+                    href="#/hod/upload?mode=bulk&action=fetch-db"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      stageExistingDatabaseRecords();
+                      navigateTo('/hod/upload', { mode: 'bulk', action: 'fetch-db' });
+                    }}
+                    className={`px-3.5 py-2 rounded-xl bg-teal-600/20 hover:bg-teal-600/30 border border-teal-500/40 text-teal-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      isLoadingBatchDb ? 'pointer-events-none opacity-60' : ''
+                    }`}
+                    title="Direct Link: #/hod/upload?mode=bulk&action=fetch-db"
                   >
                     <Download size={14} />
                     <span>Fetch & Edit DB Books ({dbExistingUploads.length})</span>
-                  </button>
+                  </a>
 
-                  <button
-                    type="button"
-                    onClick={handleAddManualBatchRow}
-                    className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-xs font-bold transition flex items-center gap-1.5"
-                    title="Add a manual book/material row to edit and save to database"
+                  <a
+                    href="#/hod/upload?mode=bulk&action=add-row"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleAddManualBatchRow();
+                      navigateTo('/hod/upload', { mode: 'bulk', action: 'add-row' });
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                    title="Direct Link: #/hod/upload?mode=bulk&action=add-row"
                   >
                     <Plus size={14} />
                     <span>+ Add Manual Row</span>
-                  </button>
+                  </a>
 
-                  <button
-                    type="button"
-                    onClick={() => fetchBatchDatabaseMetadata(false)}
-                    disabled={isLoadingBatchDb}
-                    className="px-3 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-semibold transition flex items-center gap-1.5"
-                    title="Refresh courses, faculty authors, and existing books from database API"
+                  <a
+                    href="#/hod/upload?mode=bulk&action=refresh-db"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      fetchBatchDatabaseMetadata(false);
+                      navigateTo('/hod/upload', { mode: 'bulk', action: 'refresh-db' });
+                    }}
+                    className={`px-3 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer ${
+                      isLoadingBatchDb ? 'pointer-events-none opacity-60' : ''
+                    }`}
+                    title="Direct Link: #/hod/upload?mode=bulk&action=refresh-db"
                   >
                     <RefreshCw size={13} className={isLoadingBatchDb ? 'animate-spin' : ''} />
                     <span>Refresh DB</span>
-                  </button>
+                  </a>
                 </div>
               </div>
 
@@ -2412,14 +2490,16 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
+                    <a
+                      href="#/hod/upload?mode=bulk&category=book"
+                      onClick={(e) => {
+                        e.preventDefault();
                         setBulkCategory('book');
                         setBatchCommon(prev => ({ ...prev, resource_type: 'Lecture Handout / E-Book' }));
+                        navigateTo('/hod/upload', { mode: 'bulk', category: 'book' });
                         sounds.playClick();
                       }}
-                      className={`px-4 py-2.5 rounded-2xl border text-xs font-bold transition flex items-center justify-center gap-2 ${
+                      className={`px-4 py-2.5 rounded-2xl border text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
                         bulkCategory === 'book'
                           ? 'text-white shadow-lg'
                           : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
@@ -2428,14 +2508,16 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                         backgroundColor: `${theme.solidPrimary}30`,
                         borderColor: theme.solidPrimary
                       } : {}}
+                      title="Direct Link: #/hod/upload?mode=bulk&category=book"
                     >
                       <BookOpen size={15} style={bulkCategory === 'book' ? { color: theme.accent } : {}} />
                       <span>📚 Bulk Books / Handouts</span>
-                    </button>
+                    </a>
 
-                    <button
-                      type="button"
-                      onClick={() => {
+                    <a
+                      href="#/hod/upload?mode=bulk&category=journal"
+                      onClick={(e) => {
+                        e.preventDefault();
                         setBulkCategory('journal');
                         setBatchWatermarkProtection(true);
                         setBatchCommon(prev => ({ ...prev, resource_type: 'Academic Journal' }));
@@ -2444,17 +2526,19 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                           resource_type: 'Academic Journal',
                           watermark_protection: true
                         })));
+                        navigateTo('/hod/upload', { mode: 'bulk', category: 'journal' });
                         sounds.playClick();
                       }}
-                      className={`px-4 py-2.5 rounded-2xl border text-xs font-bold transition flex items-center justify-center gap-2 ${
+                      className={`px-4 py-2.5 rounded-2xl border text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
                         bulkCategory === 'journal'
                           ? 'bg-indigo-950/90 border-indigo-500 text-indigo-200 shadow-lg shadow-indigo-950/50 ring-1 ring-indigo-500/40'
                           : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
                       }`}
+                      title="Direct Link: #/hod/upload?mode=bulk&category=journal"
                     >
                       <FileText size={15} className={bulkCategory === 'journal' ? 'text-indigo-400' : 'text-slate-400'} />
                       <span>📰 Bulk Academic Journals</span>
-                    </button>
+                    </a>
                   </div>
                 </div>
 
@@ -2587,29 +2671,33 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                     <span>{bulkCategory === 'journal' ? 'Select Academic Journal PDFs (Up to 20)' : 'Select Files from Device (Up to 20)'}</span>
                   </button>
 
-                  <button
-                    type="button"
+                  <a
+                    href={`#/hod/upload?mode=bulk&category=${bulkCategory}&action=add-row`}
                     onClick={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
+                      sounds.playClick();
                       handleAddManualBatchRow();
                     }}
-                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold text-xs shadow-lg transition flex items-center gap-2"
+                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold text-xs shadow-lg transition flex items-center gap-2 inline-flex"
                   >
                     <FileText size={15} />
                     <span>{bulkCategory === 'journal' ? '+ Add Manual Journal Entry' : '+ Add Manual Book Entry'}</span>
-                  </button>
+                  </a>
 
-                  <button
-                    type="button"
+                  <a
+                    href={`#/hod/upload?mode=bulk&category=${bulkCategory}&action=fetch-db`}
                     onClick={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
+                      sounds.playClick();
                       stageExistingDatabaseRecords();
                     }}
-                    className="px-4 py-2.5 rounded-xl bg-teal-600/20 hover:bg-teal-600/30 border border-teal-500/40 text-teal-200 font-bold text-xs shadow-lg transition flex items-center gap-2"
+                    className="px-4 py-2.5 rounded-xl bg-teal-600/20 hover:bg-teal-600/30 border border-teal-500/40 text-teal-200 font-bold text-xs shadow-lg transition flex items-center gap-2 inline-flex"
                   >
                     <Download size={15} />
                     <span>Load Existing Records from Database ({dbExistingUploads.length})</span>
-                  </button>
+                  </a>
                 </div>
 
                 <div className="text-[11px] font-mono text-slate-500 pt-1">
@@ -2644,12 +2732,17 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleScanAllBatchItems}
-                        disabled={isScanningAllBatch}
-                        className="px-4 py-1.5 rounded-xl bg-teal-600/30 hover:bg-teal-600/50 border border-teal-500/50 text-teal-200 text-xs font-bold transition flex items-center gap-1.5 shadow"
-                        title="Run AI Auto-Scan (GROBID / OCR / Crossref / OpenAlex) across all staged documents"
+                      <a
+                        href="#/hod/upload?mode=bulk&action=scan-all"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleScanAllBatchItems();
+                          navigateTo('/hod/upload', { mode: 'bulk', action: 'scan-all' });
+                        }}
+                        className={`px-4 py-1.5 rounded-xl bg-teal-600/30 hover:bg-teal-600/50 border border-teal-500/50 text-teal-200 text-xs font-bold transition flex items-center gap-1.5 shadow cursor-pointer ${
+                          isScanningAllBatch ? 'pointer-events-none opacity-60' : ''
+                        }`}
+                        title="Direct Link: #/hod/upload?mode=bulk&action=scan-all"
                       >
                         {isScanningAllBatch ? (
                           <Loader2 size={13} className="animate-spin text-teal-300" />
@@ -2657,23 +2750,33 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                           <Sparkles size={13} className="text-amber-400" />
                         )}
                         <span>{isScanningAllBatch ? 'Auto-Scanning All Files...' : 'Apply Auto-Scan to All'}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleAddManualBatchRow}
-                        className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-xs font-semibold transition flex items-center gap-1.5"
+                      </a>
+                      <a
+                        href="#/hod/upload?mode=bulk&action=add-row"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleAddManualBatchRow();
+                          navigateTo('/hod/upload', { mode: 'bulk', action: 'add-row' });
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
+                        title="Direct Link: #/hod/upload?mode=bulk&action=add-row"
                       >
                         <Plus size={13} />
                         <span>+ Add Row</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleClearAllBatch}
-                        className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-950/80 hover:text-rose-300 hover:border-rose-700/80 border border-slate-700 text-slate-300 text-xs font-semibold transition flex items-center gap-1.5"
+                      </a>
+                      <a
+                        href="#/hod/upload?mode=bulk&action=clear-all"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleClearAllBatch();
+                          navigateTo('/hod/upload', { mode: 'bulk' });
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-950/80 hover:text-rose-300 hover:border-rose-700/80 border border-slate-700 text-slate-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
+                        title="Direct Link: #/hod/upload?mode=bulk&action=clear-all"
                       >
                         <Trash2 size={13} />
                         <span>Clear All</span>
-                      </button>
+                      </a>
                     </div>
                   </div>
 
@@ -3374,9 +3477,10 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                           </div>
 
                           <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => {
+                            <a
+                              href={`#/reader/${encodeURIComponent(item.existing_id || item.id)}`}
+                              onClick={(e) => {
+                                e.preventDefault();
                                 sounds.playClick();
                                 setActiveBatchReaderBook({
                                   id: item.existing_id || item.id,
@@ -3396,12 +3500,12 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                                   pdfUrl: item.file_data_url || ''
                                 });
                               }}
-                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-teal-300 font-sans font-bold text-[10px] transition flex items-center gap-1"
+                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-teal-300 font-sans font-bold text-[10px] transition flex items-center gap-1 inline-flex"
                               title="Preview PDF in Reader"
                             >
                               <Eye size={11} />
                               <span>Preview</span>
-                            </button>
+                            </a>
 
                             <button
                               type="button"
@@ -3578,50 +3682,76 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
           <div className="flex flex-wrap items-center gap-3 pt-2">
             {submissionSuccess.direct_published || submissionSuccess.status === 'approved' ? (
               <>
-                <button
-                  onClick={() => navigateTo('/scholar')}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition flex items-center gap-2 shadow-lg shadow-emerald-950"
+                <a
+                  href="#/scholar"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    sounds.playClick();
+                    navigateTo('/scholar');
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition flex items-center gap-2 shadow-lg shadow-emerald-950 inline-flex"
                 >
                   <BookOpen size={14} />
                   <span>View in Student Scholar Portal</span>
                   <ArrowRight size={14} />
-                </button>
-                <button
-                  onClick={() => navigateTo('/opac')}
-                  className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs transition flex items-center gap-2 shadow-lg shadow-teal-950"
+                </a>
+                <a
+                  href="#/opac"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    sounds.playClick();
+                    navigateTo('/opac');
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs transition flex items-center gap-2 shadow-lg shadow-teal-950 inline-flex"
                 >
                   <Search size={14} />
                   <span>Verify in OPAC Catalog</span>
-                </button>
+                </a>
               </>
             ) : (
               <>
-                <button
-                  onClick={() => navigateTo('/hod/submissions')}
-                  className="px-5 py-2.5 rounded-xl text-white font-bold text-xs transition flex items-center gap-2 shadow-lg"
+                <a
+                  href="#/hod/submissions"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    sounds.playClick();
+                    navigateTo('/hod/submissions');
+                  }}
+                  className="px-5 py-2.5 rounded-xl text-white font-bold text-xs transition flex items-center gap-2 shadow-lg inline-flex"
                   style={{ backgroundColor: theme.solidPrimary }}
                 >
                   <Eye size={14} />
                   <span>Track in Submissions Queue</span>
                   <ArrowRight size={14} />
-                </button>
+                </a>
 
-                <button
-                  onClick={() => navigateTo('/admin/hod-submissions')}
-                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition flex items-center gap-2 shadow-lg shadow-indigo-950"
+                <a
+                  href="#/admin/hod-submissions"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    sounds.playClick();
+                    navigateTo('/admin/hod-submissions');
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition flex items-center gap-2 shadow-lg shadow-indigo-950 inline-flex"
                 >
                   <ShieldCheck size={14} />
                   <span>Switch to Central Review Queue (Librarian Gate)</span>
-                </button>
+                </a>
               </>
             )}
 
-            <button
-              onClick={handleResetForm}
-              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+            <a
+              href="#/hod/upload?mode=single"
+              onClick={(e) => {
+                e.preventDefault();
+                sounds.playClick();
+                handleResetForm();
+                navigateTo('/hod/upload', { mode: 'single' });
+              }}
+              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition inline-flex items-center"
             >
               Submit Another Resource
-            </button>
+            </a>
           </div>
         </div>
       )}
@@ -3638,39 +3768,45 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
             {/* INGESTION MODE SELECTOR TABS */}
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
               <div className="flex items-center gap-2 p-1 bg-slate-950 rounded-2xl border border-slate-800">
-                <button
+                <a
                   id="tab-mode-digital"
-                  type="button"
-                  onClick={() => {
+                  href="#/hod/upload?mode=single&type=digital"
+                  onClick={(e) => {
+                    e.preventDefault();
                     setIngestionMode('digital');
                     setFormData(prev => ({ ...prev, resource_type: uploadCategory === 'project' ? 'Student Project' : (uploadCategory === 'journal' ? 'Journal' : 'Book') }));
+                    navigateTo('/hod/upload', { mode: 'single', type: 'digital', category: uploadCategory });
                   }}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                     ingestionMode === 'digital'
                       ? 'text-white shadow-md'
                       : 'text-slate-400 hover:text-white'
                   }`}
                   style={ingestionMode === 'digital' ? { backgroundColor: theme.solidPrimary } : {}}
+                  title="Direct Link: #/hod/upload?mode=single&type=digital"
                 >
                   <FileText size={14} />
                   <span>Digital Material (PDF / E-Book)</span>
-                </button>
-                <button
+                </a>
+                <a
                   id="tab-mode-physical"
-                  type="button"
-                  onClick={() => {
+                  href="#/hod/upload?mode=single&type=physical"
+                  onClick={(e) => {
+                    e.preventDefault();
                     setIngestionMode('physical');
                     setFormData(prev => ({ ...prev, resource_type: 'Physical Book Acquisition Request' }));
+                    navigateTo('/hod/upload', { mode: 'single', type: 'physical' });
                   }}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                     ingestionMode === 'physical'
                       ? 'bg-emerald-600 text-white shadow-md'
                       : 'text-slate-400 hover:text-white'
                   }`}
+                  title="Direct Link: #/hod/upload?mode=single&type=physical"
                 >
                   <BookOpen size={14} />
                   <span>Physical Book Acquisition</span>
-                </button>
+                </a>
               </div>
 
               <span className="hidden sm:inline text-[11px] font-mono text-slate-400">
@@ -3691,14 +3827,16 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
               </div>
 
               <div className="grid grid-cols-3 gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
+                <a
+                  href="#/hod/upload?mode=single&category=book"
+                  onClick={(e) => {
+                    e.preventDefault();
                     setUploadCategory('book');
                     setFormData(prev => ({ ...prev, resource_type: 'Book' }));
+                    navigateTo('/hod/upload', { mode: 'single', category: 'book', type: ingestionMode });
                     sounds.playClick();
                   }}
-                  className={`p-3 rounded-xl border text-center transition flex flex-col items-center gap-1 ${
+                  className={`p-3 rounded-xl border text-center transition flex flex-col items-center gap-1 cursor-pointer ${
                     uploadCategory === 'book'
                       ? 'text-white shadow-lg ring-1'
                       : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
@@ -3708,47 +3846,54 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                     borderColor: theme.solidPrimary,
                     boxShadow: `0 4px 14px ${theme.solidPrimary}30`
                   } : {}}
+                  title="Direct Link: #/hod/upload?mode=single&category=book"
                 >
                   <BookOpen size={18} style={uploadCategory === 'book' ? { color: theme.accent } : { color: '#64748b' }} />
                   <span className="font-bold text-xs">📚 Book / Monograph</span>
                   <span className="text-[9.5px] text-slate-400">Curriculum Textbook</span>
-                </button>
+                </a>
 
-                <button
-                  type="button"
-                  onClick={() => {
+                <a
+                  href="#/hod/upload?mode=single&category=journal"
+                  onClick={(e) => {
+                    e.preventDefault();
                     setUploadCategory('journal');
                     setFormData(prev => ({ ...prev, resource_type: 'Journal' }));
+                    navigateTo('/hod/upload', { mode: 'single', category: 'journal', type: ingestionMode });
                     sounds.playClick();
                   }}
-                  className={`p-3 rounded-xl border text-center transition flex flex-col items-center gap-1 ${
+                  className={`p-3 rounded-xl border text-center transition flex flex-col items-center gap-1 cursor-pointer ${
                     uploadCategory === 'journal'
                       ? 'bg-indigo-950/80 border-indigo-500 text-indigo-200 shadow-lg shadow-indigo-950/40 ring-1 ring-indigo-500/50'
                       : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
                   }`}
+                  title="Direct Link: #/hod/upload?mode=single&category=journal"
                 >
                   <FileText size={18} className={uploadCategory === 'journal' ? 'text-indigo-400' : 'text-slate-500'} />
                   <span className="font-bold text-xs">📰 Academic Journal</span>
                   <span className="text-[9.5px] text-slate-400">Peer-Reviewed Article</span>
-                </button>
+                </a>
 
-                <button
-                  type="button"
-                  onClick={() => {
+                <a
+                  href="#/hod/upload?mode=single&category=project"
+                  onClick={(e) => {
+                    e.preventDefault();
                     setUploadCategory('project');
                     setFormData(prev => ({ ...prev, resource_type: 'Student Project' }));
+                    navigateTo('/hod/upload', { mode: 'single', category: 'project', type: ingestionMode });
                     sounds.playClick();
                   }}
-                  className={`p-3 rounded-xl border text-center transition flex flex-col items-center gap-1 ${
+                  className={`p-3 rounded-xl border text-center transition flex flex-col items-center gap-1 cursor-pointer ${
                     uploadCategory === 'project'
                       ? 'bg-purple-950/80 border-purple-500 text-purple-200 shadow-lg shadow-purple-950/40 ring-1 ring-purple-500/50'
                       : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
                   }`}
+                  title="Direct Link: #/hod/upload?mode=single&category=project"
                 >
                   <Bookmark size={18} className={uploadCategory === 'project' ? 'text-purple-400' : 'text-slate-500'} />
                   <span className="font-bold text-xs">🎓 Student Project</span>
                   <span className="text-[9.5px] text-slate-400">HND/ND Dissertations</span>
-                </button>
+                </a>
               </div>
             </div>
 
@@ -4074,19 +4219,21 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                           {watermarkProtection ? '🛡️ Protected' : 'Off'}
                         </span>
                       </label>
-                      <button
-                        type="button"
-                        onClick={() => {
+                      <a
+                        href="#/hod/upload?mode=bulk&category=journal"
+                        onClick={(e) => {
+                          e.preventDefault();
                           setBulkCategory('journal');
                           setBatchWatermarkProtection(true);
                           setStudioMode('bulk');
                           sounds.playClick();
+                          navigateTo('/hod/upload', { mode: 'bulk', category: 'journal' });
                         }}
-                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] transition flex items-center gap-1 shadow"
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] transition flex items-center gap-1 shadow inline-flex"
                       >
                         <FolderUp size={12} />
                         <span>Bulk Upload Journals</span>
-                      </button>
+                      </a>
                     </div>
                   </div>
                 </div>
@@ -4163,11 +4310,16 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
 
                 <div className="flex flex-wrap items-center gap-1.5">
                   {currentCourses.map(code => (
-                    <button
+                    <a
                       key={code}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, course_code: code })}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition ${
+                      href={`#/hod/upload?mode=single&course=${encodeURIComponent(code)}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setFormData({ ...formData, course_code: code });
+                        sounds.playClick();
+                        navigateTo('/hod/upload', { mode: 'single', course: code });
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition inline-flex items-center cursor-pointer ${
                         formData.course_code === code
                           ? 'text-white shadow'
                           : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
@@ -4177,9 +4329,10 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                         color: '#ffffff',
                         boxShadow: `0 2px 8px ${theme.solidPrimary}40`
                       } : {}}
+                      title={`Select Course: ${code}`}
                     >
                       {code}
-                    </button>
+                    </a>
                   ))}
                   <input
                     type="text"
@@ -4311,19 +4464,20 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                           {formData.file_size || 'Ready for Staging Pipeline'}
                         </p>
                         <div className="flex items-center justify-center gap-3 pt-1">
-                          <button
-                            type="button"
+                          <a
+                            href="#/hod/upload?preview=true"
                             onClick={(e) => {
+                              e.preventDefault();
                               e.stopPropagation();
                               setShowInStudioPreviewModal(true);
                               sounds.playClick();
                             }}
-                            className="px-3.5 py-1.5 rounded-xl text-white font-bold text-xs shadow flex items-center gap-1.5 transition hover:opacity-90"
+                            className="px-3.5 py-1.5 rounded-xl text-white font-bold text-xs shadow flex items-center gap-1.5 transition hover:opacity-90 inline-flex cursor-pointer"
                             style={{ backgroundColor: theme.solidPrimary }}
                           >
                             <Eye size={13} />
                             <span>Preview Document</span>
-                          </button>
+                          </a>
                           <span className="text-[10px] text-slate-500 underline inline-block">
                             Change file
                           </span>
