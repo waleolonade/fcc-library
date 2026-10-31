@@ -16,7 +16,7 @@ import SelfServiceKiosk from './common/SelfServiceKiosk';
 import FccAdminLibrary from './fcc_admin_library/FccAdminLibrary';
 import HodDashboard from './hod/HodDashboard';
 import PublicDiscovery from './public_opac/PublicDiscovery';
-import DigitalBookReader, { DEFAULT_INSTITUTIONAL_BOOK } from './student/DigitalBookReader';
+import DigitalBookReader from './student/DigitalBookReader';
 import StudentPortal from './student/StudentPortal';
 import DeveloperMasterPortal from './developer/DeveloperMasterPortal';
 import PageMaintenanceGuard from './common/PageMaintenanceGuard';
@@ -408,22 +408,36 @@ export default function App() {
           const initialPick = pickBestUploadedBook(books);
           if (initialPick) {
             setActiveBookForReader(initialPick);
-          } else {
-            setActiveBookForReader(DEFAULT_INSTITUTIONAL_BOOK);
           }
 
-          // Always fetch live from backend API to ensure freshly uploaded HOD/Admin books are loaded
+          // Always fetch live from backend API / OpenAlex to ensure freshly uploaded HOD/Admin books or real journals are loaded
           fetch('/api/catalog')
             .then(res => res.ok ? res.json() : null)
-            .then(catalogList => {
+            .then(async (catalogList) => {
               if (Array.isArray(catalogList) && catalogList.length > 0) {
                 const best = pickBestUploadedBook(catalogList);
                 if (best) {
-                  fetch(`/api/catalog/${encodeURIComponent(best.id)}`)
-                    .then(cr => cr.ok ? cr.json() : best)
-                    .then(full => setActiveBookForReader(full || best))
-                    .catch(() => setActiveBookForReader(best));
+                  try {
+                    const cr = await fetch(`/api/catalog/${encodeURIComponent(best.id)}`);
+                    const full = cr.ok ? await cr.json() : best;
+                    setActiveBookForReader(full || best);
+                    return;
+                  } catch {
+                    setActiveBookForReader(best);
+                    return;
+                  }
                 }
+              }
+
+              // If no catalog uploads exist, load authentic live open-access academic journals
+              try {
+                const { fetchLiveAcademicJournals } = await import('./services/openSourceJournalsApi');
+                const journals = await fetchLiveAcademicJournals({ query: 'cooperative economics agriculture computer science finance', perPage: 10 });
+                if (Array.isArray(journals) && journals.length > 0) {
+                  setActiveBookForReader(journals[0]);
+                }
+              } catch (jErr) {
+                console.warn('Could not load fallback live journals in App:', jErr);
               }
             })
             .catch(() => {});
@@ -1044,7 +1058,7 @@ export default function App() {
 
 
       {/* Global E-Book Reader Modal */}
-      {activeBookForReader && (
+      {(activeBookForReader || (currentRoute && (currentRoute.path === '/reader' || currentRoute.path.startsWith('/reader')))) && (
         <div className="fixed inset-0 z-50 bg-slate-950 p-2 sm:p-6 overflow-y-auto">
           <DigitalBookReader
             book={activeBookForReader}

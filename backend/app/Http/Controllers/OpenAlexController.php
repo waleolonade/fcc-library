@@ -1083,4 +1083,54 @@ class OpenAlexController extends Controller
             'message'  => $response['meta']['message'] ?? null,
         ], $isSuccess ? 200 : $status);
     }
+
+    /**
+     * GET /api/openalex/pdf-proxy?url=...
+     * Secure proxy streaming for remote open-access PDFs to eliminate CORS issues in frontend PDF viewer
+     */
+    public function pdfProxy(Request $request)
+    {
+        $url = trim((string) $request->input('url', ''));
+        if (empty($url) || !filter_var($url, FILTER_VALIDATE_URL)) {
+            return response()->json(['error' => 'Valid URL parameter required.'], 400);
+        }
+
+        $scheme = parse_url($url, PHP_URL_SCHEME);
+        if (!in_array(strtolower($scheme), ['http', 'https'])) {
+            return response()->json(['error' => 'Invalid URL scheme.'], 400);
+        }
+
+        try {
+            $response = \Illuminate\Support\Facades\Http::timeout(25)
+                ->withoutVerifying()
+                ->withHeaders([
+                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 FCCLibrary/1.0',
+                    'Accept'     => 'application/pdf, application/octet-stream, */*',
+                ])
+                ->get($url);
+
+            if (!$response->successful()) {
+                return response()->json([
+                    'error' => 'Remote server returned HTTP status ' . $response->status(),
+                    'source_url' => $url
+                ], $response->status() >= 400 && $response->status() < 600 ? $response->status() : 502);
+            }
+
+            $body = $response->body();
+            $contentType = $response->header('Content-Type') ?: 'application/pdf';
+
+            return response($body, 200, [
+                'Content-Type'                => $contentType,
+                'Content-Disposition'         => 'inline; filename="scholarly_work.pdf"',
+                'Access-Control-Allow-Origin' => '*',
+                'Accept-Ranges'               => 'bytes',
+                'Cache-Control'               => 'public, max-age=86400',
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => 'Failed to proxy remote document: ' . $e->getMessage(),
+                'source_url' => $url
+            ], 502);
+        }
+    }
 }

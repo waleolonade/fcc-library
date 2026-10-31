@@ -120,6 +120,7 @@ Route::prefix('openalex')->group(function () {
     Route::post('/save',             [OpenAlexController::class, 'saveWork']);
     Route::delete('/saved/{id}',     [OpenAlexController::class, 'removeSavedWork']);
     Route::get('/rate-limit',        [OpenAlexController::class, 'rateLimit']);
+    Route::get('/pdf-proxy',          [OpenAlexController::class, 'pdfProxy']);
 
     // OpenAlex Query Language (OQL) & Query Translation APIs
     Route::match(['get', 'post'], '/oql', [OpenAlexController::class, 'executeOql']);

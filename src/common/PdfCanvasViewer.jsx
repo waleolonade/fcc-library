@@ -81,75 +81,6 @@ function dataUrlToArrayBuffer(dataUrl) {
   return base64ToArrayBuffer(b64);
 }
 
-/**
- * Pure client-side PDF generator fallback (ensures the reader NEVER crashes if network drops)
- */
-function generateClientFallbackPdf(title = 'Academic Document', fileName = 'document.pdf') {
-  const safeTitle = String(title || 'Institutional Academic Monograph').replace(/[\(\)\\]/g, ' ');
-  const safeFile = String(fileName || 'document.pdf').replace(/[\(\)\\]/g, ' ');
-  const content = 
-`BT
-/F1 18 Tf
-50 740 Td (FEDERAL CO-OPERATIVE COLLEGE, IBADAN) Tj
-0 -24 Td
-/F1 11 Tf
-(INSTITUTIONAL DIGITAL REPOSITORY - OFFICIAL CURRICULUM SYLLABUS) Tj
-0 -35 Td
-/F1 14 Tf
-(${safeTitle}) Tj
-0 -20 Td
-/F1 10 Tf
-(File: ${safeFile}  |  Accreditation: Central Library Directorate & Academic Board) Tj
-0 -30 Td
-/F1 12 Tf
-(MODULE 1: CURRICULUM SYLLABUS & SCHOLARLY LEARNING OUTCOMES) Tj
-0 -18 Td
-/F1 10 Tf
-(This institutional academic publication has been approved for digital reader access.) Tj
-0 -14 Td
-(Scholars can read full-text modules, annotate chapters, and download reference copies.) Tj
-0 -26 Td
-/F1 12 Tf
-(MODULE 2: RECOMMENDED READINGS & RESERVE COLLECTIONS) Tj
-0 -18 Td
-/F1 10 Tf
-(1. Physical reserve copies are held at the Central Campus Library circulation desk.) Tj
-0 -14 Td
-(2. Interactive e-book annotations can be switched via the top toolbar button.) Tj
-0 -14 Td
-(3. Review exercises and department past questions are available in the catalogue.) Tj
-ET\n`;
-
-  const len = content.length;
-  const pdfStr = 
-`%PDF-1.4
-1 0 obj <</Type /Catalog /Pages 2 0 R>> endobj
-2 0 obj <</Type /Pages /Kids [3 0 R] /Count 1>> endobj
-3 0 obj <</Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources <</Font <</F1 5 0 R>>>> >> endobj
-4 0 obj <</Length ${len}>> stream
-${content}endstream
-endobj
-5 0 obj <</Type /Font /Subtype /Type1 /BaseFont /Helvetica>> endobj
-xref
-0 6
-0000000000 65535 f 
-0000000009 00000 n 
-0000000058 00000 n 
-0000000115 00000 n 
-0000000236 00000 n 
-${String(236 + 48 + len).padStart(10, '0')} 00000 n 
-trailer <</Size 6 /Root 1 0 R>>
-startxref
-${236 + 48 + len + 70}
-%%EOF\n`;
-
-  const buf = new Uint8Array(pdfStr.length);
-  for (let i = 0; i < pdfStr.length; i++) {
-    buf[i] = pdfStr.charCodeAt(i);
-  }
-  return buf.buffer;
-}
-
 export default function PdfCanvasViewer({
   pdfUrl,
   currentPage = 1,
@@ -217,13 +148,14 @@ export default function PdfCanvasViewer({
           // Build clean, relative candidate URLs (strictly avoiding illegal cross-origin/mixed-content HTTP:8000 calls)
           const candidateUrls = Array.from(new Set([
             rawUrl || null,
+            // External OA URLs via proxy
+            (rawUrl && /^https?:\/\//i.test(rawUrl)) ? `/api/openalex/pdf-proxy?url=${encodeURIComponent(rawUrl)}` : null,
             bookId ? `/api/books/${encodeURIComponent(bookId)}/pdf` : null,
             bookId ? `/api/catalog/${encodeURIComponent(bookId)}/file` : null,
             bookId ? `/api/department-uploads/${encodeURIComponent(bookId)}/file` : null,
             bookId ? `/api/theses/${encodeURIComponent(bookId)}/file` : null,
             bookId ? `/fcclibrary/backend/public/api/books/${encodeURIComponent(bookId)}/pdf` : null,
             bookId ? `/fcclibrary/backend/public/api/catalog/${encodeURIComponent(bookId)}/file` : null,
-            '/api/books/FCC-CURRICULUM-GUIDE/pdf',
           ].filter(Boolean)));
 
           let lastErr = null;
@@ -250,13 +182,9 @@ export default function PdfCanvasViewer({
             }
           }
 
-          // 3. Fallback: Pure in-memory client PDF generation if network failed
+          // If no authentic PDF was found, do NOT forge a fake document
           if (!arrayBuffer) {
-            try {
-              arrayBuffer = generateClientFallbackPdf(title, fileName);
-            } catch (fallbackErr) {
-              throw new Error(lastErr?.message || 'Unable to retrieve PDF stream from server.');
-            }
+            throw new Error('Digital PDF manuscript file is not attached to this catalog record.');
           }
         }
 
@@ -627,13 +555,13 @@ export default function PdfCanvasViewer({
         {/* Error Fallback Card */}
         {error && (
           <div className="m-auto max-w-md p-6 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-4 shadow-2xl">
-            <div className="w-12 h-12 rounded-2xl bg-amber-950/70 border border-amber-800 text-amber-300 mx-auto flex items-center justify-center">
-              <AlertTriangle size={24} />
+            <div className="w-12 h-12 rounded-2xl bg-emerald-950/70 border border-emerald-800 text-emerald-400 mx-auto flex items-center justify-center">
+              <FileText size={24} />
             </div>
-            <div className="space-y-1">
-              <h4 className="text-sm font-bold text-white">Document Streaming Ready</h4>
-              <p className="text-xs text-slate-400">
-                {error}
+            <div className="space-y-1.5">
+              <h4 className="text-sm font-bold text-white">Digital PDF Manuscript Not Available</h4>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                This academic work does not have a local PDF file attached. You can read its complete bibliographic metadata, abstract, authors, and citation in Interactive Text View.
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
@@ -645,14 +573,27 @@ export default function PdfCanvasViewer({
                   Read in Interactive Text View
                 </button>
               )}
-              <button
-                onClick={triggerDownload}
-                disabled={downloading}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition flex items-center gap-1.5 disabled:opacity-60"
-              >
-                <Download size={13} className={downloading ? 'animate-bounce' : ''} />
-                <span>{downloading ? 'Downloading...' : 'Download PDF'}</span>
-              </button>
+              {pdfUrl && /^https?:\/\//i.test(pdfUrl) && (
+                <a
+                  href={pdfUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 font-bold text-xs border border-slate-700 transition flex items-center gap-1.5"
+                >
+                  <ExternalLink size={13} />
+                  <span>Open Publisher Link</span>
+                </a>
+              )}
+              {pdfBytesRef.current && (
+                <button
+                  onClick={triggerDownload}
+                  disabled={downloading}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition flex items-center gap-1.5 disabled:opacity-60"
+                >
+                  <Download size={13} className={downloading ? 'animate-bounce' : ''} />
+                  <span>{downloading ? 'Downloading...' : 'Download PDF'}</span>
+                </button>
+              )}
             </div>
           </div>
         )}

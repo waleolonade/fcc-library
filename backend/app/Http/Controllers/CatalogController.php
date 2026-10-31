@@ -478,18 +478,34 @@ class CatalogController extends Controller
             }
         }
 
-        // 3. Fallback: Generate Syllabus PDF if no file is present
-        $binary = $this->generateSyllabusPdf($book, $upload ?? null);
-        $cleanTitle = $book?->title ? preg_replace('/[^a-zA-Z0-9_\-]/', '_', $book->title) : $id;
-        $filename = ($book?->file_name) ?: ($cleanTitle . '.pdf');
+        // 3. Fallback: Check if item has a DOI or external OA link to stream authentic scholarly PDF
+        $doi = $book?->doi ?: ($upload?->doi ?? null);
+        if (!empty($doi)) {
+            try {
+                $openAlex = app(\App\Services\OpenAlexService::class);
+                $work = $openAlex->getWorkByDoi($doi);
+                $oaUrl = $work['open_access']['oa_url']
+                      ?? $work['best_oa_location']['pdf_url']
+                      ?? $work['primary_location']['pdf_url']
+                      ?? null;
+                if ($oaUrl) {
+                    return redirect()->away($oaUrl);
+                }
+            } catch (\Throwable $e) {}
+        }
 
-        return response($binary, 200, [
-            'Content-Type' => 'application/pdf',
-            'Accept-Ranges' => 'bytes',
-            'Content-Disposition' => ($isDownload ? 'attachment' : 'inline') . '; filename="' . $filename . '"',
-            'Cache-Control' => 'public, max-age=86400',
-            'Access-Control-Allow-Origin' => '*'
-        ]);
+        $extUrl = $book?->external_url ?: ($upload?->external_url ?? ($book?->pdf_url ?: ($upload?->pdf_url ?? null)));
+        if (!empty($extUrl) && filter_var($extUrl, FILTER_VALIDATE_URL)) {
+            return redirect()->away($extUrl);
+        }
+
+        // Return honest 404 response instead of forging fake syllabus monograph
+        return response()->json([
+            'error' => 'Digital PDF document not available for this catalog record.',
+            'id' => $id,
+            'title' => $book?->title ?: ($upload?->title ?? 'Document'),
+            'has_pdf' => false
+        ], 404);
     }
 
     private function isValidPdfFile(string $path): bool
@@ -507,83 +523,6 @@ class CatalogController extends Controller
         $tail = fread($fh, 2048);
         fclose($fh);
         return str_contains($tail, '%%EOF');
-    }
-
-    private function generateSyllabusPdf($book, $upload = null): string
-    {
-        $title = $book?->title ?? $upload?->title ?? 'Institutional Academic Monograph';
-        $author = $book?->author ?? $upload?->author ?? 'Department Faculty Scholar';
-        $dept = $book?->department ?? $upload?->department_name ?? 'Federal Co-operative College, Ibadan';
-        $courseCode = $book?->course_code ?? $upload?->course_code ?? 'GEN 101';
-        $level = $book?->target_level ?? $upload?->target_level ?? 'HND II';
-        $callNo = $book?->call_number ?? 'FCC.LIB.2026';
-        $date = date('Y-m-d H:i');
-
-        $titleEsc = addcslashes($title, '()\\');
-        $authorEsc = addcslashes($author, '()\\');
-        $deptEsc = addcslashes($dept, '()\\');
-        $courseEsc = addcslashes($courseCode . " (" . $level . ")", '()\\');
-        $callEsc = addcslashes($callNo, '()\\');
-
-        $content = "BT\n"
-                 . "/F1 18 Tf\n"
-                 . "50 740 Td (FEDERAL CO-OPERATIVE COLLEGE, IBADAN) Tj\n"
-                 . "0 -24 Td\n"
-                 . "/F1 11 Tf\n"
-                 . "(INSTITUTIONAL DIGITAL REPOSITORY - OFFICIAL CURRICULUM SYLLABUS) Tj\n"
-                 . "0 -35 Td\n"
-                 . "/F1 15 Tf\n"
-                 . "({$titleEsc}) Tj\n"
-                 . "0 -22 Td\n"
-                 . "/F1 11 Tf\n"
-                 . "(Course Code: {$courseEsc}  |  Call No: {$callEsc}) Tj\n"
-                 . "0 -18 Td\n"
-                 . "(Department: {$deptEsc}) Tj\n"
-                 . "0 -18 Td\n"
-                 . "(Instructor / Author: {$authorEsc}) Tj\n"
-                 . "0 -18 Td\n"
-                 . "(Accreditation: Approved by Central Library Directorate & Academic Board) Tj\n"
-                 . "0 -35 Td\n"
-                 . "/F1 13 Tf\n"
-                 . "(MODULE 1: CURRICULUM SYLLABUS & LEARNING OUTCOMES) Tj\n"
-                 . "0 -20 Td\n"
-                 . "/F1 10 Tf\n"
-                 . "(This official departmental publication has been vetted for institutional curriculum) Tj\n"
-                 . "0 -14 Td\n"
-                 . "(compliance. Scholars must complete weekly lectures, practical laboratories,) Tj\n"
-                 . "0 -14 Td\n"
-                 . "(and continuous assessment exercises as scheduled in the college academic calendar.) Tj\n"
-                 . "0 -28 Td\n"
-                 . "/F1 13 Tf\n"
-                 . "(MODULE 2: RECOMMENDED READINGS & RESERVE COLLECTIONS) Tj\n"
-                 . "0 -20 Td\n"
-                 . "/F1 10 Tf\n"
-                 . "(1. Physical reserve copies are held at the Central Campus Library circulation desk.) Tj\n"
-                 . "0 -14 Td\n"
-                 . "(2. Electronic chapters and annotations can be viewed via the Interactive Reader.) Tj\n"
-                 . "0 -14 Td\n"
-                 . "(3. Review questions and past examination problems are appended per syllabus unit.) Tj\n"
-                 . "ET\n";
-
-        $len = strlen($content);
-
-        return "%PDF-1.4\n"
-             . "1 0 obj <</Type /Catalog /Pages 2 0 R>> endobj\n"
-             . "2 0 obj <</Type /Pages /Kids [3 0 R] /Count 1>> endobj\n"
-             . "3 0 obj <</Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources <</Font <</F1 5 0 R>>>> >> endobj\n"
-             . "4 0 obj <</Length {$len}>> stream\n{$content}endstream\nendobj\n"
-             . "5 0 obj <</Type /Font /Subtype /Type1 /BaseFont /Helvetica>> endobj\n"
-             . "xref\n0 6\n"
-             . "0000000000 65535 f \n"
-             . "0000000009 00000 n \n"
-             . "0000000058 00000 n \n"
-             . "0000000115 00000 n \n"
-             . "0000000236 00000 n \n"
-             . sprintf("%010d 00000 n \n", 236 + 48 + $len)
-             . "trailer <</Size 6 /Root 1 0 R>>\n"
-             . "startxref\n"
-             . sprintf("%d\n", 236 + 48 + $len + 70)
-             . "%%EOF\n";
     }
 
     public function checkDuplicate(Request $request)

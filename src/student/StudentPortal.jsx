@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { pwaHistory } from '../utils/pwaHistoryManager';
 import { INSTITUTION, INITIAL_PARTNER_LIBRARIES } from '../data/institutionalSeedData';
-import DigitalBookReader, { DEFAULT_INSTITUTIONAL_BOOK } from './DigitalBookReader';
+import DigitalBookReader from './DigitalBookReader';
 import StudentOverviewDashboard from './StudentOverviewDashboard';
 import StudentResearchHub from './StudentResearchHub';
 import MyLibraryAccount from './MyLibraryAccount';
@@ -301,10 +301,8 @@ export default function StudentPortal({
           const targetId = params?.bookId || queryParams?.bookId;
           const target = (targetId ? (books || []).find(b => b.id?.toLowerCase() === targetId?.toLowerCase()) : null) ||
                          (books || []).find(b => b.file_data_url || b.fileDataUrl || (b.file_name && b.file_name.toLowerCase().endsWith('.pdf'))) ||
-                         (books && books.length > 0 ? books[0] : DEFAULT_INSTITUTIONAL_BOOK);
-          if (target) {
-            setActiveBookForReader(target);
-          }
+                         (books && books.length > 0 ? books[0] : null);
+          setActiveBookForReader(target);
         }
       }
     };

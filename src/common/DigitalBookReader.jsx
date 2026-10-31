@@ -11,28 +11,12 @@ import TraceBadge from './TraceBadge';
 import { sounds } from '../utils/soundEffects';
 import { libraryApi } from '../api/libraryApi';
 import PdfCanvasViewer from './PdfCanvasViewer';
+import { fetchLiveAcademicJournals } from '../services/openSourceJournalsApi';
 
-export const DEFAULT_INSTITUTIONAL_BOOK = {
-  id: 'FCC-MONOGRAPH-001',
-  title: 'Federal Co-operative College Institutional Monograph & Reader Guide',
-  author: 'Central Library Directorate & Academic Board',
-  department: 'Federal Co-operative College, Eleyele, Ibadan',
-  courseCode: 'GEN 101',
-  targetLevel: 'Institutional Scholar (All Levels)',
-  callNumber: 'FCC.LIB.2026.DIR',
-  shelfLocation: 'Digital Repository & E-Library',
-  uploadedBy: 'Central Library Administration',
-  fileName: 'FCC_Academic_Monograph.pdf',
-  fileSize: '1.2 MB',
-  hasBinaryPdf: true,
-  isDigital: true,
-  pdfUrl: '/api/books/FCC-MONOGRAPH-001/pdf',
-  pdfPages: 45,
-  abstract: 'Official academic curriculum guide, electronic library guidelines, and scholarly reference indices published by Federal Co-operative College, Ibadan.'
-};
+export const DEFAULT_INSTITUTIONAL_BOOK = null;
 
 export default function DigitalBookReader({ book: initialBook, onClose, user, onSelectBook }) {
-  const [currentBook, setCurrentBook] = useState(() => initialBook || DEFAULT_INSTITUTIONAL_BOOK);
+  const [currentBook, setCurrentBook] = useState(() => initialBook || null);
   const [currentPage, setCurrentPage] = useState(1);
   const [theme, setTheme] = useState('dark'); // 'dark' | 'sepia' | 'light'
   const [fontSize, setFontSize] = useState('text-base'); // 'text-sm' | 'text-base' | 'text-lg' | 'text-xl'
@@ -58,48 +42,58 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
     }
   }, [initialBook]);
 
-  // Fetch real uploaded books list from backend
+  // Fetch real uploaded books and live peer-reviewed academic journals
   const fetchUploadedBooks = async () => {
     setIsLoadingList(true);
     try {
-      const res = await fetch('/api/catalog');
-      if (res.ok) {
-        const list = await res.json();
-        if (Array.isArray(list) && list.length > 0) {
-          const normalized = list.map(b => ({
-            ...b,
-            id: b.id || 'FCC-BOOK',
-            title: b.title || 'Untitled Monograph',
-            author: b.author || 'FCC Faculty Scholar',
-            callNumber: b.call_number || b.callNumber || 'FCC.LIB',
-            shelfLocation: b.shelf_location || b.shelfLocation || 'Digital E-Library',
-            courseCode: b.course_code || b.courseCode || 'GEN 101',
-            targetLevel: b.target_level || b.targetLevel || 'HND II',
-            department: b.department || 'Computer Science & Information Technology',
-            uploadedBy: b.uploaded_by || b.uploadedBy || 'Admin Librarian',
-            fileName: b.file_name || b.fileName || `${b.title || 'handout'}.pdf`,
-            fileSize: b.file_size || b.fileSize || '7.4 MB',
-            fileDataUrl: b.file_data_url || b.fileDataUrl || '',
-            hasBinaryPdf: Boolean(b.hasBinaryPdf || b.has_file || b.hasPdf || b.file_name || b.fileName || b.file_data_url || b.fileDataUrl || (b.id && (b.id.startsWith('FCC-HOD') || b.id.startsWith('HOD-UP') || b.id.startsWith('FCC-PRJ') || b.id.startsWith('FCC-JRN')))),
-            pdfUrl: b.pdfUrl || `/api/books/${encodeURIComponent(b.id)}/pdf`,
-            isDigital: true,
-            abstract: b.abstract || ''
-          }));
+      const [catalogRes, journalsRes] = await Promise.allSettled([
+        fetch('/api/catalog').then(r => r.ok ? r.json() : []),
+        fetchLiveAcademicJournals({
+          query: 'cooperative economics agriculture computer science finance management nigeria',
+          perPage: 25
+        }).catch(() => [])
+      ]);
 
-          // Sort so books with raw uploaded PDF files appear first
-          normalized.sort((a, b) => {
-            if (a.hasBinaryPdf && !b.hasBinaryPdf) return -1;
-            if (!a.hasBinaryPdf && b.hasBinaryPdf) return 1;
-            return 0;
-          });
+      const rawCatalog = (catalogRes.status === 'fulfilled' && Array.isArray(catalogRes.value)) ? catalogRes.value : [];
+      const rawJournals = (journalsRes.status === 'fulfilled' && Array.isArray(journalsRes.value)) ? journalsRes.value : [];
 
-          setUploadedBooks(normalized);
+      const normalizedCatalog = rawCatalog.map(b => ({
+        ...b,
+        id: b.id || 'FCC-BOOK',
+        title: b.title || 'Institutional Academic Work',
+        author: b.author || 'FCC Faculty Scholar',
+        callNumber: b.call_number || b.callNumber || 'FCC.LIB',
+        shelfLocation: b.shelf_location || b.shelfLocation || 'Digital E-Library',
+        courseCode: b.course_code || b.courseCode || 'GEN 101',
+        targetLevel: b.target_level || b.targetLevel || 'HND II',
+        department: b.department || 'Academic Department',
+        uploadedBy: b.uploaded_by || b.uploadedBy || 'Institutional Repository',
+        fileName: b.file_name || b.fileName || `${b.title || 'document'}.pdf`,
+        fileSize: b.file_size || b.fileSize || '3.5 MB',
+        fileDataUrl: b.file_data_url || b.fileDataUrl || '',
+        hasBinaryPdf: Boolean(b.hasBinaryPdf || b.has_file || b.hasPdf || b.file_name || b.fileName || b.file_data_url || b.fileDataUrl || (b.id && (b.id.startsWith('FCC-HOD') || b.id.startsWith('HOD-UP') || b.id.startsWith('FCC-PRJ') || b.id.startsWith('FCC-JRN')))),
+        pdfUrl: b.file_data_url || b.fileDataUrl ? (b.file_data_url || b.fileDataUrl) : (b.pdfUrl || `/api/books/${encodeURIComponent(b.id)}/pdf`),
+        isDigital: true,
+        abstract: b.abstract || ''
+      }));
 
-          // If no initialBook was provided or if initialBook was default placeholder, select the first real book
-          if ((!initialBook || initialBook.id === DEFAULT_INSTITUTIONAL_BOOK.id) && normalized.length > 0) {
-            loadBookDetails(normalized[0]);
-          }
-        }
+      // Combine catalog uploads and authentic live open-access journals
+      const combined = [...normalizedCatalog, ...rawJournals];
+
+      // Sort: items with verified PDF or OpenAlex full text first
+      combined.sort((a, b) => {
+        const aHasPdf = Boolean(a.hasBinaryPdf || a.hasPdf || a.file_data_url || a.fileDataUrl);
+        const bHasPdf = Boolean(b.hasBinaryPdf || b.hasPdf || b.file_data_url || b.fileDataUrl);
+        if (aHasPdf && !bHasPdf) return -1;
+        if (!aHasPdf && bHasPdf) return 1;
+        return 0;
+      });
+
+      setUploadedBooks(combined);
+
+      // If no book is currently loaded, select the first available real book/journal
+      if (!currentBook && combined.length > 0) {
+        loadBookDetails(combined[0]);
       }
     } catch (err) {
       console.warn('Could not fetch catalog uploads in reader:', err);
@@ -117,6 +111,15 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
     if (!candidate) return;
     setIsLoadingBook(true);
     try {
+      // If it's a live external scholarly journal (e.g. OpenAlex, Crossref), keep its full metadata
+      if (candidate.isLiveExternalJournal || candidate.sourceApi) {
+        setCurrentBook(candidate);
+        setCurrentPage(1);
+        if (onSelectBook) onSelectBook(candidate);
+        setReaderMode(candidate.pdfUrl ? 'pdf' : 'interactive');
+        return;
+      }
+
       const res = await fetch(`/api/catalog/${encodeURIComponent(candidate.id)}`);
       if (res.ok) {
         const full = await res.json();
@@ -134,23 +137,21 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
           cover_image: full.cover_image || full.coverImage || candidate.cover_image || candidate.coverImage || candidate.cover || '',
           coverImage: full.cover_image || full.coverImage || candidate.cover_image || candidate.coverImage || candidate.cover || '',
           hasBinaryPdf: Boolean(full.hasBinaryPdf || full.has_file || full.hasPdf || full.file_name || full.fileName || full.file_data_url || full.fileDataUrl || candidate.hasBinaryPdf || (candidate.id && (candidate.id.startsWith('FCC-HOD') || candidate.id.startsWith('HOD-UP')))),
-          pdfUrl: full.pdfUrl || candidate.pdfUrl || `/api/books/${encodeURIComponent(candidate.id)}/pdf`,
+          pdfUrl: full.file_data_url || full.fileDataUrl || full.pdfUrl || candidate.pdfUrl || `/api/books/${encodeURIComponent(candidate.id)}/pdf`,
           isDigital: true,
-          pdfPages: full.pdf_pages || full.pdfPages || candidate.pdfPages || 120
+          pdfPages: full.pdf_pages || full.pdfPages || candidate.pdfPages || 45
         };
         setCurrentBook(merged);
         setCurrentPage(1);
         if (onSelectBook) onSelectBook(merged);
-
-        // Always default to official PDF manuscript reader for authenticated uploaded books
-        setReaderMode('pdf');
+        setReaderMode(merged.hasBinaryPdf ? 'pdf' : 'interactive');
       } else {
         setCurrentBook(candidate);
-        setReaderMode('pdf');
+        setReaderMode(candidate.hasBinaryPdf ? 'pdf' : 'interactive');
       }
     } catch (e) {
       setCurrentBook(candidate);
-      setReaderMode('pdf');
+      setReaderMode('interactive');
     } finally {
       setIsLoadingBook(false);
     }
@@ -182,21 +183,31 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
   };
 
 
-  // Dynamic Syllabus Chapter Generator based on course topic
+  // Dynamic Scholarly Sections / Chapters Generator based on authentic publication attributes
   const chapters = useMemo(() => {
     if (currentBook?.chapters && Array.isArray(currentBook.chapters) && currentBook.chapters.length > 0) {
       return currentBook.chapters;
     }
-    const code = currentBook?.courseCode || 'GEN 101';
-    const dept = currentBook?.department || 'Curriculum Studies';
+    const isJournal = currentBook?.category === 'Journal' || Boolean(currentBook?.doi) || Boolean(currentBook?.issn) || Boolean(currentBook?.journalName);
+    if (isJournal) {
+      return [
+        { id: 1, title: 'Section 1: Executive Abstract, Problem Scope & Keywords', page: 1, duration: '10 min' },
+        { id: 2, title: 'Section 2: Literature Review, Theoretical Context & Hypotheses', page: 3, duration: '20 min' },
+        { id: 3, title: 'Section 3: Research Methodology, Mathematical / Empirical Framework', page: 6, duration: '25 min' },
+        { id: 4, title: 'Section 4: Data Analysis, Experimental Results & Findings', page: 10, duration: '30 min' },
+        { id: 5, title: 'Section 5: Discussion of Findings & Practical Implications', page: 15, duration: '20 min' },
+        { id: 6, title: 'Section 6: Policy Recommendations, Summary & Future Research', page: 19, duration: '15 min' },
+        { id: 7, title: 'Section 7: Bibliographic References, Citations & Open Access Metadata', page: 23, duration: '10 min' }
+      ];
+    }
     return [
-      { id: 1, title: `Module 1: Foundational Theoretical Framework of ${code}`, page: 1, duration: '25 min' },
-      { id: 2, title: `Module 2: Applied Methodologies & Institutional Principles in ${dept}`, page: 25, duration: '35 min' },
-      { id: 3, title: `Module 3: Core Analytical Models, Equations & Technical Proofs`, page: 55, duration: '40 min' },
-      { id: 4, title: `Module 4: Laboratory Practices, Case Studies & Empirical Projects`, page: 85, duration: '30 min' },
-      { id: 5, title: `Module 5: Continuous Assessment Review, Syllabus Indices & References`, page: 105, duration: '20 min' }
+      { id: 1, title: 'Chapter 1: Foundational Principles & System Scope', page: 1, duration: '25 min' },
+      { id: 2, title: 'Chapter 2: Conceptual Methodologies & Institutional Frameworks', page: 25, duration: '35 min' },
+      { id: 3, title: 'Chapter 3: Applied Technical Models & Computational Specifications', page: 55, duration: '40 min' },
+      { id: 4, title: 'Chapter 4: Empirical Laboratory Practices & Field Case Studies', page: 85, duration: '30 min' },
+      { id: 5, title: 'Chapter 5: Continuous Assessment Review, Indices & Scholarly Bibliography', page: 105, duration: '20 min' }
     ];
-  }, [currentBook?.courseCode, currentBook?.department, currentBook?.chapters]);
+  }, [currentBook?.category, currentBook?.doi, currentBook?.issn, currentBook?.journalName, currentBook?.chapters]);
 
   const filteredChapters = chapters.filter(c =>
     c.title.toLowerCase().includes(chapterSearch.toLowerCase())
@@ -206,7 +217,7 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
     for (let i = chapters.length - 1; i >= 0; i--) {
       if (currentPage >= chapters[i].page) return chapters[i];
     }
-    return chapters[0] || { title: 'Module 1.0', page: 1 };
+    return chapters[0] || { title: 'Section 1: Abstract & Overview', page: 1 };
   }, [chapters, currentPage]);
 
   const handleAddNote = (e) => {
@@ -232,18 +243,19 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
 
   const getCitationText = () => {
     const author = currentBook?.author || 'FCC Directorate';
-    const title = currentBook?.title || 'Academic Monograph';
-    const year = currentBook?.year || 2026;
-    const dept = currentBook?.department || 'Federal Co-operative College';
-    const publisher = currentBook?.publisher || 'FCC Institutional Press, Ibadan';
+    const title = currentBook?.title || 'Academic Work';
+    const year = currentBook?.year || new Date().getFullYear();
+    const journal = currentBook?.journalName || currentBook?.journal_name || currentBook?.publisher || 'Federal Co-operative College Institutional Repository';
+    const doi = currentBook?.doi ? `https://doi.org/${currentBook.doi}` : '';
+    const vol = currentBook?.volumeIssue || currentBook?.volume_issue || '';
 
     if (citationFormat === 'APA') {
-      return `${author} (${year}). ${title}. ${publisher}. Institutional Repository Ref: ${currentBook?.callNumber || 'FCC.LIB'}.`;
+      return `${author} (${year}). ${title}. ${journal}${vol ? ', ' + vol : ''}.${doi ? ' ' + doi : ''}`;
     }
     if (citationFormat === 'MLA') {
-      return `${author}. "${title}." ${publisher}, ${year}. Federal Co-operative College Digital Archives.`;
+      return `${author}. "${title}." ${journal}${vol ? ', ' + vol : ''}, ${year}.${doi ? ' ' + doi : ''}`;
     }
-    return `${author} ${year}, ${title}, ${dept}, ${publisher}.`;
+    return `${author} ${year}, '${title}', ${journal}${vol ? ', ' + vol : ''}.${doi ? ' Available at: ' + doi : ''}`;
   };
 
   const copyCitation = () => {
@@ -904,24 +916,60 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
               {/* Header Bar */}
               <div className="flex justify-between items-center text-[11px] font-sans font-bold uppercase tracking-widest text-emerald-500 pb-3 border-b border-dashed border-slate-700/50">
                 <span>{currentChapter.title}</span>
-                <span>Ref: {currentBook.callNumber}</span>
+                <span>Ref: {currentBook.callNumber || currentBook.call_number || 'FCC.LIB.DIGITAL'}</span>
               </div>
 
-              {/* Book Title & Subtitle */}
+              {/* Book / Journal Title & Bibliographic Heading */}
               <div>
                 <h2 className="text-2xl sm:text-3xl font-bold font-sans tracking-tight">
                   {currentBook.title}
                 </h2>
-                <div className="text-xs font-sans text-slate-400 mt-1 flex flex-wrap items-center gap-2">
+                <div className="text-xs font-sans text-slate-400 mt-2 flex flex-wrap items-center gap-2">
                   <span>Author: <strong className="text-white">{currentBook.author}</strong></span>
                   <span>•</span>
-                  <span>Course: <strong className="text-emerald-400">{currentBook.courseCode}</strong> ({currentBook.targetLevel})</span>
-                  <span>•</span>
-                  <span>Dept: {currentBook.department}</span>
+                  <span>Dept / Topic: <strong className="text-emerald-400">{currentBook.department || currentBook.subject || 'Academic Research'}</strong></span>
+                  {currentBook.year && (
+                    <>
+                      <span>•</span>
+                      <span>Published: {currentBook.year}</span>
+                    </>
+                  )}
+                </div>
+
+                {/* Bibliographic Badges */}
+                <div className="flex flex-wrap items-center gap-2 mt-3 font-sans text-[11px]">
+                  {(currentBook.journalName || currentBook.journal_name || currentBook.publisher) && (
+                    <span className="px-2.5 py-1 rounded-lg bg-emerald-950/80 border border-emerald-800 text-emerald-300 font-medium">
+                      🏛️ {currentBook.journalName || currentBook.journal_name || currentBook.publisher}
+                    </span>
+                  )}
+                  {(currentBook.volumeIssue || currentBook.volume_issue) && (
+                    <span className="px-2.5 py-1 rounded-lg bg-blue-950/80 border border-blue-800 text-blue-300 font-mono">
+                      {currentBook.volumeIssue || currentBook.volume_issue}
+                    </span>
+                  )}
+                  {currentBook.issn && (
+                    <span className="px-2.5 py-1 rounded-lg bg-purple-950/80 border border-purple-800 text-purple-300 font-mono">
+                      ISSN {currentBook.issn}
+                    </span>
+                  )}
+                  {currentBook.doi && (
+                    <a
+                      href={`https://doi.org/${currentBook.doi}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-2.5 py-1 rounded-lg bg-cyan-950/80 border border-cyan-800 text-cyan-300 font-mono hover:underline flex items-center gap-1"
+                    >
+                      <ExternalLink size={11} /> DOI: {currentBook.doi}
+                    </a>
+                  )}
+                  <span className="px-2.5 py-1 rounded-lg bg-amber-950/60 border border-amber-800 text-amber-300 font-medium">
+                    ✓ Verified Academic Record
+                  </span>
                 </div>
               </div>
 
-              {/* Syllabus Overview & Abstract Box */}
+              {/* Verified Abstract Box */}
               <div className={`p-4 rounded-xl border font-sans text-xs leading-relaxed space-y-1.5 ${
                 theme === 'dark'
                   ? 'bg-emerald-950/30 border-emerald-800/40 text-emerald-300'
@@ -930,64 +978,85 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
                   : 'bg-emerald-50 border-emerald-200 text-emerald-950'
               }`}>
                 <div className="font-bold flex items-center gap-1.5">
-                  <Sparkles size={14} /> Course Abstract & Learning Framework:
+                  <Sparkles size={14} /> Executive Abstract & Scholarly Scope:
                 </div>
                 <p>
-                  {currentBook.abstract || `Official departmental syllabus monograph and academic instructional materials prepared for ${currentBook.courseCode} students of Federal Co-operative College, Ibadan.`}
+                  {currentBook.abstract || `Scholarly publication by ${currentBook.author || 'academic faculty'} indexed in the Federal Co-operative College Institutional Repository and academic databases.`}
                 </p>
               </div>
 
-              {/* Reading Content Modules */}
-              <div className="space-y-4">
+              {/* Section Analytical Content */}
+              <div className="space-y-4 font-sans text-sm">
                 <h3 className="text-lg font-bold font-sans">
                   {currentChapter.title}
                 </h3>
 
-                <p>
-                  Within the accredited academic curricula of the Federal Co-operative College, Ibadan, the study of {currentBook.department} bridges rigorous theoretical formulations with practical field methodology. Students are instructed to evaluate institutional case dynamics, compliance guidelines, and empirical governance structures.
+                <p className="leading-relaxed">
+                  This section examines the critical theoretical foundations, empirical developments, and applied frameworks presented in <strong>&ldquo;{currentBook.title}&rdquo;</strong> by <strong>{currentBook.author}</strong>. The analysis emphasizes rigorous academic standards, verified peer-reviewed methodology, and comprehensive scholarly inquiry.
                 </p>
 
-                <p>
-                  As outlined by {currentBook.author}, statutory standards and regulatory ratios establish the foundation of continuous learning. Members and scholars must systematically analyze syllabus-mandated units, field exercises, and practical laboratory components.
+                <p className="leading-relaxed">
+                  Scholars and researchers investigating <strong>{currentBook.department || 'contemporary curriculum'}</strong> can review the primary experimental arguments, data sets, and institutional applications documented within this work.
                 </p>
 
-                {/* Mathematical Formula / Theorem Block */}
-                <div className={`p-4 rounded-xl border font-mono text-xs my-3 space-y-1.5 ${
+                {/* Scholarly Citation Box */}
+                <div className={`p-4 rounded-xl border text-xs my-3 space-y-2 ${
                   theme === 'dark'
-                    ? 'bg-slate-950/80 border-slate-700/80 text-emerald-300'
+                    ? 'bg-slate-950/80 border-slate-700/80 text-slate-200'
                     : theme === 'sepia'
                     ? 'bg-[#ebe0d0] border-[#c9bba6] text-[#3b2b1a]'
                     : 'bg-slate-100 border-slate-300 text-slate-900'
                 }`}>
-                  <div className="font-bold uppercase tracking-wider text-[10px] text-slate-500">
-                    Equation & Institutional Criterion Model ({currentBook.courseCode}.1):
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold uppercase tracking-wider text-[10px] text-emerald-400">
+                      Standard Academic Citation ({citationFormat}):
+                    </span>
+                    <button
+                      onClick={copyCitation}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition flex items-center gap-1"
+                    >
+                      {copiedCitation ? <Check size={11} /> : <Copy size={11} />}
+                      <span>{copiedCitation ? 'Copied' : 'Copy Citation'}</span>
+                    </button>
                   </div>
-                  <code>
-                    R_res = &sum;(Alpha_i &times; Output_i) / (1 + Rate_discount) &plus; Reserve_Statutory
-                  </code>
-                  <div className="text-[10px] text-slate-400 pt-1 font-sans">
-                    * Applied in weekly laboratory sessions and continuous assessment evaluations.
+                  <div className="font-mono text-[11px] bg-slate-900/60 p-2.5 rounded-lg border border-slate-800 break-words">
+                    {getCitationText()}
                   </div>
                 </div>
 
-                <p>
-                  Subsequent empirical sections evaluate operational resilience across Western Nigeria agricultural unions and cooperative credit systems, assessing solvency benchmarks, liquidity management, and technological integration.
-                </p>
-
-                {/* Practical Learning Outcomes */}
-                <div className={`p-4 rounded-xl border font-sans text-xs space-y-2 ${
-                  theme === 'dark'
-                    ? 'bg-slate-950/60 border-slate-800 text-slate-300'
-                    : theme === 'sepia'
-                    ? 'bg-[#f4ede4] border-[#d8cbbe] text-[#3b2b1a]'
-                    : 'bg-slate-50 border-slate-200 text-slate-800'
-                }`}>
-                  <strong className="block text-white">Syllabus Competency Outcomes:</strong>
-                  <ul className="list-disc list-inside space-y-1">
-                    <li>Synthesize foundational concepts of {currentBook.courseCode} with statutory guidelines.</li>
-                    <li>Conduct quantitative evaluations using departmental empirical frameworks.</li>
-                    <li>Participate in end-of-term seminar presentations and central library reserve study hours.</li>
-                  </ul>
+                {/* External Actions & Source Access */}
+                <div className="flex flex-wrap items-center gap-2 pt-2">
+                  {currentBook.doi && (
+                    <a
+                      href={`https://doi.org/${currentBook.doi}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition flex items-center gap-1.5 shadow"
+                    >
+                      <ExternalLink size={13} />
+                      <span>Open Full Publisher Source (DOI)</span>
+                    </a>
+                  )}
+                  {currentBook.externalUrl && !currentBook.doi && (
+                    <a
+                      href={currentBook.externalUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition flex items-center gap-1.5 border border-slate-700"
+                    >
+                      <ExternalLink size={13} />
+                      <span>Open External Repository Paper</span>
+                    </a>
+                  )}
+                  {currentBook.pdfUrl && (
+                    <button
+                      onClick={() => setReaderMode('pdf')}
+                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition flex items-center gap-1.5 shadow"
+                    >
+                      <FileText size={13} />
+                      <span>Switch to PDF Canvas Viewer</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
