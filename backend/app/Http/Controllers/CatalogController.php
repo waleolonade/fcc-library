@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Book;
+use App\Models\DepartmentUpload;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -532,53 +533,14 @@ class CatalogController extends Controller
     public function checkDuplicate(Request $request)
     {
         $title = trim($request->input('title', ''));
+        $author = trim($request->input('author', ''));
         $isbn = trim($request->input('isbn', ''));
         $doi = trim($request->input('doi', ''));
-        $fileName = trim($request->input('fileName', ''));
+        $fileName = trim($request->input('fileName', $request->input('file_name', '')));
 
-        $existing = null;
-
-        if ($isbn) {
-            $existing = Book::where('isbn', $isbn)->first();
-        }
-
-        if (!$existing && $doi) {
-            $existing = Book::where('doi', $doi)->first();
-        }
-
-        if (!$existing && $title) {
-            $cleanTitle = strtolower(preg_replace('/[^a-zA-Z0-9\s]/', '', str_replace(['.pdf', '-', '_'], ' ', $title)));
-            $cleanTitle = trim(preg_replace('/\s+/', ' ', $cleanTitle));
-
-            $all = Book::select('id', 'title', 'author', 'isbn', 'call_number', 'file_name', 'uploaded_at')->get();
-            foreach ($all as $b) {
-                $bTitle = strtolower(preg_replace('/[^a-zA-Z0-9\s]/', '', str_replace(['.pdf', '-', '_'], ' ', $b->title)));
-                $bTitle = trim(preg_replace('/\s+/', ' ', $bTitle));
-                if ($bTitle === $cleanTitle || (strlen($cleanTitle) > 8 && (str_contains($bTitle, $cleanTitle) || str_contains($cleanTitle, $bTitle)))) {
-                    $existing = $b;
-                    break;
-                }
-            }
-        }
-
-        if (!$existing && $fileName) {
-            $existing = Book::whereRaw('LOWER(file_name) = ?', [strtolower($fileName)])->first();
-        }
-
-        if ($existing) {
-            return response()->json([
-                'isDuplicate' => true,
-                'message' => "Book already exists in library catalogue as \"{$existing->title}\" by {$existing->author}",
-                'book' => [
-                    'id' => $existing->id,
-                    'title' => $existing->title,
-                    'author' => $existing->author,
-                    'isbn' => $existing->isbn,
-                    'callNumber' => $existing->call_number,
-                    'fileName' => $existing->file_name,
-                    'uploadedAt' => $existing->uploaded_at
-                ]
-            ]);
+        $result = $this->findExistingDuplicateItem($title, $author, $isbn, $doi, $fileName);
+        if ($result) {
+            return response()->json($result);
         }
 
         return response()->json([
@@ -587,10 +549,200 @@ class CatalogController extends Controller
         ]);
     }
 
+    public function checkDuplicateBatch(Request $request)
+    {
+        $items = $request->input('items', []);
+        if (!is_array($items)) {
+            $items = [];
+        }
+
+        $results = [];
+        foreach ($items as $index => $item) {
+            $title = trim($item['title'] ?? '');
+            $author = trim($item['author'] ?? '');
+            $isbn = trim($item['isbn'] ?? '');
+            $doi = trim($item['doi'] ?? '');
+            $fileName = trim($item['fileName'] ?? $item['file_name'] ?? '');
+
+            $dup = $this->findExistingDuplicateItem($title, $author, $isbn, $doi, $fileName);
+            $results[$index] = $dup ?: ['isDuplicate' => false, 'message' => 'No duplicate detected'];
+        }
+
+        return response()->json([
+            'success' => true,
+            'results' => $results
+        ]);
+    }
+
+    public function findExistingDuplicateItem(?string $title, ?string $author, ?string $isbn, ?string $doi, ?string $fileName): ?array
+    {
+        $existing = null;
+        $existingUpload = null;
+
+        // 1. Check ISBN match
+        if (!empty($isbn) && strlen($isbn) >= 6) {
+            $existing = Book::where('isbn', $isbn)->first();
+            if (!$existing) {
+                $existingUpload = DepartmentUpload::where('isbn', $isbn)->first();
+            }
+        }
+
+        // 2. Check DOI match
+        if (!$existing && !$existingUpload && !empty($doi) && strlen($doi) >= 5) {
+            $existing = Book::where('doi', $doi)->first();
+            if (!$existing) {
+                $existingUpload = DepartmentUpload::where('doi', $doi)->first();
+            }
+        }
+
+        // 3. Check Exact / High-Similarity Title match
+        if (!$existing && !$existingUpload && !empty($title) && strlen($title) >= 4) {
+            $cleanTitle = strtolower(preg_replace('/[^a-zA-Z0-9\s]/', '', str_replace(['.pdf', '-', '_'], ' ', $title)));
+            $cleanTitle = trim(preg_replace('/\s+/', ' ', $cleanTitle));
+
+            // Search books
+            $allBooks = Book::select('id', 'title', 'author', 'department', 'shelf_location', 'call_number', 'isbn', 'doi', 'file_name', 'uploaded_at', 'created_at')->get();
+            foreach ($allBooks as $b) {
+                $bTitle = strtolower(preg_replace('/[^a-zA-Z0-9\s]/', '', str_replace(['.pdf', '-', '_'], ' ', $b->title)));
+                $bTitle = trim(preg_replace('/\s+/', ' ', $bTitle));
+                if ($bTitle === $cleanTitle || (strlen($cleanTitle) > 10 && (str_contains($bTitle, $cleanTitle) || str_contains($cleanTitle, $bTitle)))) {
+                    $existing = $b;
+                    break;
+                }
+            }
+
+            // Search department uploads if not found in catalog books
+            if (!$existing) {
+                $allUploads = DepartmentUpload::select('id', 'book_id', 'title', 'author', 'course_code', 'department_name', 'assigned_call_number', 'assigned_shelf', 'file_name', 'status', 'created_at', 'hod_name')->get();
+                foreach ($allUploads as $u) {
+                    $uTitle = strtolower(preg_replace('/[^a-zA-Z0-9\s]/', '', str_replace(['.pdf', '-', '_'], ' ', $u->title)));
+                    $uTitle = trim(preg_replace('/\s+/', ' ', $uTitle));
+                    if ($uTitle === $cleanTitle || (strlen($cleanTitle) > 10 && (str_contains($uTitle, $cleanTitle) || str_contains($cleanTitle, $uTitle)))) {
+                        $existingUpload = $u;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 4. Check Exact Filename match (if not generic like document.pdf)
+        $genericNames = ['document.pdf', 'file.pdf', 'download.pdf', 'upload.pdf', 'book.pdf'];
+        if (!$existing && !$existingUpload && !empty($fileName) && !in_array(strtolower($fileName), $genericNames) && strlen($fileName) >= 5) {
+            $cleanFile = strtolower(basename($fileName));
+            $existing = Book::whereRaw('LOWER(file_name) = ?', [$cleanFile])->first();
+            if (!$existing) {
+                $existingUpload = DepartmentUpload::whereRaw('LOWER(file_name) = ?', [$cleanFile])->first();
+            }
+        }
+
+        // Construct Rich Tracing Metadata
+        if ($existing) {
+            $cardNo = $existing->id;
+            $callNo = $existing->call_number ?: ($existing->assigned_call_number ?: 'FCC.LIB.2026');
+            $shelf = $existing->shelf_location ?: 'Central Campus Library';
+            $dept = $existing->department ?: 'Federal Co-operative College';
+
+            return [
+                'isDuplicate' => true,
+                'card_number' => $cardNo,
+                'call_number' => $callNo,
+                'shelf_location' => $shelf,
+                'source' => 'Central Library Catalog',
+                'status' => 'Cataloged & Active in OPAC',
+                'message' => "This document already exists in the institutional repository! Card No: [{$cardNo}] • Call No: [{$callNo}]",
+                'book' => [
+                    'id' => $existing->id,
+                    'card_number' => $cardNo,
+                    'call_number' => $callNo,
+                    'callNumber' => $callNo,
+                    'shelf_location' => $shelf,
+                    'shelfLocation' => $shelf,
+                    'title' => $existing->title,
+                    'author' => $existing->author,
+                    'department' => $dept,
+                    'course_code' => $existing->course_code ?? '',
+                    'target_level' => $existing->target_level ?? '',
+                    'uploaded_by' => $existing->uploaded_by ?? 'Central Library Administration',
+                    'isbn' => $existing->isbn ?? '',
+                    'doi' => $existing->doi ?? '',
+                    'file_name' => $existing->file_name ?? '',
+                    'fileName' => $existing->file_name ?? '',
+                    'uploaded_at' => $existing->uploaded_at ?? $existing->created_at ?? date('Y-m-d'),
+                    'uploadedAt' => $existing->uploaded_at ?? $existing->created_at ?? date('Y-m-d'),
+                    'status' => 'Cataloged & Active'
+                ]
+            ];
+        }
+
+        if ($existingUpload) {
+            $cardNo = $existingUpload->book_id ?: $existingUpload->id;
+            $callNo = $existingUpload->assigned_call_number ?: 'FCC.LIB.HOD.2026';
+            $shelf = $existingUpload->assigned_shelf ?: 'Departmental Digital Repository';
+            $dept = $existingUpload->department_name ?: 'Academic Faculty';
+
+            return [
+                'isDuplicate' => true,
+                'card_number' => $cardNo,
+                'call_number' => $callNo,
+                'shelf_location' => $shelf,
+                'source' => 'Departmental Ingestion Repository',
+                'status' => ucfirst($existingUpload->status ?: 'Pending Review'),
+                'message' => "This document already exists in the departmental repository! Card No: [{$cardNo}] • Call No: [{$callNo}]",
+                'book' => [
+                    'id' => $existingUpload->id,
+                    'book_id' => $existingUpload->book_id,
+                    'card_number' => $cardNo,
+                    'call_number' => $callNo,
+                    'callNumber' => $callNo,
+                    'shelf_location' => $shelf,
+                    'shelfLocation' => $shelf,
+                    'title' => $existingUpload->title,
+                    'author' => $existingUpload->author,
+                    'department' => $dept,
+                    'course_code' => $existingUpload->course_code ?? '',
+                    'target_level' => $existingUpload->target_level ?? '',
+                    'uploaded_by' => $existingUpload->hod_name ?? 'Faculty Unit',
+                    'isbn' => $existingUpload->isbn ?? '',
+                    'doi' => $existingUpload->doi ?? '',
+                    'file_name' => $existingUpload->file_name ?? '',
+                    'fileName' => $existingUpload->file_name ?? '',
+                    'uploaded_at' => $existingUpload->created_at ? $existingUpload->created_at->format('Y-m-d') : date('Y-m-d'),
+                    'uploadedAt' => $existingUpload->created_at ? $existingUpload->created_at->format('Y-m-d') : date('Y-m-d'),
+                    'status' => ucfirst($existingUpload->status ?: 'Pending Review')
+                ]
+            ];
+        }
+
+        return null;
+    }
+
     public function store(Request $request)
     {
         $data = $request->all();
         $id = $data['id'] ?? ('FCC-PDF-' . rand(1000, 9999));
+
+        // Duplicate document protection
+        if (!$request->boolean('allow_duplicate') && !Book::where('id', $id)->exists() && !empty($data['title'])) {
+            $dup = $this->findExistingDuplicateItem(
+                $data['title'],
+                $data['author'] ?? null,
+                $data['isbn'] ?? null,
+                $data['doi'] ?? null,
+                $data['fileName'] ?? $data['file_name'] ?? null
+            );
+            if ($dup && !empty($dup['isDuplicate']) && ($dup['card_number'] !== $id)) {
+                return response()->json([
+                    'success' => false,
+                    'isDuplicate' => true,
+                    'card_number' => $dup['card_number'],
+                    'call_number' => $dup['call_number'],
+                    'shelf_location' => $dup['shelf_location'],
+                    'source' => $dup['source'] ?? 'Central Library Catalog',
+                    'message' => "This document already exists in the institutional repository! Card No: [{$dup['card_number']}] • Call No: [{$dup['call_number']}]",
+                    'book' => $dup['book']
+                ], 409);
+            }
+        }
 
         $book = Book::updateOrCreate(
             ['id' => $id],

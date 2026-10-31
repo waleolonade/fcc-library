@@ -112,29 +112,61 @@ export const libraryApi = {
       return cached.find(b => b.id.toLowerCase() === id.toLowerCase()) || null;
     },
 
-    async checkDuplicate({ title, isbn, doi, fileName }) {
+    async checkDuplicate({ title, author, isbn, doi, fileName }) {
       const res = await fetchApi('/catalog/check-duplicate', {
         method: 'POST',
-        body: JSON.stringify({ title, isbn, doi, fileName })
+        body: JSON.stringify({ title, author, isbn, doi, fileName })
       });
-      if (res) return res;
+      if (res && res.isDuplicate !== undefined) return res;
 
       // Local fallback check
       const cached = getStored(STORAGE_KEYS.CATALOG, []);
       const cleanT = (title || '').trim().toLowerCase().replace(/\.pdf$/i, '').replace(/[-_]/g, ' ').replace(/[^\w\s]/g, '').trim();
       const match = cached.find(b => {
-        if (isbn && b.isbn === isbn) return true;
-        if (doi && b.doi === doi) return true;
-        if (cleanT && (b.title || '').trim().toLowerCase().replace(/\.pdf$/i, '').replace(/[-_]/g, ' ').replace(/[^\w\s]/g, '').trim() === cleanT) return true;
+        if (isbn && b.isbn && String(b.isbn) === String(isbn)) return true;
+        if (doi && b.doi && String(b.doi).toLowerCase() === String(doi).toLowerCase()) return true;
+        const bClean = (b.title || '').trim().toLowerCase().replace(/\.pdf$/i, '').replace(/[-_]/g, ' ').replace(/[^\w\s]/g, '').trim();
+        if (cleanT && cleanT.length > 3 && (bClean === cleanT || (cleanT.length > 10 && (bClean.includes(cleanT) || cleanT.includes(bClean))))) return true;
         if (fileName && b.fileName && b.fileName.toLowerCase() === fileName.toLowerCase()) return true;
         return false;
       });
 
+      if (match) {
+        const cardNo = match.card_number || match.id || 'FCC-B001';
+        const callNo = match.call_number || match.callNumber || 'FCC.LIB.2026';
+        return {
+          isDuplicate: true,
+          card_number: cardNo,
+          call_number: callNo,
+          shelf_location: match.shelf_location || match.shelfLocation || 'Digital E-Library',
+          source: 'Local Catalog Store',
+          status: 'Cataloged & Active',
+          message: `This document already exists in the institutional repository! Card No: [${cardNo}] • Call No: [${callNo}]`,
+          book: {
+            ...match,
+            card_number: cardNo,
+            call_number: callNo
+          }
+        };
+      }
+
       return {
-        isDuplicate: Boolean(match),
-        book: match || null,
-        message: match ? `Book already exists in catalogue as "${match.title}"` : 'No duplicate detected'
+        isDuplicate: false,
+        message: 'No duplicate detected'
       };
+    },
+
+    async checkDuplicateBatch(items) {
+      if (!Array.isArray(items) || items.length === 0) return { success: true, results: [] };
+      const res = await fetchApi('/catalog/check-duplicate-batch', {
+        method: 'POST',
+        body: JSON.stringify({ items })
+      });
+      if (res && res.results) return res;
+
+      // Local fallback
+      const results = await Promise.all(items.map(it => this.checkDuplicate(it)));
+      return { success: true, results };
     },
 
     async uploadPdfBook(bookData) {

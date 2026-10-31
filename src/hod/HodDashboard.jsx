@@ -23,6 +23,7 @@ import { sounds } from '../utils/soundEffects';
 import { institutionalConfigService } from '../services/institutionalConfigService';
 import { developerConfigService } from '../services/developerConfigService';
 import DigitalBookReader from '../common/DigitalBookReader';
+import DuplicateBookModal from '../common/DuplicateBookModal';
 import { compressPdf, compressCoverImage } from '../utils/pdfCompressor';
 import { analyzeUploadedPdf } from '../utils/pdfDeepAnalyzer';
 import PdfOptimizerWidget from '../common/PdfOptimizerWidget';
@@ -405,6 +406,9 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
   const [catalogBooks, setCatalogBooks] = useState([]);
   const [isLoadingCatalogBooks, setIsLoadingCatalogBooks] = useState(false);
   const [activeReaderBook, setActiveReaderBook] = useState(null);
+  const [duplicateModalInfo, setDuplicateModalInfo] = useState(null);
+  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
+  const bypassQuickUploadDupRef = useRef(false);
   const [selectedCatalogBookDossier, setSelectedCatalogBookDossier] = useState(null);
   const [deptBookSearchQuery, setDeptBookSearchQuery] = useState('');
   const [hodBooksScope, setHodBooksScope] = useState('dept'); // 'dept' | 'all'
@@ -2122,6 +2126,23 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
       alert('Please enter a Title for the book or PDF resource.');
       return;
     }
+    if (!bypassQuickUploadDupRef.current) {
+      try {
+        const dupRes = await libraryApi.catalog.checkDuplicate({
+          title: quickUploadForm.title.trim(),
+          author: quickUploadForm.author.trim(),
+          fileName: quickUploadForm.file_name
+        });
+        if (dupRes && dupRes.isDuplicate) {
+          setDuplicateModalInfo(dupRes);
+          setIsDuplicateModalOpen(true);
+          try { sounds.playWarning(); } catch {}
+          return;
+        }
+      } catch (e) {}
+    }
+    bypassQuickUploadDupRef.current = false;
+
     setIsSubmittingQuickUpload(true);
     try {
       const effectiveLevel = quickUploadForm.target_level === 'Other'
@@ -8131,6 +8152,28 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
           />
         </div>
       )}
+
+      {/* Institutional Duplicate Detection & Tracing Modal in HOD Dashboard */}
+      <DuplicateBookModal
+        isOpen={isDuplicateModalOpen}
+        duplicateInfo={duplicateModalInfo}
+        onClose={() => {
+          setIsDuplicateModalOpen(false);
+          setDuplicateModalInfo(null);
+        }}
+        onProceedAnyway={() => {
+          bypassQuickUploadDupRef.current = true;
+          setIsDuplicateModalOpen(false);
+          handleSaveQuickUpload({ preventDefault: () => {} });
+        }}
+        onTrace={(book) => {
+          setIsDuplicateModalOpen(false);
+          const targetCard = duplicateModalInfo?.card_number || duplicateModalInfo?.book?.card_number || duplicateModalInfo?.book?.id || book?.id;
+          if (targetCard && typeof window !== 'undefined') {
+            window.location.hash = `#/reader/${encodeURIComponent(targetCard)}`;
+          }
+        }}
+      />
     </div>
   );
 }

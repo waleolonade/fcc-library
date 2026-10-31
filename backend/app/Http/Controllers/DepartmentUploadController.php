@@ -1683,6 +1683,32 @@ class DepartmentUploadController extends Controller
             ? json_encode($extraMeta)
             : ($validated['review_notes'] ?? null);
 
+        // Institutional Duplicate Protection Check
+        if (!$request->boolean('allow_duplicate') && !empty($validated['title'])) {
+            try {
+                $catController = app(\App\Http\Controllers\CatalogController::class);
+                $dup = $catController->findExistingDuplicateItem(
+                    $validated['title'],
+                    $validated['author'] ?? null,
+                    $extraMeta['isbn'] ?? null,
+                    $extraMeta['doi'] ?? null,
+                    $validated['file_name'] ?? null
+                );
+                if ($dup && !empty($dup['isDuplicate'])) {
+                    return response()->json([
+                        'success' => false,
+                        'isDuplicate' => true,
+                        'card_number' => $dup['card_number'],
+                        'call_number' => $dup['call_number'],
+                        'shelf_location' => $dup['shelf_location'],
+                        'source' => $dup['source'] ?? 'Institutional Central Repository',
+                        'message' => "This document already exists in the institutional repository! Card No: [{$dup['card_number']}] • Call No: [{$dup['call_number']}]",
+                        'book' => $dup['book']
+                    ], 409);
+                }
+            } catch (\Throwable $dupErr) {}
+        }
+
         if ($isDirect) {
             $rightsStatus = $isProject ? 'Student Capstone Project / Thesis' : ($isJournal ? 'Academic Research Journal' : 'Approved Academic Book');
             $prefix = $isProject ? 'FCC-PRJ-' : ($isJournal ? 'FCC-JRN-' : 'FCC-HOD-');

@@ -16,7 +16,8 @@ import { compressPdf, compressCoverImage } from '../utils/pdfCompressor';
 import PdfOptimizerWidget from '../common/PdfOptimizerWidget';
 import PdfAnalysisInspector from '../common/PdfAnalysisInspector';
 import DigitalBookReader from '../common/DigitalBookReader';
-import { getApiBase } from '../api/libraryApi';
+import { getApiBase, libraryApi } from '../api/libraryApi';
+import DuplicateBookModal from '../common/DuplicateBookModal';
 import { publishRealtimeEvent } from '../services/realtimeSync';
 import { getDynamicDeptTheme, HOD_DEPARTMENT_THEMES } from './hodThemeConfig';
 import {
@@ -84,6 +85,9 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
   // Academic Upload Category: 'book' | 'journal' | 'project'
   const [uploadCategory, setUploadCategory] = useState('book');
   const [showInStudioPreviewModal, setShowInStudioPreviewModal] = useState(false);
+  const [duplicateModalInfo, setDuplicateModalInfo] = useState(null);
+  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
+  const bypassDuplicateCheckRef = useRef(false);
 
   // Database-backed department list fetched dynamically
   const [dbDepartments, setDbDepartments] = useState(() => {
@@ -1608,6 +1612,22 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
             file_name: file.name
           }));
           sounds.playSuccessChime();
+
+          // Instant Duplicate Verification against Repository
+          const titleToCheck = ext.title || file.name;
+          libraryApi.catalog.checkDuplicate({
+            title: titleToCheck,
+            author: ext.author || '',
+            isbn: ext.isbn || '',
+            doi: ext.doi || '',
+            fileName: file.name
+          }).then(dupRes => {
+            if (dupRes && dupRes.isDuplicate) {
+              setDuplicateModalInfo(dupRes);
+              setIsDuplicateModalOpen(true);
+              try { sounds.playWarning(); } catch {}
+            }
+          }).catch(() => {});
         }
       } catch (err) {
         console.error('PDF Deep Analysis error:', err);
@@ -5036,6 +5056,32 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
           </div>
         </div>
       )}
+
+      {/* High-Visibility Institutional Duplicate Detection & Tracing Modal */}
+      <DuplicateBookModal
+        isOpen={isDuplicateModalOpen}
+        duplicateInfo={duplicateModalInfo}
+        onClose={() => {
+          setIsDuplicateModalOpen(false);
+          setDuplicateModalInfo(null);
+        }}
+        onProceedAnyway={() => {
+          bypassDuplicateCheckRef.current = true;
+          setIsDuplicateModalOpen(false);
+          if (studioMode === 'single') {
+            handleSubmit();
+          } else {
+            handleBatchSubmit();
+          }
+        }}
+        onTrace={(book) => {
+          setIsDuplicateModalOpen(false);
+          const targetCard = duplicateModalInfo?.card_number || duplicateModalInfo?.book?.card_number || duplicateModalInfo?.book?.id || book?.id;
+          if (targetCard && typeof window !== 'undefined') {
+            window.location.hash = `#/reader/${encodeURIComponent(targetCard)}`;
+          }
+        }}
+      />
     </div>
   );
 }

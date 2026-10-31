@@ -36,6 +36,7 @@ import StudentBulkImportModal from '../common/StudentBulkImportModal';
 import StudentEditModal from '../common/StudentEditModal';
 import AdminSecuritySettingsModal from '../common/AdminSecuritySettingsModal';
 import DigitalBookReader from '../common/DigitalBookReader';
+import DuplicateBookModal from '../common/DuplicateBookModal';
 import { developerConfigService } from '../services/developerConfigService';
 import { developerApiCall } from '../services/developerApi';
 import MaintenanceBroadcastBanner from '../common/MaintenanceBroadcastBanner';
@@ -960,6 +961,9 @@ export default function FccAdminLibrary({
     coverFileName: ''
   });
   const [pdfDuplicateCheck, setPdfDuplicateCheck] = useState(null);
+  const [duplicateModalInfo, setDuplicateModalInfo] = useState(null);
+  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
+  const bypassAdminDupRef = useRef(false);
   const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
   const [isSubmittingBook, setIsSubmittingBook] = useState(false);
   const adminCoverInputRef = useRef(null);
@@ -994,6 +998,11 @@ export default function FccAdminLibrary({
       if (res.ok) {
         const result = await res.json();
         setPdfDuplicateCheck(result);
+        if (result && result.isDuplicate) {
+          setDuplicateModalInfo(result);
+          setIsDuplicateModalOpen(true);
+          try { sounds.playWarning(); } catch {}
+        }
       }
     } catch (e) {
       console.warn('Duplicate check offline:', e);
@@ -1092,6 +1101,16 @@ export default function FccAdminLibrary({
       alert('Title and Author are mandatory for institutional cataloguing.');
       return;
     }
+
+    if (!bypassAdminDupRef.current) {
+      if (pdfDuplicateCheck && pdfDuplicateCheck.isDuplicate) {
+        setDuplicateModalInfo(pdfDuplicateCheck);
+        setIsDuplicateModalOpen(true);
+        try { sounds.playWarning(); } catch {}
+        return;
+      }
+    }
+    bypassAdminDupRef.current = false;
 
     setIsSubmittingBook(true);
     const newBookPayload = {
@@ -3845,6 +3864,28 @@ export default function FccAdminLibrary({
         onClose={() => setShowAdminSecurityModal(false)}
         currentUser={adminUserProfile}
         onProfileUpdated={(updated) => setAdminUserProfile(updated)}
+      />
+
+      {/* Admin Central Repository Duplicate Tracing Modal */}
+      <DuplicateBookModal
+        isOpen={isDuplicateModalOpen}
+        duplicateInfo={duplicateModalInfo}
+        onClose={() => {
+          setIsDuplicateModalOpen(false);
+          setDuplicateModalInfo(null);
+        }}
+        onProceedAnyway={() => {
+          bypassAdminDupRef.current = true;
+          setIsDuplicateModalOpen(false);
+          handleCatalogCommit({ preventDefault: () => {} });
+        }}
+        onTrace={(book) => {
+          setIsDuplicateModalOpen(false);
+          const targetCard = duplicateModalInfo?.card_number || duplicateModalInfo?.book?.card_number || duplicateModalInfo?.book?.id || book?.id;
+          if (targetCard && typeof window !== 'undefined') {
+            window.location.hash = `#/reader/${encodeURIComponent(targetCard)}`;
+          }
+        }}
       />
     </div>
   );

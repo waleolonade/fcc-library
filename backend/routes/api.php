@@ -253,6 +253,7 @@ Route::get('/catalog/{id}', [CatalogController::class, 'show']);
 Route::get('/books/{id}/cover', [CatalogController::class, 'cover']);
 Route::get('/books/{id}/file', [CatalogController::class, 'file']);
 Route::post('/catalog/check-duplicate', [CatalogController::class, 'checkDuplicate']);
+Route::post('/catalog/check-duplicate-batch', [CatalogController::class, 'checkDuplicateBatch']);
 Route::post('/catalog', [CatalogController::class, 'store']);
 Route::post('/catalog/bulk-delete', [CatalogController::class, 'bulkDestroy']);
 Route::post('/books/bulk-delete', [CatalogController::class, 'bulkDestroy']);
