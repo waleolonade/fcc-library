@@ -1404,6 +1404,15 @@ class DepartmentUploadController extends Controller
             ]);
         } catch (\Throwable $e) {}
 
+        // Broadcast real-time deletion event
+        \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+            'action' => 'DELETE',
+            'entity' => 'upload',
+            'id' => $cleanId,
+            'ids' => array_values(array_unique(array_filter(array_merge([$cleanId, $upload->id ?? null, $upload->book_id ?? null], $bookIdsToDelete ?? [])))),
+            'title' => $title ?: $cleanId,
+        ]);
+
         return response()->json([
             'success' => true,
             'deleted_book_ids' => $bookIdsToDelete,
@@ -1523,6 +1532,14 @@ class DepartmentUploadController extends Controller
                 'ip_address' => $request->ip()
             ]);
         } catch (\Throwable $e) {}
+
+        // Broadcast real-time bulk deletion event
+        \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+            'action' => 'DELETE',
+            'entity' => 'upload',
+            'ids' => array_values(array_unique(array_filter(array_merge($ids, $deletedBookIds)))),
+            'title' => "{$deletedCount} submissions deleted in bulk",
+        ]);
 
         return response()->json([
             'success' => true,
@@ -1874,6 +1891,15 @@ class DepartmentUploadController extends Controller
         $returnUpload['file_data_url'] = '';
         $returnUpload['has_file'] = !empty($upload->file_name) || !empty($upload->file_data_url);
         $returnUpload['file_url'] = "/api/department-uploads/{$upload->id}/file";
+
+        // Broadcast real-time upload event
+        \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+            'action' => 'UPLOAD',
+            'entity' => 'upload',
+            'id' => $upload->id,
+            'title' => $upload->title,
+            'data' => $returnUpload
+        ]);
 
         return response()->json([
             'success' => true,
@@ -2459,6 +2485,19 @@ class DepartmentUploadController extends Controller
             ]);
         }
 
+        // Broadcast real-time bulk upload event
+        \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+            'action' => 'UPLOAD',
+            'entity' => 'upload',
+            'ids' => array_column($processedUploads, 'id'),
+            'title' => "{$count} resources submitted in bulk",
+            'data' => [
+                'count' => $count,
+                'uploads' => $processedUploads,
+                'published_books' => $publishedBooks
+            ]
+        ]);
+
         return response()->json([
             'success' => $count > 0,
             'count' => $count,
@@ -2803,6 +2842,21 @@ class DepartmentUploadController extends Controller
             'timestamp' => Carbon::now()->toIso8601String()
         ]);
 
+        // Broadcast real-time approval & publication event
+        \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+            'action' => 'APPROVE',
+            'entity' => 'upload',
+            'id' => $upload->id,
+            'ids' => array_values(array_filter([$upload->id, $bookId])),
+            'title' => $upload->title,
+            'data' => [
+                'status' => 'approved',
+                'book_id' => $bookId,
+                'book' => $book ? $book->toArray() : null,
+                'upload' => $upload->toArray()
+            ]
+        ]);
+
         return response()->json([
             'success' => true,
             'message' => "HOD resource '{$upload->title}' approved and published to Master Library Catalog & OPAC!",
@@ -2850,6 +2904,18 @@ class DepartmentUploadController extends Controller
             'ip_address' => $request->ip() ?? '127.0.0.1',
             'hash' => hash('sha256', microtime(true) . $upload->id),
             'timestamp' => Carbon::now()->toIso8601String()
+        ]);
+
+        // Broadcast real-time rejection event
+        \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+            'action' => 'REJECT',
+            'entity' => 'upload',
+            'id' => $upload->id,
+            'title' => $upload->title,
+            'data' => [
+                'status' => 'rejected',
+                'rejection_reason' => $declineReason
+            ]
         ]);
 
         return response()->json([
@@ -2943,6 +3009,15 @@ class DepartmentUploadController extends Controller
             'ip_address' => $request->ip() ?? '127.0.0.1',
             'hash' => hash('sha256', microtime(true) . $upload->id),
             'timestamp' => Carbon::now()->toIso8601String()
+        ]);
+
+        // Broadcast real-time modification event
+        \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+            'action' => 'MODIFY',
+            'entity' => 'upload',
+            'id' => $upload->id,
+            'title' => $upload->title,
+            'data' => $upload->toArray()
         ]);
 
         return response()->json([

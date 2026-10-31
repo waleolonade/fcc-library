@@ -12,9 +12,12 @@ import { sounds } from '../utils/soundEffects';
 import { libraryApi } from '../api/libraryApi';
 import PdfCanvasViewer from './PdfCanvasViewer';
 import { fetchLiveAcademicJournals } from '../services/openSourceJournalsApi';
+import { subscribeRealtimeEvents } from '../services/realtimeSync';
 
 export default function DigitalBookReader({ book: initialBook, onClose, user, onSelectBook }) {
   const [currentBook, setCurrentBook] = useState(() => initialBook || null);
+  const [isDocumentDeletedNotice, setIsDocumentDeletedNotice] = useState(false);
+  const [deletedNoticeTitle, setDeletedNoticeTitle] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [theme, setTheme] = useState('dark'); // 'dark' | 'sepia' | 'light'
   const [fontSize, setFontSize] = useState('text-base'); // 'text-sm' | 'text-base' | 'text-lg' | 'text-xl'
@@ -57,6 +60,72 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
       setCurrentPage(1);
     }
   }, [initialBook]);
+
+  // Real-time synchronization: Auto-close reader immediately if this document is deleted anywhere
+  useEffect(() => {
+    if (!currentBook) return;
+
+    const currentId = String(currentBook.id || '').trim().toLowerCase();
+    const currentUploadId = String(currentBook.upload_id || '').trim().toLowerCase();
+    const currentTitle = String(currentBook.title || '').trim().toLowerCase();
+
+    const unsubscribe = subscribeRealtimeEvents((event) => {
+      if (!event || !event.action) return;
+
+      if (event.action === 'DELETE') {
+        const targetId = String(event.id || '').trim().toLowerCase();
+        const targetIds = (event.ids || []).map(i => String(i).trim().toLowerCase());
+        const targetTitle = String(event.title || '').trim().toLowerCase();
+
+        const isCurrentDocumentDeleted =
+          (targetId && (targetId === currentId || targetId === currentUploadId)) ||
+          (targetIds.length > 0 && (targetIds.includes(currentId) || targetIds.includes(currentUploadId))) ||
+          (currentTitle && targetTitle && targetTitle.length > 3 && targetTitle === currentTitle);
+
+        if (isCurrentDocumentDeleted) {
+          try { sounds.playWarning(); } catch {}
+          setDeletedNoticeTitle(currentBook.title || 'Academic Document');
+          setIsDocumentDeletedNotice(true);
+
+          // Auto-close reader and return to catalog
+          setTimeout(() => {
+            if (onClose) {
+              onClose();
+            } else if (typeof window !== 'undefined' && window.location.hash.includes('/reader')) {
+              window.location.hash = '#/';
+            }
+          }, 1800);
+        }
+
+        // Remove from the side drawer list in real time
+        setUploadedBooks(prev => prev.filter(b => {
+          const bId = String(b.id || '').toLowerCase();
+          const bUpId = String(b.upload_id || '').toLowerCase();
+          return bId !== targetId && bUpId !== targetId && !targetIds.includes(bId) && !targetIds.includes(bUpId);
+        }));
+      } else if (event.action === 'MODIFY' || event.action === 'APPROVE') {
+        const targetId = String(event.id || '').trim().toLowerCase();
+        if (targetId && (targetId === currentId || targetId === currentUploadId) && event.data) {
+          setCurrentBook(prev => ({ ...prev, ...event.data }));
+        }
+        if (event.data) {
+          setUploadedBooks(prev => prev.map(b => {
+            const bId = String(b.id || '').toLowerCase();
+            return (bId === targetId || String(b.upload_id || '').toLowerCase() === targetId) ? { ...b, ...event.data } : b;
+          }));
+        }
+      } else if (event.action === 'UPLOAD') {
+        if (event.data && event.data.id) {
+          setUploadedBooks(prev => {
+            if (prev.some(b => String(b.id).toLowerCase() === String(event.data.id).toLowerCase())) return prev;
+            return [event.data, ...prev];
+          });
+        }
+      }
+    });
+
+    return unsubscribe;
+  }, [currentBook?.id, currentBook?.upload_id, currentBook?.title, onClose]);
 
   // Fetch authentic uploaded books and live peer-reviewed academic journals from the backend and database
   const fetchUploadedBooks = async () => {
@@ -351,7 +420,29 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
   }
 
   return (
-    <div className={`space-y-4 animate-fadeIn transition-all duration-300 ${isFullScreen ? 'fixed inset-0 z-50 bg-slate-950 p-3 sm:p-6 overflow-y-auto' : ''}`}>
+    <div className={`space-y-4 animate-fadeIn transition-all duration-300 relative ${isFullScreen ? 'fixed inset-0 z-50 bg-slate-950 p-3 sm:p-6 overflow-y-auto' : ''}`}>
+      {/* Real-time Document Deletion Overlay (closes reader automatically if deleted) */}
+      {isDocumentDeletedNotice && (
+        <div className="absolute inset-0 z-[999] bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-200 rounded-3xl border border-rose-500/30">
+          <div className="w-16 h-16 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-400 flex items-center justify-center mb-4 shadow-2xl shadow-rose-950">
+            <Trash2 size={32} className="animate-bounce" />
+          </div>
+          <h3 className="text-xl font-black text-white mb-2">
+            Academic Document Withdrawn &amp; Deleted
+          </h3>
+          <p className="text-sm text-slate-300 max-w-md mb-2 leading-relaxed font-semibold">
+            &ldquo;{deletedNoticeTitle}&rdquo;
+          </p>
+          <p className="text-xs text-slate-400 max-w-md mb-5 leading-relaxed">
+            This document was deleted or withdrawn from the institutional repository in real time. Reader access has been closed by administration.
+          </p>
+          <div className="flex items-center gap-2 text-xs font-mono text-rose-300 bg-rose-950/70 border border-rose-800/80 px-3.5 py-1.5 rounded-xl shadow">
+            <AlertTriangle size={14} className="text-amber-400 shrink-0" />
+            <span>Auto-closing reader and returning to catalogue...</span>
+          </div>
+        </div>
+      )}
+
       {/* ============================================================ */}
       {/* TOP HEADER CONTROLS BAR                                      */}
       {/* ============================================================ */}

@@ -17,6 +17,7 @@ import PdfOptimizerWidget from '../common/PdfOptimizerWidget';
 import PdfAnalysisInspector from '../common/PdfAnalysisInspector';
 import DigitalBookReader from '../common/DigitalBookReader';
 import { getApiBase } from '../api/libraryApi';
+import { publishRealtimeEvent } from '../services/realtimeSync';
 import { getDynamicDeptTheme, HOD_DEPARTMENT_THEMES } from './hodThemeConfig';
 import {
   lookupJournalMetadataByIdentifier,
@@ -1448,6 +1449,12 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
       if (isDirect && resultData.books && resultData.books.length > 0) {
         window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: resultData.books }));
       }
+      publishRealtimeEvent({
+        action: 'UPLOAD',
+        entity: bulkCategory || 'book',
+        ids: createdUploads.map(u => u.id).filter(Boolean),
+        title: `${createdUploads.length || uploadsPayload.length} materials published in batch`
+      });
     }
 
     if (onUploadSuccess) {
@@ -1915,6 +1922,13 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
             window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: data.book || savedUpload }));
           }
         }
+        publishRealtimeEvent({
+          action: 'UPLOAD',
+          entity: uploadCategory || 'book',
+          id: savedUpload.id,
+          title: savedUpload.title,
+          data: data.book || savedUpload
+        });
         if (onUploadSuccess) onUploadSuccess(savedUpload);
       } else {
         throw new Error(data?.message || 'Submission to backend database failed');

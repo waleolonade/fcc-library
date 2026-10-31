@@ -31,6 +31,7 @@ import UniversalNotificationCenter from '../common/UniversalNotificationCenter';
 import HodStaffPageBuilder from './HodStaffPageBuilder';
 import HodStaffLiveWorkspace from './HodStaffLiveWorkspace';
 import MaintenanceBroadcastBanner from '../common/MaintenanceBroadcastBanner';
+import { publishRealtimeEvent, subscribeRealtimeEvents } from '../services/realtimeSync';
 export {
   HOD_DEPARTMENT_THEMES,
   SOLID_COLOR_PALETTES,
@@ -1142,6 +1143,13 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
       setCatalogBooks(prev => prev.filter(b => b.id !== uploadId && b.id !== targetBookId && b.upload_id !== uploadId && b.book_id !== uploadId && (!targetTitle || b.title !== targetTitle)));
       fetchCourses();
       sounds.playSuccessChime();
+      publishRealtimeEvent({
+        action: 'DELETE',
+        entity: 'upload',
+        id: uploadId,
+        ids: [uploadId, targetBookId].filter(Boolean),
+        title: targetTitle
+      });
       setSubmissionNotification({ type: 'success', message: `Submission "${title}" successfully removed from database.` });
       setTimeout(() => setSubmissionNotification(null), 4000);
     } catch (err) {
@@ -1234,6 +1242,12 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
 
       setSelectedSubmissionIds(new Set());
       sounds.playSuccessChime();
+      publishRealtimeEvent({
+        action: 'DELETE',
+        entity: 'upload',
+        ids: idsArray,
+        title: `${idsArray.length} submissions deleted in bulk`
+      });
       setSubmissionNotification({
         type: 'success',
         message: `✓ Successfully deleted ${count} submission(s) from the database.`
@@ -1620,6 +1634,50 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
       window.removeEventListener('fcc-reserves-updated', handleReservesUpdated);
       window.removeEventListener('fcc-staff-updated', handleStaffUpdated);
     };
+  }, []);
+
+  // Real-Time Synchronizer for HOD Dashboard
+  useEffect(() => {
+    const unsubscribe = subscribeRealtimeEvents((event) => {
+      if (!event || !event.action) return;
+      const deletedIds = new Set([
+        event.id,
+        ...(Array.isArray(event.ids) ? event.ids : [])
+      ].filter(Boolean).map(String));
+      const deletedTitle = (event.title || '').trim().toLowerCase();
+
+      const matchesTarget = (item) => {
+        if (!item) return false;
+        const itemId = String(item.id || item.upload_id || item.book_id || '');
+        if (itemId && deletedIds.has(itemId)) return true;
+        if (item.upload_id && deletedIds.has(String(item.upload_id))) return true;
+        if (item.book_id && deletedIds.has(String(item.book_id))) return true;
+        if (deletedTitle && (item.title || '').trim().toLowerCase() === deletedTitle) return true;
+        return false;
+      };
+
+      if (event.action === 'DELETE') {
+        setActiveReaderBook(prev => {
+          if (prev && matchesTarget(prev)) {
+            try { sounds.playWarning(); } catch (e) {}
+            setSubmissionNotification({
+              type: 'warning',
+              message: `⚠️ Institutional Document Withdrawn: "${prev.title || 'Document'}" was deleted from repository in real time. Reader access closed.`
+            });
+            return null;
+          }
+          return prev;
+        });
+        setSelectedCatalogBookDossier(prev => (prev && matchesTarget(prev) ? null : prev));
+        setUploads(prev => prev.filter(u => !matchesTarget(u)));
+        setCatalogBooks(prev => prev.filter(b => !matchesTarget(b)));
+      } else if (event.action === 'UPLOAD' || event.action === 'APPROVE' || event.action === 'MODIFY') {
+        fetchDepartmentUploads();
+        fetchCatalogBooks();
+        setActiveReaderBook(prev => (prev && matchesTarget(prev) && event.data ? { ...prev, ...event.data } : prev));
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
 

@@ -663,6 +663,15 @@ class CatalogController extends Controller
 
         $this->syncBookToMysql($book);
 
+        // Broadcast real-time upload event
+        \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+            'action' => 'UPLOAD',
+            'entity' => 'book',
+            'id' => $book->id,
+            'title' => $book->title,
+            'data' => $book->toArray()
+        ]);
+
         return response()->json([
             'success' => true,
             'message' => 'Book catalogued successfully in Laravel 11 backend',
@@ -847,6 +856,14 @@ class CatalogController extends Controller
             DB::table('course_reserves')->where('book_id', $cleanId)->delete();
         } catch (\Throwable $e) {}
 
+        // Broadcast real-time deletion event across all connected tabs & devices
+        \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+            'action' => 'DELETE',
+            'entity' => 'book',
+            'id' => $cleanId,
+            'title' => $bookTitle ?: $cleanId,
+        ]);
+
         return response()->json([
             'success' => true,
             'message' => "Book '{$cleanId}' successfully deleted from catalog and database."
@@ -917,6 +934,14 @@ class CatalogController extends Controller
             }
             DB::table('course_reserves')->whereIn('book_id', $cleanIds)->delete();
         } catch (\Throwable $e) {}
+
+        // Broadcast real-time bulk deletion event
+        \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+            'action' => 'DELETE',
+            'entity' => 'book',
+            'ids' => $cleanIds,
+            'title' => count($cleanIds) . ' books deleted in bulk',
+        ]);
 
         return response()->json([
             'success' => true,

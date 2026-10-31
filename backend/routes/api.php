@@ -628,6 +628,15 @@ Route::get('/hod/staff/features-catalog', [\App\Http\Controllers\DeveloperContro
 Route::match(['put', 'post'], '/hod/staff/{id}', [\App\Http\Controllers\Api\HodStaffPortalController::class, 'update'])->where('id', '.*');
 Route::delete('/hod/staff/{id}', [\App\Http\Controllers\Api\HodStaffPortalController::class, 'destroy'])->where('id', '.*');
 
+// =========================================================================
+// REAL-TIME SYNCHRONIZATION API (Instant Cross-Device Updates & Auto-Close)
+// =========================================================================
+Route::prefix('realtime')->group(function () {
+    Route::get('/events', [\App\Http\Controllers\Api\RealtimeSyncController::class, 'getEvents']);
+    Route::post('/broadcast', [\App\Http\Controllers\Api\RealtimeSyncController::class, 'broadcast']);
+    Route::get('/stream', [\App\Http\Controllers\Api\RealtimeSyncController::class, 'stream']);
+});
+
 // Database Management & init-db Endpoints
 Route::get('/database/status', [\App\Http\Controllers\LibrarySystemController::class, 'getDatabaseStatus']);
 Route::post('/database/init', [\App\Http\Controllers\LibrarySystemController::class, 'initDatabase']);

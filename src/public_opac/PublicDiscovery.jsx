@@ -22,6 +22,7 @@ import GoogleBooksExplorer from '../student/GoogleBooksExplorer';
 import ApiOverlayDiscovery from '../student/ApiOverlayDiscovery';
 import DigitalBookReader from '../common/DigitalBookReader';
 import { getApiBase } from '../api/libraryApi';
+import { subscribeRealtimeEvents } from '../services/realtimeSync';
 import { getActiveUserSession } from '../utils/authSessionManager';
 import UniversalNotificationCenter from '../common/UniversalNotificationCenter';
 import {
@@ -182,9 +183,48 @@ export default function PublicDiscovery({
       }
     };
 
+    // Real-Time Event Subscriber for Public Discovery & OPAC
+    const unsubscribeRealtime = subscribeRealtimeEvents((event) => {
+      if (!event || !event.action) return;
+
+      const deletedIds = new Set([
+        event.id,
+        ...(Array.isArray(event.ids) ? event.ids : [])
+      ].filter(Boolean).map(String));
+      const deletedTitle = (event.title || '').trim().toLowerCase();
+
+      const matchesTarget = (item) => {
+        if (!item) return false;
+        const itemId = String(item.id || item.upload_id || item.book_id || '');
+        if (itemId && deletedIds.has(itemId)) return true;
+        if (item.upload_id && deletedIds.has(String(item.upload_id))) return true;
+        if (item.book_id && deletedIds.has(String(item.book_id))) return true;
+        if (deletedTitle && (item.title || '').trim().toLowerCase() === deletedTitle) return true;
+        return false;
+      };
+
+      if (event.action === 'DELETE') {
+        // If reader modal is currently open on this book, close it immediately!
+        setActiveInternalBook(prev => {
+          if (prev && matchesTarget(prev)) {
+            try { sounds.playWarning(); } catch (e) {}
+            return null;
+          }
+          return prev;
+        });
+
+        // Purge immediately from live catalog view
+        setCatalogBooks(prev => prev.filter(b => !matchesTarget(b)));
+      } else if (event.action === 'UPLOAD' || event.action === 'APPROVE' || event.action === 'MODIFY') {
+        fetchBackendCatalog();
+        setActiveInternalBook(prev => (prev && matchesTarget(prev) && event.data ? { ...prev, ...event.data } : prev));
+      }
+    });
+
     window.addEventListener('fcc-catalog-updated', handleCatalogUpdated);
     window.addEventListener('storage', handleStorageChange);
     return () => {
+      if (typeof unsubscribeRealtime === 'function') unsubscribeRealtime();
       window.removeEventListener('fcc-catalog-updated', handleCatalogUpdated);
       window.removeEventListener('storage', handleStorageChange);
     };

@@ -28,6 +28,7 @@ import { PATTERNS } from './utils/backgroundPatterns';
 import { copyToClipboardWithFeedback, navigateTo, parseCurrentRoute } from './utils/router';
 import { sounds } from './utils/soundEffects';
 import { clearAllAuthStores, storeUserSession, getActiveUserSession, getDashboardRouteForRole } from './utils/authSessionManager';
+import { subscribeRealtimeEvents } from './services/realtimeSync';
 
 export default function App() {
   // Navigation & Authentication State (Strictly Session-Based with Role Isolation)
@@ -193,7 +194,79 @@ export default function App() {
       }
     };
     window.addEventListener('fcc-catalog-updated', handleCatalogUpdate);
-    return () => window.removeEventListener('fcc-catalog-updated', handleCatalogUpdate);
+
+    // Universal Multi-Device Real-Time Synchronization Listener
+    const unsubscribeRealtime = subscribeRealtimeEvents((event) => {
+      if (!event || !event.action) return;
+
+      if (event.action === 'DELETE') {
+        const targetId = String(event.id || '').trim().toLowerCase();
+        const targetIds = (event.ids || []).map(i => String(i).trim().toLowerCase());
+        const targetTitle = String(event.title || '').trim().toLowerCase();
+
+        // 1. If currently open in Reader, auto-close immediately with alert!
+        setActiveBookForReader(current => {
+          if (!current) return null;
+          const cId = String(current.id || '').trim().toLowerCase();
+          const cUpId = String(current.upload_id || '').trim().toLowerCase();
+          const cTitle = String(current.title || '').trim().toLowerCase();
+
+          const isMatch = (targetId && (targetId === cId || targetId === cUpId)) ||
+                          (targetIds.length > 0 && (targetIds.includes(cId) || targetIds.includes(cUpId))) ||
+                          (cTitle && targetTitle && targetTitle.length > 3 && cTitle === targetTitle);
+
+          if (isMatch) {
+            try { sounds.playWarning(); } catch {}
+            if (typeof window !== 'undefined' && window.location.hash.includes('/reader')) {
+              window.location.hash = '#/';
+            }
+            return null;
+          }
+          return current;
+        });
+
+        // 2. Remove from global catalog state in real time
+        setBooks(prev => prev.filter(b => {
+          const bId = String(b.id || '').toLowerCase();
+          const bUpId = String(b.upload_id || '').toLowerCase();
+          const bTitle = String(b.title || '').trim().toLowerCase();
+          if (bId === targetId || bUpId === targetId || targetIds.includes(bId) || targetIds.includes(bUpId)) return false;
+          if (targetTitle && bTitle && targetTitle.length > 3 && bTitle === targetTitle) return false;
+          return true;
+        }));
+
+        // 3. Clear from details modal if open
+        setSelectedBookForDetails(current => {
+          if (!current) return null;
+          const cId = String(current.id || '').toLowerCase();
+          if (cId === targetId || targetIds.includes(cId)) return null;
+          return current;
+        });
+      } else if (event.action === 'UPLOAD') {
+        fetch('/api/catalog')
+          .then(res => res.ok ? res.json() : null)
+          .then(backendBooks => {
+            if (Array.isArray(backendBooks)) {
+              setBooks(backendBooks.filter(isBookApproved));
+            }
+          })
+          .catch(() => {});
+      } else if (event.action === 'MODIFY' || event.action === 'APPROVE') {
+        fetch('/api/catalog')
+          .then(res => res.ok ? res.json() : null)
+          .then(backendBooks => {
+            if (Array.isArray(backendBooks)) {
+              setBooks(backendBooks.filter(isBookApproved));
+            }
+          })
+          .catch(() => {});
+      }
+    });
+
+    return () => {
+      window.removeEventListener('fcc-catalog-updated', handleCatalogUpdate);
+      unsubscribeRealtime();
+    };
   }, []);
 
   // Initial Sync from Laravel Backend Database

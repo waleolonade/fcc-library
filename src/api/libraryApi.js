@@ -5,6 +5,7 @@
 
 import { SYSTEM_HEALTH_METRICS } from '../data/institutionalSeedData';
 import { formatStudentBarcode } from '../utils/studentIdentity';
+import { publishRealtimeEvent } from '../services/realtimeSync';
 
 // Broadcast Channel for Real-Time Cross-App Synchronization
 const syncChannel = typeof window !== 'undefined' && window.BroadcastChannel ? new BroadcastChannel('fcc_ils_realtime_sync') : null;
@@ -188,6 +189,15 @@ export const libraryApi = {
       const cached = getStored(STORAGE_KEYS.CATALOG, []);
       const updated = [newBook, ...cached.filter(b => b.id !== newBook.id)];
       setStored(STORAGE_KEYS.CATALOG, updated, 'CATALOG_UPDATED');
+
+      publishRealtimeEvent({
+        action: 'UPLOAD',
+        entity: 'book',
+        id: newBook.id,
+        title: newBook.title,
+        data: newBook
+      });
+
       return newBook;
     },
 
@@ -196,6 +206,14 @@ export const libraryApi = {
       const cached = getStored(STORAGE_KEYS.CATALOG, []);
       const updated = cached.filter(b => b.id !== id);
       setStored(STORAGE_KEYS.CATALOG, updated, 'CATALOG_UPDATED');
+
+      publishRealtimeEvent({
+        action: 'DELETE',
+        entity: 'book',
+        id,
+        title: `Book ${id}`
+      });
+
       return { success: true, id };
     },
 
@@ -209,6 +227,14 @@ export const libraryApi = {
       const idSet = new Set(ids);
       const updated = cached.filter(b => !idSet.has(b.id));
       setStored(STORAGE_KEYS.CATALOG, updated, 'CATALOG_UPDATED');
+
+      publishRealtimeEvent({
+        action: 'DELETE',
+        entity: 'book',
+        ids,
+        title: `${ids.length} books deleted in bulk`
+      });
+
       return { success: true, count: ids.length };
     }
   },

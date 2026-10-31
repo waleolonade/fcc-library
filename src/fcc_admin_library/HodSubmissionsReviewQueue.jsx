@@ -42,6 +42,7 @@ import DigitalBookReader from '../common/DigitalBookReader';
 import { departmentService } from '../services/departmentService';
 import { sounds } from '../utils/soundEffects';
 import { getApiBase } from '../api/libraryApi';
+import { publishRealtimeEvent, subscribeRealtimeEvents } from '../services/realtimeSync';
 import {
   SOLID_COLOR_PALETTES,
   getUsedDepartmentColors,
@@ -396,11 +397,27 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
     window.addEventListener('fcc-hod-publishing-mode-updated', handleModeSync);
     window.addEventListener('fcc-developer-config-updated', handleModeSync);
 
+    const unsubscribeRealtime = subscribeRealtimeEvents((event) => {
+      if (!event || !event.action) return;
+      if (event.action === 'DELETE') {
+        const targetId = String(event.id || '').toLowerCase();
+        const targetIds = (event.ids || []).map(i => String(i).toLowerCase());
+        setUploads(prev => prev.filter(u => {
+          const uId = String(u.id || '').toLowerCase();
+          const uBookId = String(u.book_id || '').toLowerCase();
+          return uId !== targetId && uBookId !== targetId && !targetIds.includes(uId) && !targetIds.includes(uBookId);
+        }));
+      } else if (event.action === 'UPLOAD' || event.action === 'APPROVE' || event.action === 'REJECT' || event.action === 'MODIFY') {
+        fetchUploads();
+      }
+    });
+
     return () => {
       window.removeEventListener('fcc-submissions-updated', handleSubmissionsUpdated);
       window.removeEventListener('fcc-departments-updated', handleDepartmentsUpdated);
       window.removeEventListener('fcc-hod-publishing-mode-updated', handleModeSync);
       window.removeEventListener('fcc-developer-config-updated', handleModeSync);
+      unsubscribeRealtime();
     };
   }, []);
 
@@ -851,6 +868,16 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
 
       setUploads(uploads.map(u => u.id === id ? { ...u, status: 'approved', book_id: publishedBook.id, assigned_call_number: reviewForm.assigned_call_number } : u));
       sounds.playSuccessChime();
+
+      publishRealtimeEvent({
+        action: 'APPROVE',
+        entity: 'upload',
+        id: up.id,
+        ids: [up.id, publishedBook.id].filter(Boolean),
+        title: up.title,
+        data: { status: 'approved', book: publishedBook }
+      });
+
       showFeedback('success', `Approved & Published "${up.title}"! Ingested into Central Master Catalog as ${publishedBook.id}. Students now have immediate access via OPAC and Research Hub.`);
 
       if (onPublishSuccess) onPublishSuccess(publishedBook);
@@ -899,6 +926,16 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
 
       setUploads(uploads.map(u => u.id === id ? { ...u, status: 'rejected', review_notes: finalReason, book_id: null } : u));
       sounds.playClick();
+
+      publishRealtimeEvent({
+        action: 'REJECT',
+        entity: 'upload',
+        id: up.id,
+        ids: [up.id, up.book_id].filter(Boolean),
+        title: up.title,
+        data: { status: 'rejected', rejection_reason: finalReason }
+      });
+
       showFeedback('info', `Declined "${up.title}". Reason recorded and transmitted to HOD: "${finalReason}"`);
     } catch (e) {
       setUploads(uploads.map(u => u.id === id ? { ...u, status: 'rejected', review_notes: finalReason, book_id: null } : u));
@@ -960,6 +997,15 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
       }
 
       sounds.playSuccessChime();
+
+      publishRealtimeEvent({
+        action: 'DELETE',
+        entity: 'upload',
+        id: uploadId,
+        ids: [uploadId, targetBookId].filter(Boolean),
+        title: targetTitle
+      });
+
       showFeedback('success', `Submission "${uploadTitle || uploadId}" permanently removed from database.`);
     } catch (err) {
       console.error('Delete submission error:', err);
@@ -1047,6 +1093,14 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
 
       setSelectedUploadIds(new Set());
       sounds.playSuccessChime();
+
+      publishRealtimeEvent({
+        action: 'DELETE',
+        entity: 'upload',
+        ids: idsArray,
+        title: `${idsArray.length} submissions deleted in bulk`
+      });
+
       showFeedback('success', `✓ Successfully deleted ${count} submission(s) from the database.`);
     } catch (err) {
       console.error('Bulk delete submissions error:', err);

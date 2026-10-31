@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { libraryApi } from '../api/libraryApi';
+import { subscribeRealtimeEvents } from '../services/realtimeSync';
 import TraceBadge from '../common/TraceBadge';
 import { INSTITUTION } from '../data/institutionalSeedData';
 import { sounds } from '../utils/soundEffects';
@@ -390,6 +391,48 @@ export default function StudentStandaloneApp() {
       refreshDataFromApi();
     });
 
+    // 1.5 Real-Time Universal Event Subscriber (Uploads, Deletions, Modifications)
+    const unsubscribeRealtime = subscribeRealtimeEvents((event) => {
+      if (!event || !event.action) return;
+
+      const deletedIds = new Set([
+        event.id,
+        ...(Array.isArray(event.ids) ? event.ids : [])
+      ].filter(Boolean).map(String));
+      const deletedTitle = (event.title || '').trim().toLowerCase();
+
+      const matchesTarget = (item) => {
+        if (!item) return false;
+        const itemId = String(item.id || item.upload_id || item.book_id || '');
+        if (itemId && deletedIds.has(itemId)) return true;
+        if (item.upload_id && deletedIds.has(String(item.upload_id))) return true;
+        if (item.book_id && deletedIds.has(String(item.book_id))) return true;
+        if (deletedTitle && (item.title || '').trim().toLowerCase() === deletedTitle) return true;
+        return false;
+      };
+
+      if (event.action === 'DELETE') {
+        // If student is actively reading this book, close it immediately!
+        setActiveBookForReader(prev => {
+          if (prev && matchesTarget(prev)) {
+            try { sounds.playWarning(); } catch (e) {}
+            // If reader deep-link is active in hash, reset to catalogue
+            if (window.location.hash.includes('/reader') || window.location.hash.includes('/read/')) {
+              window.location.hash = '#/dashboard';
+            }
+            return null;
+          }
+          return prev;
+        });
+
+        setActiveBookDetails(prev => (prev && matchesTarget(prev) ? null : prev));
+        setBooks(prev => prev.filter(b => !matchesTarget(b)));
+      } else if (event.action === 'UPLOAD' || event.action === 'APPROVE' || event.action === 'MODIFY') {
+        refreshDataFromApi();
+        setActiveBookForReader(prev => (prev && matchesTarget(prev) && event.data ? { ...prev, ...event.data } : prev));
+      }
+    });
+
     // 2. Refresh on window focus and tab visibility change
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -406,6 +449,7 @@ export default function StudentStandaloneApp() {
 
     return () => {
       unsubscribe();
+      if (typeof unsubscribeRealtime === 'function') unsubscribeRealtime();
       window.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', refreshDataFromApi);
       clearInterval(interval);

@@ -54,6 +54,7 @@ import TabletStudentNavigation from './TabletStudentNavigation';
 import { Smartphone, Monitor, Tablet as TabletIcon, PhoneCall, Bot as BotIcon } from 'lucide-react';
 import { developerConfigService } from '../services/developerConfigService';
 import { libraryApi } from '../api/libraryApi';
+import { subscribeRealtimeEvents } from '../services/realtimeSync';
 import UniversalNotificationCenter from '../common/UniversalNotificationCenter';
 
 export default function StudentPortal({
@@ -206,6 +207,43 @@ export default function StudentPortal({
     const interval = setInterval(fetchStudentData, 20000);
     return () => clearInterval(interval);
   }, [user?.matric, user?.email]);
+
+  // Real-time synchronization for student portal reader and catalog
+  useEffect(() => {
+    const unsubscribe = subscribeRealtimeEvents((event) => {
+      if (!event || !event.action) return;
+      const deletedIds = new Set([
+        event.id,
+        ...(Array.isArray(event.ids) ? event.ids : [])
+      ].filter(Boolean).map(String));
+      const deletedTitle = (event.title || '').trim().toLowerCase();
+
+      const matchesTarget = (item) => {
+        if (!item) return false;
+        const itemId = String(item.id || item.upload_id || item.book_id || '');
+        if (itemId && deletedIds.has(itemId)) return true;
+        if (item.upload_id && deletedIds.has(String(item.upload_id))) return true;
+        if (item.book_id && deletedIds.has(String(item.book_id))) return true;
+        if (deletedTitle && (item.title || '').trim().toLowerCase() === deletedTitle) return true;
+        return false;
+      };
+
+      if (event.action === 'DELETE') {
+        setActiveBookForReader(prev => {
+          if (prev && matchesTarget(prev)) {
+            try { sounds.playWarning(); } catch (e) {}
+            return null;
+          }
+          return prev;
+        });
+        setActiveBookDetails(prev => (prev && matchesTarget(prev) ? null : prev));
+      } else if (event.action === 'UPLOAD' || event.action === 'APPROVE' || event.action === 'MODIFY') {
+        fetchStudentData();
+        setActiveBookForReader(prev => (prev && matchesTarget(prev) && event.data ? { ...prev, ...event.data } : prev));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleReserveBook = async (book) => {
     if (!book || !user?.matric) {
