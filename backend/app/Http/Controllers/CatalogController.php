@@ -354,24 +354,83 @@ class CatalogController extends Controller
             })
             ->first();
 
-        // 1. Check physical disk storage across possible filenames and folders
+        // 1. Look up authoritative MySQL record for file_name, title, and file_data_url
+        $mysqlFileName = null;
+        $mysqlTitle = null;
+        $mysqlDataUrl = null;
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $p = [':id' => $id];
+                $sqlB = "SELECT file_name, title, file_data_url FROM books WHERE id = :id";
+                if ($altBookId) {
+                    $sqlB .= " OR id = :altId";
+                    $p[':altId'] = $altBookId;
+                }
+                $stB = $pdo->prepare($sqlB);
+                $stB->execute($p);
+                $mBook = $stB->fetch(\PDO::FETCH_ASSOC);
+                if ($mBook) {
+                    $mysqlFileName = $mBook['file_name'] ?? null;
+                    $mysqlTitle = $mBook['title'] ?? null;
+                    $mysqlDataUrl = $mBook['file_data_url'] ?? null;
+                }
+
+                $sqlUp = "SELECT file_name, title, file_data_url FROM department_uploads WHERE id = :id OR book_id = :id";
+                if ($altBookId) $sqlUp .= " OR id = :altId OR book_id = :altId";
+                if ($upload) $sqlUp .= " OR id = :uid";
+                if ($upload) $p[':uid'] = $upload->id;
+                $stUp = $pdo->prepare($sqlUp);
+                $stUp->execute($p);
+                $mUp = $stUp->fetch(\PDO::FETCH_ASSOC);
+                if ($mUp) {
+                    if (!$mysqlFileName) $mysqlFileName = $mUp['file_name'] ?? null;
+                    if (!$mysqlTitle) $mysqlTitle = $mUp['title'] ?? null;
+                    if (!$mysqlDataUrl) $mysqlDataUrl = $mUp['file_data_url'] ?? null;
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        // Comprehensive search paths across standard, cPanel, and public storage directories
         $safeId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $id);
-        $storageDirs = [
+        $storageDirs = array_unique(array_filter([
+            storage_path('app/library-books'),
+            storage_path('app/public/books'),
             storage_path('app/public/department_uploads'),
             storage_path('app/public/theses'),
-            storage_path('app/public/books'),
-            storage_path('app/public'),
-        ];
+            storage_path('app/department_uploads'),
+            storage_path('app/department-uploads'),
+            storage_path('app/books'),
+            storage_path('app/theses'),
+            storage_path('app'),
+            public_path('storage/department_uploads'),
+            public_path('storage/books'),
+            public_path('storage/theses'),
+            public_path('uploads'),
+            base_path('../public_html/storage/department_uploads'),
+            base_path('../public_html/storage/books'),
+            base_path('../public_html/backend/storage/app/library-books'),
+            base_path('../public_html/backend/storage/app/public/department_uploads'),
+            base_path('../storage/app/library-books'),
+            base_path('../storage/app/public/department_uploads'),
+        ]));
 
         $candidateNames = array_unique(array_filter([
+            $mysqlFileName,
+            $mysqlFileName ? basename($mysqlFileName) : null,
+            $mysqlFileName ? (basename($mysqlFileName) . '.pdf') : null,
             $safeId . '.pdf',
+            $id . '.pdf',
+            $altBookId ? ($altBookId . '.pdf') : null,
             str_replace('FCC-HOD-', 'HOD-UP-', $safeId) . '.pdf',
             str_replace('HOD-UP-', 'FCC-HOD-', $safeId) . '.pdf',
             $upload ? preg_replace('/[^a-zA-Z0-9_-]/', '_', $upload->id) . '.pdf' : null,
             $upload && $upload->book_id ? preg_replace('/[^a-zA-Z0-9_-]/', '_', $upload->book_id) . '.pdf' : null,
             $book ? preg_replace('/[^a-zA-Z0-9_-]/', '_', $book->id) . '.pdf' : null,
             $book?->file_name,
+            $book?->file_name ? (basename($book->file_name) . '.pdf') : null,
             $upload?->file_name,
+            $upload?->file_name ? (basename($upload->file_name) . '.pdf') : null,
             $cleanSuffix ? 'HOD-UP-' . $cleanSuffix . '.pdf' : null,
             $cleanSuffix ? 'FCC-HOD-' . $cleanSuffix . '.pdf' : null,
         ]));
@@ -380,7 +439,7 @@ class CatalogController extends Controller
         foreach ($storageDirs as $dir) {
             if (!is_dir($dir)) continue;
             foreach ($candidateNames as $name) {
-                $checkPath = $dir . '/' . $name;
+                $checkPath = $dir . '/' . basename($name);
                 if ($this->isValidPdfFile($checkPath)) {
                     $foundDiskPath = $checkPath;
                     break 2;
@@ -405,10 +464,33 @@ class CatalogController extends Controller
             }
         }
 
+        // Glob fallback for original filename fragment (e.g. "02.-Basics-of-Finance")
+        $effectiveFn = $mysqlFileName ?: ($book?->file_name ?: ($upload?->file_name ?: null));
+        if (!$foundDiskPath && $effectiveFn && strlen($effectiveFn) > 5) {
+            $fnStem = pathinfo($effectiveFn, PATHINFO_FILENAME);
+            $cleanStem = preg_replace('/[^a-zA-Z0-9]/', ' ', $fnStem);
+            $words = array_values(array_filter(explode(' ', $cleanStem), fn($w) => strlen($w) >= 4));
+            $globKey = !empty($words) ? implode('*', array_slice($words, 0, 3)) : null;
+            if ($globKey) {
+                foreach ($storageDirs as $dir) {
+                    if (!is_dir($dir)) continue;
+                    $matches = glob($dir . '/*' . $globKey . '*.pdf');
+                    if (!empty($matches)) {
+                        foreach ($matches as $m) {
+                            if ($this->isValidPdfFile($m)) {
+                                $foundDiskPath = $m;
+                                break 2;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         $isDownload = $request->query('download') || $request->input('dl') === '1';
 
         if ($foundDiskPath) {
-            $filename = ($book?->file_name) ?: ($upload?->file_name) ?: (basename($foundDiskPath));
+            $filename = ($book?->file_name) ?: ($upload?->file_name) ?: ($mysqlFileName ?: basename($foundDiskPath));
             return response()->file($foundDiskPath, [
                 'Content-Type' => 'application/pdf',
                 'Accept-Ranges' => 'bytes',
@@ -419,7 +501,7 @@ class CatalogController extends Controller
         }
 
         // 2. Check base64 in SQLite or MySQL database
-        $dataUrl = $book?->getAttribute('file_data_url') ?: $upload?->file_data_url;
+        $dataUrl = $book?->getAttribute('file_data_url') ?: ($upload?->file_data_url ?: $mysqlDataUrl);
 
         if (!$dataUrl) {
             try {
@@ -515,19 +597,14 @@ class CatalogController extends Controller
         $fh = @fopen($path, 'rb');
         if (!$fh) return false;
         $head = fread($fh, 1024);
-        if (!str_starts_with($head, '%PDF-')) {
-            fclose($fh);
+        fclose($fh);
+        if (!str_contains(substr($head, 0, 128), '%PDF-')) {
             return false;
         }
         if (str_contains($head, 'OFFICIAL INSTITUTIONAL CURRICULUM MANUSCRIPT') || str_contains($head, 'CENTRAL LIBRARY DIRECTORATE')) {
-            fclose($fh);
             return false;
         }
-        $size = filesize($path);
-        fseek($fh, max(0, $size - 2048));
-        $tail = fread($fh, 2048);
-        fclose($fh);
-        return str_contains($tail, '%%EOF');
+        return true;
     }
 
     public function checkDuplicate(Request $request)

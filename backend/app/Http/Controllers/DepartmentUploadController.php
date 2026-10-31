@@ -1133,119 +1133,204 @@ class DepartmentUploadController extends Controller
 
     public function file(Request $request, $id)
     {
+        $altId = str_starts_with($id, 'FCC-HOD-')
+            ? str_replace('FCC-HOD-', 'HOD-UP-', $id)
+            : (str_starts_with($id, 'HOD-UP-') ? str_replace('HOD-UP-', 'FCC-HOD-', $id) : null);
+
         $upload = DepartmentUpload::where('id', $id)
+            ->orWhere('book_id', $id)
             ->orWhereRaw('LOWER(id) = ?', [strtolower($id)])
+            ->orWhereRaw('LOWER(book_id) = ?', [strtolower($id)])
+            ->when($altId, fn($q) => $q->orWhere('id', $altId)->orWhere('book_id', $altId))
             ->first();
 
-        $safeId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $id);
-        $storageDir = storage_path('app/public/department_uploads');
-        if (!is_dir($storageDir)) {
-            @mkdir($storageDir, 0755, true);
-        }
-        $diskPath = $storageDir . '/' . $safeId . '.pdf';
-        $isDownload = $request->boolean('download') || $request->input('dl') === '1';
+        $book = Book::where('id', $id)
+            ->orWhereRaw('LOWER(id) = ?', [strtolower($id)])
+            ->when($altId, fn($q) => $q->orWhere('id', $altId)->orWhereRaw('LOWER(id) = ?', [strtolower($altId)]))
+            ->first();
 
-        // 1. Check physical binary file on disk with multiple candidate variations
-        $cleanSuffix = preg_replace('/^.*-/', '', $id);
-        $candidatePaths = array_unique(array_filter([
-            $storageDir . '/' . $safeId . '.pdf',
-            $storageDir . '/' . str_replace('HOD-UP-', 'FCC-HOD-', $safeId) . '.pdf',
-            $storageDir . '/' . str_replace('FCC-HOD-', 'HOD-UP-', $safeId) . '.pdf',
-            $upload ? ($storageDir . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $upload->id) . '.pdf') : null,
-            $upload && $upload->book_id ? ($storageDir . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $upload->book_id) . '.pdf') : null,
-            $cleanSuffix ? ($storageDir . '/HOD-UP-' . $cleanSuffix . '.pdf') : null,
-            $cleanSuffix ? ($storageDir . '/FCC-HOD-' . $cleanSuffix . '.pdf') : null,
-            $upload && $upload->book_id ? storage_path('app/public/theses/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $upload->book_id) . '.pdf') : null,
-        ]));
-
-        foreach ($candidatePaths as $cp) {
-            if (file_exists($cp) && filesize($cp) > 200) {
-                if ($this->isFakeMonographPdf($cp)) {
-                    @unlink($cp);
-                    continue;
-                }
-                $fileName = $upload?->file_name ?: basename($cp);
-                return response()->file($cp, [
-                    'Content-Type' => 'application/pdf',
-                    'Accept-Ranges' => 'bytes',
-                    'Content-Disposition' => ($isDownload ? 'attachment' : 'inline') . '; filename="' . $fileName . '"',
-                    'Cache-Control' => 'public, max-age=86400',
-                    'Access-Control-Allow-Origin' => '*'
-                ]);
-            }
-        }
-
-        // Also check glob if cleanSuffix >= 3
-        if ($cleanSuffix && strlen($cleanSuffix) >= 3) {
-            $globMatches = glob($storageDir . '/*' . $cleanSuffix . '*.pdf');
-            if (!empty($globMatches)) {
-                foreach ($globMatches as $gm) {
-                    if (filesize($gm) > 200) {
-                        if ($this->isFakeMonographPdf($gm)) {
-                            @unlink($gm);
-                            continue;
-                        }
-                        $fileName = $upload?->file_name ?: basename($gm);
-                        return response()->file($gm, [
-                            'Content-Type' => 'application/pdf',
-                            'Accept-Ranges' => 'bytes',
-                            'Content-Disposition' => ($isDownload ? 'attachment' : 'inline') . '; filename="' . $fileName . '"',
-                            'Cache-Control' => 'public, max-age=86400',
-                            'Access-Control-Allow-Origin' => '*'
-                        ]);
-                    }
-                }
-            }
-        }
-
-        // 2. Check if upload model in SQLite has file_data_url
-        if ($upload && !empty($upload->file_data_url)) {
-            $dataUrl = $upload->file_data_url;
-            $rawBinary = null;
-            if (str_starts_with($dataUrl, 'data:')) {
-                [, $b64] = explode(',', $dataUrl, 2);
-                $rawBinary = base64_decode($b64);
-            } else {
-                $rawBinary = base64_decode($dataUrl);
-            }
-
-            if ($rawBinary && strlen($rawBinary) > 200) {
-                @file_put_contents($diskPath, $rawBinary);
-                $fileName = $upload->file_name ?: ($safeId . '.pdf');
-                return response()->file($diskPath, [
-                    'Content-Type' => 'application/pdf',
-                    'Accept-Ranges' => 'bytes',
-                    'Content-Disposition' => ($isDownload ? 'attachment' : 'inline') . '; filename="' . $fileName . '"',
-                    'Cache-Control' => 'public, max-age=86400',
-                    'Access-Control-Allow-Origin' => '*'
-                ]);
-            }
-        }
-
-        // 3. Check authoritative MySQL department_uploads table for stored raw binary
+        // 1. Look up authoritative MySQL record for file_name, title, and file_data_url
+        $mysqlFileName = null;
+        $mysqlTitle = null;
+        $mysqlDataUrl = null;
         try {
             $pdo = \App\Services\DatabaseService::getPdo();
             if ($pdo) {
-                $st = $pdo->prepare("SELECT file_data_url, file_name, title FROM department_uploads WHERE id = :id OR book_id = :id");
-                $st->execute([':id' => $id]);
-                $mysqlRow = $st->fetch(\PDO::FETCH_ASSOC);
-                if ($mysqlRow && !empty($mysqlRow['file_data_url'])) {
-                    $mUrl = $mysqlRow['file_data_url'];
-                    $rawBinary = str_starts_with($mUrl, 'data:') ? base64_decode(explode(',', $mUrl, 2)[1] ?? '') : base64_decode($mUrl);
-                    if ($rawBinary && strlen($rawBinary) > 200) {
-                        @file_put_contents($diskPath, $rawBinary);
-                        $fileName = $mysqlRow['file_name'] ?: ($safeId . '.pdf');
-                        return response()->file($diskPath, [
-                            'Content-Type' => 'application/pdf',
-                            'Accept-Ranges' => 'bytes',
-                            'Content-Disposition' => ($isDownload ? 'attachment' : 'inline') . '; filename="' . $fileName . '"',
-                            'Cache-Control' => 'public, max-age=86400',
-                            'Access-Control-Allow-Origin' => '*'
-                        ]);
-                    }
+                $p = [':id' => $id];
+                $sqlUp = "SELECT file_name, title, file_data_url FROM department_uploads WHERE id = :id OR book_id = :id";
+                if ($altId) {
+                    $sqlUp .= " OR id = :altId OR book_id = :altId";
+                    $p[':altId'] = $altId;
+                }
+                $stUp = $pdo->prepare($sqlUp);
+                $stUp->execute($p);
+                $mUp = $stUp->fetch(\PDO::FETCH_ASSOC);
+                if ($mUp) {
+                    $mysqlFileName = $mUp['file_name'] ?? null;
+                    $mysqlTitle = $mUp['title'] ?? null;
+                    $mysqlDataUrl = $mUp['file_data_url'] ?? null;
+                }
+
+                $sqlB = "SELECT file_name, title, file_data_url FROM books WHERE id = :id";
+                if ($altId) $sqlB .= " OR id = :altId";
+                $stB = $pdo->prepare($sqlB);
+                $stB->execute($p);
+                $mBook = $stB->fetch(\PDO::FETCH_ASSOC);
+                if ($mBook) {
+                    if (!$mysqlFileName) $mysqlFileName = $mBook['file_name'] ?? null;
+                    if (!$mysqlTitle) $mysqlTitle = $mBook['title'] ?? null;
+                    if (!$mysqlDataUrl) $mysqlDataUrl = $mBook['file_data_url'] ?? null;
                 }
             }
         } catch (\Throwable $e) {}
+
+        $safeId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $id);
+        $cleanSuffix = preg_replace('/^.*-/', '', $id);
+        $isDownload = $request->boolean('download') || $request->input('dl') === '1';
+
+        // Comprehensive search paths across standard, cPanel, and public storage directories
+        $searchDirs = array_unique(array_filter([
+            storage_path('app/library-books'),
+            storage_path('app/public/books'),
+            storage_path('app/public/department_uploads'),
+            storage_path('app/public/theses'),
+            storage_path('app/department_uploads'),
+            storage_path('app/department-uploads'),
+            storage_path('app/books'),
+            storage_path('app/theses'),
+            storage_path('app'),
+            public_path('storage/department_uploads'),
+            public_path('storage/books'),
+            public_path('storage/theses'),
+            public_path('uploads'),
+            base_path('../public_html/storage/department_uploads'),
+            base_path('../public_html/storage/books'),
+            base_path('../public_html/backend/storage/app/library-books'),
+            base_path('../public_html/backend/storage/app/public/department_uploads'),
+            base_path('../storage/app/library-books'),
+            base_path('../storage/app/public/department_uploads'),
+        ]));
+
+        $candidateNames = array_unique(array_filter([
+            $mysqlFileName,
+            $mysqlFileName ? basename($mysqlFileName) : null,
+            $mysqlFileName ? (basename($mysqlFileName) . '.pdf') : null,
+            $safeId . '.pdf',
+            $id . '.pdf',
+            $altId ? ($altId . '.pdf') : null,
+            str_replace('HOD-UP-', 'FCC-HOD-', $safeId) . '.pdf',
+            str_replace('FCC-HOD-', 'HOD-UP-', $safeId) . '.pdf',
+            $upload ? preg_replace('/[^a-zA-Z0-9_-]/', '_', $upload->id) . '.pdf' : null,
+            $upload && $upload->book_id ? preg_replace('/[^a-zA-Z0-9_-]/', '_', $upload->book_id) . '.pdf' : null,
+            $book ? preg_replace('/[^a-zA-Z0-9_-]/', '_', $book->id) . '.pdf' : null,
+            $upload?->file_name,
+            $upload?->file_name ? (basename($upload->file_name) . '.pdf') : null,
+            $book?->file_name,
+            $book?->file_name ? (basename($book->file_name) . '.pdf') : null,
+            $cleanSuffix ? 'HOD-UP-' . $cleanSuffix . '.pdf' : null,
+            $cleanSuffix ? 'FCC-HOD-' . $cleanSuffix . '.pdf' : null,
+        ]));
+
+        $foundDiskPath = null;
+        foreach ($searchDirs as $dir) {
+            if (!is_dir($dir)) continue;
+            foreach ($candidateNames as $name) {
+                $checkPath = $dir . '/' . basename($name);
+                if (file_exists($checkPath) && filesize($checkPath) > 200) {
+                    if ($this->isFakeMonographPdf($checkPath)) {
+                        @unlink($checkPath);
+                        continue;
+                    }
+                    $foundDiskPath = $checkPath;
+                    break 2;
+                }
+            }
+        }
+
+        // Glob fallback for valid ID suffixes
+        $ignoredSuffixes = ['pdf', 'file', 'undefined', 'null', 'book', 'upload'];
+        if (!$foundDiskPath && $cleanSuffix && strlen($cleanSuffix) >= 3 && !in_array(strtolower($cleanSuffix), $ignoredSuffixes)) {
+            foreach ($searchDirs as $dir) {
+                if (!is_dir($dir)) continue;
+                $matches = glob($dir . '/*' . $cleanSuffix . '*.pdf');
+                if (!empty($matches)) {
+                    foreach ($matches as $m) {
+                        if (filesize($m) > 200) {
+                            if ($this->isFakeMonographPdf($m)) {
+                                @unlink($m);
+                                continue;
+                            }
+                            $foundDiskPath = $m;
+                            break 2;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Glob fallback for original filename fragment (e.g. "02.-Basics-of-Finance")
+        $effectiveFn = $mysqlFileName ?: ($upload?->file_name ?: ($book?->file_name ?: null));
+        if (!$foundDiskPath && $effectiveFn && strlen($effectiveFn) > 5) {
+            $fnStem = pathinfo($effectiveFn, PATHINFO_FILENAME);
+            $cleanStem = preg_replace('/[^a-zA-Z0-9]/', ' ', $fnStem);
+            $words = array_values(array_filter(explode(' ', $cleanStem), fn($w) => strlen($w) >= 4));
+            $globKey = !empty($words) ? implode('*', array_slice($words, 0, 3)) : null;
+            if ($globKey) {
+                foreach ($searchDirs as $dir) {
+                    if (!is_dir($dir)) continue;
+                    $matches = glob($dir . '/*' . $globKey . '*.pdf');
+                    if (!empty($matches)) {
+                        foreach ($matches as $m) {
+                            if (filesize($m) > 200) {
+                                if ($this->isFakeMonographPdf($m)) {
+                                    @unlink($m);
+                                    continue;
+                                }
+                                $foundDiskPath = $m;
+                                break 2;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if ($foundDiskPath) {
+            $fileName = $upload?->file_name ?: ($book?->file_name ?: ($mysqlFileName ?: basename($foundDiskPath)));
+            return response()->file($foundDiskPath, [
+                'Content-Type' => 'application/pdf',
+                'Accept-Ranges' => 'bytes',
+                'Content-Disposition' => ($isDownload ? 'attachment' : 'inline') . '; filename="' . $fileName . '"',
+                'Cache-Control' => 'public, max-age=86400',
+                'Access-Control-Allow-Origin' => '*'
+            ]);
+        }
+
+        // 2. Check base64 in SQLite or MySQL database
+        $dataUrl = $upload?->file_data_url ?: ($book?->getAttribute('file_data_url') ?: $mysqlDataUrl);
+        if ($dataUrl) {
+            $mime = 'application/pdf';
+            $payload = $dataUrl;
+            if (preg_match('#^data:([^;]+);base64,(.*)$#s', $dataUrl, $m)) {
+                $mime = $m[1];
+                $payload = $m[2];
+            }
+            $rawBinary = base64_decode($payload);
+            if ($rawBinary && strlen($rawBinary) > 200) {
+                $targetDir = storage_path('app/public/department_uploads');
+                if (!is_dir($targetDir)) @mkdir($targetDir, 0755, true);
+                $diskPath = $targetDir . '/' . $safeId . '.pdf';
+                @file_put_contents($diskPath, $rawBinary);
+                $fileName = $upload?->file_name ?: ($book?->file_name ?: ($mysqlFileName ?: ($safeId . '.pdf')));
+                return response($rawBinary, 200, [
+                    'Content-Type' => $mime,
+                    'Accept-Ranges' => 'bytes',
+                    'Content-Disposition' => ($isDownload ? 'attachment' : 'inline') . '; filename="' . $fileName . '"',
+                    'Cache-Control' => 'public, max-age=86400',
+                    'Access-Control-Allow-Origin' => '*'
+                ]);
+            }
+        }
 
         // 4. Check if record has external link or DOI to redirect to authentic PDF
         $doi = $upload?->doi;

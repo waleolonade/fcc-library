@@ -83,6 +83,7 @@ function dataUrlToArrayBuffer(dataUrl) {
 
 export default function PdfCanvasViewer({
   pdfUrl,
+  bookId: propBookId,
   currentPage = 1,
   onPageChange,
   onTotalPages,
@@ -133,19 +134,33 @@ export default function PdfCanvasViewer({
         // 2. Network Fetch for Remote / Backend API candidates
         if (!arrayBuffer) {
           const rawUrl = (pdfUrl || '').split('#')[0].trim();
-          let bookId = '';
+          let bookId = propBookId ? String(propBookId).trim() : '';
 
           // Extract bookId safely (ignore generic keywords)
-          const idMatch = rawUrl.match(/\/books\/([^\/\?#]+)/) ||
-                          rawUrl.match(/\/catalog\/([^\/\?#]+)/) ||
-                          rawUrl.match(/\/department-uploads\/([^\/\?#]+)/) ||
-                          rawUrl.match(/\/theses\/([^\/\?#]+)/);
+          if (!bookId) {
+            const idMatch = rawUrl.match(/\/books\/([^\/\?#]+)/) ||
+                            rawUrl.match(/\/catalog\/([^\/\?#]+)/) ||
+                            rawUrl.match(/\/department-uploads\/([^\/\?#]+)/) ||
+                            rawUrl.match(/\/theses\/([^\/\?#]+)/);
 
-          if (idMatch && idMatch[1] && !['pdf', 'file', 'undefined', 'null', 'download'].includes(idMatch[1].toLowerCase())) {
-            bookId = idMatch[1];
+            if (idMatch && idMatch[1] && !['pdf', 'file', 'undefined', 'null', 'download'].includes(idMatch[1].toLowerCase())) {
+              bookId = idMatch[1];
+            }
           }
 
-          // Build clean, relative candidate URLs (strictly avoiding illegal cross-origin/mixed-content HTTP:8000 calls)
+          // Fallback extraction from URL hash (e.g. #/reader/FCC-HOD-9314)
+          if (!bookId && typeof window !== 'undefined') {
+            const hashMatch = (window.location.hash || '').match(/#\/(?:reader|book)\/([^\/\?#]+)/);
+            if (hashMatch && hashMatch[1]) {
+              bookId = hashMatch[1];
+            }
+          }
+
+          const altBookId = bookId.startsWith('FCC-HOD-')
+            ? bookId.replace('FCC-HOD-', 'HOD-UP-')
+            : (bookId.startsWith('HOD-UP-') ? bookId.replace('HOD-UP-', 'FCC-HOD-') : null);
+
+          // Build clean candidate URLs across root, backend/public, and cPanel relative paths
           const candidateUrls = Array.from(new Set([
             rawUrl || null,
             // External OA URLs via proxy
@@ -153,6 +168,15 @@ export default function PdfCanvasViewer({
             bookId ? `/api/books/${encodeURIComponent(bookId)}/pdf` : null,
             bookId ? `/api/catalog/${encodeURIComponent(bookId)}/file` : null,
             bookId ? `/api/department-uploads/${encodeURIComponent(bookId)}/file` : null,
+            altBookId ? `/api/books/${encodeURIComponent(altBookId)}/pdf` : null,
+            altBookId ? `/api/catalog/${encodeURIComponent(altBookId)}/file` : null,
+            altBookId ? `/api/department-uploads/${encodeURIComponent(altBookId)}/file` : null,
+            bookId ? `/backend/public/api/books/${encodeURIComponent(bookId)}/pdf` : null,
+            bookId ? `/backend/public/api/catalog/${encodeURIComponent(bookId)}/file` : null,
+            bookId ? `/backend/public/api/department-uploads/${encodeURIComponent(bookId)}/file` : null,
+            altBookId ? `/backend/public/api/books/${encodeURIComponent(altBookId)}/pdf` : null,
+            altBookId ? `/backend/public/api/catalog/${encodeURIComponent(altBookId)}/file` : null,
+            altBookId ? `/backend/public/api/department-uploads/${encodeURIComponent(altBookId)}/file` : null,
             bookId ? `/api/theses/${encodeURIComponent(bookId)}/file` : null,
             bookId ? `/fcclibrary/backend/public/api/books/${encodeURIComponent(bookId)}/pdf` : null,
             bookId ? `/fcclibrary/backend/public/api/catalog/${encodeURIComponent(bookId)}/file` : null,
@@ -168,10 +192,10 @@ export default function PdfCanvasViewer({
               if (res.ok) {
                 const buf = await res.arrayBuffer();
                 if (buf && buf.byteLength > 100) {
-                  // Verify magic bytes: PDF must start with %PDF
-                  const head = new Uint8Array(buf.slice(0, 5));
+                  // Verify magic bytes: PDF must contain %PDF in head
+                  const head = new Uint8Array(buf.slice(0, 128));
                   const headStr = String.fromCharCode(...head);
-                  if (headStr.startsWith('%PDF')) {
+                  if (headStr.includes('%PDF')) {
                     arrayBuffer = buf;
                     break;
                   }

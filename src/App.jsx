@@ -431,7 +431,7 @@ export default function App() {
                 .catch(() => {});
             }
           } else {
-            // Asynchronously fetch directly from Laravel API
+            // Asynchronously fetch directly from Laravel API (catalog, department uploads, or theses)
             fetch(`/api/catalog/${encodeURIComponent(rawReaderId)}`)
               .then(r => r.ok ? r.json() : null)
               .then(remoteBook => {
@@ -439,17 +439,34 @@ export default function App() {
                   setActiveBookForReader(remoteBook);
                   setBooks(prev => prev.some(b => b.id.toLowerCase() === remoteBook.id.toLowerCase()) ? prev.map(b => b.id.toLowerCase() === remoteBook.id.toLowerCase() ? remoteBook : b) : [remoteBook, ...prev]);
                 } else {
-                  // Fallback: Check theses endpoint
-                  fetch(`/api/theses/${encodeURIComponent(rawReaderId)}`)
-                    .then(tr => tr.ok ? tr.json() : null)
-                    .then(thesis => {
-                      if (thesis && thesis.id) {
-                        setActiveBookForReader({
-                          ...thesis,
+                  fetch(`/api/department-uploads/${encodeURIComponent(rawReaderId)}`)
+                    .then(ur => ur.ok ? ur.json() : null)
+                    .then(upBook => {
+                      if (upBook && (upBook.id || upBook.book_id)) {
+                        const normUp = {
+                          ...upBook,
+                          id: upBook.book_id || upBook.id,
                           isDigital: true,
-                          pdfUrl: `/api/theses/${thesis.id}/file`,
-                          callNumber: `TH-${thesis.department_code || 'RES'}-${thesis.id}`
-                        });
+                          hasBinaryPdf: true,
+                          pdfUrl: `/api/books/${encodeURIComponent(upBook.book_id || upBook.id)}/pdf`
+                        };
+                        setActiveBookForReader(normUp);
+                        setBooks(prev => [normUp, ...prev]);
+                      } else {
+                        // Fallback: Check theses endpoint
+                        fetch(`/api/theses/${encodeURIComponent(rawReaderId)}`)
+                          .then(tr => tr.ok ? tr.json() : null)
+                          .then(thesis => {
+                            if (thesis && thesis.id) {
+                              setActiveBookForReader({
+                                ...thesis,
+                                isDigital: true,
+                                pdfUrl: `/api/theses/${thesis.id}/file`,
+                                callNumber: `TH-${thesis.department_code || 'RES'}-${thesis.id}`
+                              });
+                            }
+                          })
+                          .catch(() => {});
                       }
                     })
                     .catch(() => {});

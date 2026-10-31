@@ -1220,6 +1220,7 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
           {/* MODE 1: PDF MANUSCRIPT STREAM (HIGH-PERFORMANCE CANVAS PDF VIEWER) */}
           {readerMode === 'pdf' ? (
             <PdfCanvasViewer
+              bookId={currentBook?.id}
               pdfUrl={currentBook?.fileDataUrl || currentBook?.file_data_url || currentBook?.pdfUrl || (currentBook?.id ? `/api/books/${encodeURIComponent(currentBook.id)}/pdf` : null)}
               currentPage={currentPage}
               onPageChange={setCurrentPage}
