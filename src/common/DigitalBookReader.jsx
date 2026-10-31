@@ -33,6 +33,7 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [shelfFilter, setShelfFilter] = useState('all'); // 'all' | 'local' | 'online'
+  const [detectedPages, setDetectedPages] = useState(1);
 
   // Origin detection helpers to strictly distinguish local HOD/Admin uploads from online external journals
   const isOnlineBook = (b) => Boolean(
@@ -57,12 +58,13 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
     }
   }, [initialBook]);
 
-  // Fetch real uploaded books and live peer-reviewed academic journals
+  // Fetch authentic uploaded books and live peer-reviewed academic journals from the backend and database
   const fetchUploadedBooks = async () => {
     setIsLoadingList(true);
     try {
-      const [catalogRes, journalsRes] = await Promise.allSettled([
+      const [catalogRes, departmentRes, journalsRes] = await Promise.allSettled([
         fetch('/api/catalog').then(r => r.ok ? r.json() : []),
+        fetch('/api/department-uploads').then(r => r.ok ? r.json() : []),
         fetchLiveAcademicJournals({
           query: 'cooperative economics agriculture computer science finance management nigeria',
           perPage: 25
@@ -70,40 +72,67 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
       ]);
 
       const rawCatalog = (catalogRes.status === 'fulfilled' && Array.isArray(catalogRes.value)) ? catalogRes.value : [];
+      const rawDeptUploads = (departmentRes.status === 'fulfilled' && Array.isArray(departmentRes.value)) ? departmentRes.value : [];
       const rawJournals = (journalsRes.status === 'fulfilled' && Array.isArray(journalsRes.value)) ? journalsRes.value : [];
 
-      const normalizedCatalog = rawCatalog.map(b => ({
-        ...b,
-        id: b.id || 'FCC-BOOK',
-        title: b.title || 'Institutional Academic Work',
-        author: b.author || 'FCC Faculty Scholar',
-        callNumber: b.call_number || b.callNumber || 'FCC.LIB',
-        shelfLocation: b.shelf_location || b.shelfLocation || 'Digital E-Library',
-        courseCode: b.course_code || b.courseCode || 'GEN 101',
-        targetLevel: b.target_level || b.targetLevel || 'HND II',
-        department: b.department || 'Academic Department',
-        uploadedBy: b.uploaded_by || b.uploadedBy || 'Institutional Repository',
-        fileName: b.file_name || b.fileName || `${b.title || 'document'}.pdf`,
-        fileSize: b.file_size || b.fileSize || '3.5 MB',
-        fileDataUrl: b.file_data_url || b.fileDataUrl || '',
-        hasBinaryPdf: Boolean(b.hasBinaryPdf || b.has_file || b.hasPdf || b.file_name || b.fileName || b.file_data_url || b.fileDataUrl || (b.id && (b.id.startsWith('FCC-HOD') || b.id.startsWith('HOD-UP') || b.id.startsWith('FCC-PRJ') || b.id.startsWith('FCC-JRN')))),
-        pdfUrl: b.file_data_url || b.fileDataUrl ? (b.file_data_url || b.fileDataUrl) : (b.pdfUrl || `/api/books/${encodeURIComponent(b.id)}/pdf`),
-        isDigital: true,
-        abstract: b.abstract || ''
-      }));
+      const seenIds = new Set();
+      const combinedLocal = [...rawCatalog, ...rawDeptUploads].filter(b => {
+        if (!b) return false;
+        const id = b.id || b.book_id;
+        if (!id) return false;
+        const status = String(b.status || '').toLowerCase();
+        if (['deleted', 'withdrawn', 'purged', 'rejected', 'declined'].includes(status)) return false;
+        const key = String(id).toLowerCase();
+        if (seenIds.has(key)) return false;
+        seenIds.add(key);
+        return true;
+      });
+
+      const normalizedCatalog = combinedLocal.map(b => {
+        const id = b.id || b.book_id;
+        const title = b.title || '';
+        const author = b.author || b.student_names || b.studentNames || '';
+        const callNumber = b.call_number || b.callNumber || '';
+        const shelfLocation = b.shelf_location || b.shelfLocation || '';
+        const courseCode = b.course_code || b.courseCode || '';
+        const targetLevel = b.target_level || b.targetLevel || '';
+        const department = b.department || b.faculty || '';
+        const uploadedBy = b.uploaded_by || b.uploadedBy || '';
+        const fileName = b.file_name || b.fileName || '';
+        const fileSize = b.file_size || b.fileSize || '';
+        const fileDataUrl = b.file_data_url || b.fileDataUrl || '';
+        const hasBinary = Boolean(fileDataUrl || fileName || b.has_file || b.hasBinaryPdf || b.pdf_path || b.pdfUrl);
+        const pdfUrl = fileDataUrl || b.pdfUrl || (id ? `/api/books/${encodeURIComponent(id)}/pdf` : '');
+
+        return {
+          ...b,
+          id,
+          title,
+          author,
+          callNumber,
+          shelfLocation,
+          courseCode,
+          targetLevel,
+          department,
+          uploadedBy,
+          fileName,
+          fileSize,
+          fileDataUrl,
+          hasBinaryPdf: hasBinary,
+          pdfUrl,
+          isDigital: hasBinary || Boolean(pdfUrl),
+          abstract: b.abstract || b.description || '',
+          pdfPages: Number(b.pdf_pages || b.pdfPages || 0) || null
+        };
+      });
 
       // Combine catalog uploads and authentic live open-access journals
       const combined = [...normalizedCatalog, ...rawJournals];
 
-      // Prioritize institutional uploads by Admin, HODs, and departmental staff
+      // Prioritize institutional uploads with real binary PDFs
       combined.sort((a, b) => {
-        const aIsHodAdmin = Boolean(a.hasBinaryPdf || a.file_data_url || (a.id && (a.id.startsWith('FCC-HOD') || a.id.startsWith('HOD-UP') || a.id.startsWith('FCC-PRJ') || a.id.startsWith('FCC-JRN') || a.id.startsWith('FCC-B'))));
-        const bIsHodAdmin = Boolean(b.hasBinaryPdf || b.file_data_url || (b.id && (b.id.startsWith('FCC-HOD') || b.id.startsWith('HOD-UP') || b.id.startsWith('FCC-PRJ') || b.id.startsWith('FCC-JRN') || b.id.startsWith('FCC-B'))));
-        if (aIsHodAdmin && !bIsHodAdmin) return -1;
-        if (!aIsHodAdmin && bIsHodAdmin) return 1;
-
-        const aHasPdf = Boolean(a.hasBinaryPdf || a.hasPdf || a.pdfUrl);
-        const bHasPdf = Boolean(b.hasBinaryPdf || b.hasPdf || b.pdfUrl);
+        const aHasPdf = Boolean(a.hasBinaryPdf || a.fileDataUrl || a.file_data_url || a.pdfUrl);
+        const bHasPdf = Boolean(b.hasBinaryPdf || b.fileDataUrl || b.file_data_url || b.pdfUrl);
         if (aHasPdf && !bHasPdf) return -1;
         if (!aHasPdf && bHasPdf) return 1;
         return 0;
@@ -126,9 +155,9 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
     fetchUploadedBooks();
   }, []);
 
-  // Fetch complete book record
+  // Fetch complete book record directly from database
   const loadBookDetails = async (candidate) => {
-    if (!candidate) return;
+    if (!candidate || !candidate.id) return;
     setIsLoadingBook(true);
     try {
       // If it's a live external scholarly journal (e.g. OpenAlex, Crossref), keep its full metadata
@@ -140,26 +169,52 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
         return;
       }
 
+      let full = null;
       const res = await fetch(`/api/catalog/${encodeURIComponent(candidate.id)}`);
       if (res.ok) {
-        const full = await res.json();
+        full = await res.json();
+      } else {
+        const deptRes = await fetch(`/api/department-uploads/${encodeURIComponent(candidate.id)}`);
+        if (deptRes.ok) {
+          full = await deptRes.json();
+        }
+      }
+
+      if (full) {
+        const hasBinary = Boolean(
+          full.hasBinaryPdf ||
+          full.has_file ||
+          full.hasPdf ||
+          full.file_name ||
+          full.fileName ||
+          full.file_data_url ||
+          full.fileDataUrl ||
+          candidate.hasBinaryPdf ||
+          full.pdf_path
+        );
+
         const merged = {
           ...candidate,
           ...full,
-          callNumber: full.call_number || full.callNumber || candidate.callNumber,
-          shelfLocation: full.shelf_location || full.shelfLocation || candidate.shelfLocation,
-          courseCode: full.course_code || full.courseCode || candidate.courseCode,
-          targetLevel: full.target_level || full.targetLevel || candidate.targetLevel,
-          department: full.department || candidate.department,
-          uploadedBy: full.uploaded_by || full.uploadedBy || candidate.uploadedBy,
+          id: full.id || candidate.id,
+          title: full.title || candidate.title || '',
+          author: full.author || full.student_names || full.studentNames || candidate.author || '',
+          callNumber: full.call_number || full.callNumber || candidate.callNumber || '',
+          shelfLocation: full.shelf_location || full.shelfLocation || candidate.shelfLocation || '',
+          courseCode: full.course_code || full.courseCode || candidate.courseCode || '',
+          targetLevel: full.target_level || full.targetLevel || candidate.targetLevel || '',
+          department: full.department || candidate.department || '',
+          uploadedBy: full.uploaded_by || full.uploadedBy || candidate.uploadedBy || '',
           fileDataUrl: full.file_data_url || full.fileDataUrl || candidate.fileDataUrl || '',
-          fileName: full.file_name || full.fileName || candidate.fileName,
+          fileName: full.file_name || full.fileName || candidate.fileName || '',
+          fileSize: full.file_size || full.fileSize || candidate.fileSize || '',
           cover_image: full.cover_image || full.coverImage || candidate.cover_image || candidate.coverImage || candidate.cover || '',
           coverImage: full.cover_image || full.coverImage || candidate.cover_image || candidate.coverImage || candidate.cover || '',
-          hasBinaryPdf: Boolean(full.hasBinaryPdf || full.has_file || full.hasPdf || full.file_name || full.fileName || full.file_data_url || full.fileDataUrl || candidate.hasBinaryPdf || (candidate.id && (candidate.id.startsWith('FCC-HOD') || candidate.id.startsWith('HOD-UP')))),
+          hasBinaryPdf: hasBinary,
           pdfUrl: full.file_data_url || full.fileDataUrl || full.pdfUrl || candidate.pdfUrl || `/api/books/${encodeURIComponent(candidate.id)}/pdf`,
-          isDigital: true,
-          pdfPages: full.pdf_pages || full.pdfPages || candidate.pdfPages || 45
+          isDigital: hasBinary,
+          pdfPages: Number(full.pdf_pages || full.pdfPages || candidate.pdfPages || 0) || null,
+          abstract: full.abstract || full.description || candidate.abstract || ''
         };
         setCurrentBook(merged);
         setCurrentPage(1);
@@ -171,7 +226,7 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
       }
     } catch (e) {
       setCurrentBook(candidate);
-      setReaderMode('interactive');
+      setReaderMode(candidate.hasBinaryPdf ? 'pdf' : 'interactive');
     } finally {
       setIsLoadingBook(false);
     }
@@ -184,14 +239,14 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
         user.matric,
         currentBook.id,
         currentPage,
-        currentBook.pdfPages || 120,
+        currentBook.pdfPages || detectedPages || 1,
         currentBook.title,
         currentBook.author
       );
     }
-  }, [currentPage, currentBook, user]);
+  }, [currentPage, currentBook, user, detectedPages]);
 
-  const totalPages = currentBook?.pdfPages || 120;
+  const totalPages = currentBook?.pdfPages || detectedPages || 1;
   const isPageBookmarked = Boolean(bookmarkedPages[currentPage]);
 
   const toggleBookmark = () => {
@@ -202,32 +257,18 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
     }));
   };
 
-
-  // Dynamic Scholarly Sections / Chapters Generator based on authentic publication attributes
+  // Sections / Chapters: extracted from real manuscript table of contents or outline
   const chapters = useMemo(() => {
     if (currentBook?.chapters && Array.isArray(currentBook.chapters) && currentBook.chapters.length > 0) {
       return currentBook.chapters;
     }
-    const isJournal = currentBook?.category === 'Journal' || Boolean(currentBook?.doi) || Boolean(currentBook?.issn) || Boolean(currentBook?.journalName);
-    if (isJournal) {
-      return [
-        { id: 1, title: 'Section 1: Executive Abstract, Problem Scope & Keywords', page: 1, duration: '10 min' },
-        { id: 2, title: 'Section 2: Literature Review, Theoretical Context & Hypotheses', page: 3, duration: '20 min' },
-        { id: 3, title: 'Section 3: Research Methodology, Mathematical / Empirical Framework', page: 6, duration: '25 min' },
-        { id: 4, title: 'Section 4: Data Analysis, Experimental Results & Findings', page: 10, duration: '30 min' },
-        { id: 5, title: 'Section 5: Discussion of Findings & Practical Implications', page: 15, duration: '20 min' },
-        { id: 6, title: 'Section 6: Policy Recommendations, Summary & Future Research', page: 19, duration: '15 min' },
-        { id: 7, title: 'Section 7: Bibliographic References, Citations & Open Access Metadata', page: 23, duration: '10 min' }
-      ];
+    if (currentBook?.tableOfContents && Array.isArray(currentBook.tableOfContents) && currentBook.tableOfContents.length > 0) {
+      return currentBook.tableOfContents;
     }
     return [
-      { id: 1, title: 'Chapter 1: Foundational Principles & System Scope', page: 1, duration: '25 min' },
-      { id: 2, title: 'Chapter 2: Conceptual Methodologies & Institutional Frameworks', page: 25, duration: '35 min' },
-      { id: 3, title: 'Chapter 3: Applied Technical Models & Computational Specifications', page: 55, duration: '40 min' },
-      { id: 4, title: 'Chapter 4: Empirical Laboratory Practices & Field Case Studies', page: 85, duration: '30 min' },
-      { id: 5, title: 'Chapter 5: Continuous Assessment Review, Indices & Scholarly Bibliography', page: 105, duration: '20 min' }
+      { id: 1, title: currentBook?.title || 'Manuscript Document', page: 1 }
     ];
-  }, [currentBook?.category, currentBook?.doi, currentBook?.issn, currentBook?.journalName, currentBook?.chapters]);
+  }, [currentBook?.chapters, currentBook?.tableOfContents, currentBook?.title]);
 
   const filteredChapters = chapters.filter(c =>
     c.title.toLowerCase().includes(chapterSearch.toLowerCase())
@@ -237,8 +278,8 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
     for (let i = chapters.length - 1; i >= 0; i--) {
       if (currentPage >= chapters[i].page) return chapters[i];
     }
-    return chapters[0] || { title: 'Section 1: Abstract & Overview', page: 1 };
-  }, [chapters, currentPage]);
+    return chapters[0] || { title: currentBook?.title || 'Manuscript Document', page: 1 };
+  }, [chapters, currentPage, currentBook?.title]);
 
   const handleAddNote = (e) => {
     e.preventDefault();
@@ -262,20 +303,22 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
   };
 
   const getCitationText = () => {
-    const author = currentBook?.author || 'FCC Directorate';
-    const title = currentBook?.title || 'Academic Work';
-    const year = currentBook?.year || new Date().getFullYear();
-    const journal = currentBook?.journalName || currentBook?.journal_name || currentBook?.publisher || 'Federal Co-operative College Institutional Repository';
+    const author = currentBook?.author || '';
+    const title = currentBook?.title || '';
+    const year = currentBook?.year || currentBook?.publicationYear || currentBook?.publication_year || '';
+    const journal = currentBook?.journalName || currentBook?.journal_name || currentBook?.publisher || '';
     const doi = currentBook?.doi ? `https://doi.org/${currentBook.doi}` : '';
     const vol = currentBook?.volumeIssue || currentBook?.volume_issue || '';
 
-    if (citationFormat === 'APA') {
-      return `${author} (${year}). ${title}. ${journal}${vol ? ', ' + vol : ''}.${doi ? ' ' + doi : ''}`;
-    }
-    if (citationFormat === 'MLA') {
-      return `${author}. "${title}." ${journal}${vol ? ', ' + vol : ''}, ${year}.${doi ? ' ' + doi : ''}`;
-    }
-    return `${author} ${year}, '${title}', ${journal}${vol ? ', ' + vol : ''}.${doi ? ' Available at: ' + doi : ''}`;
+    const parts = [];
+    if (author) parts.push(author);
+    if (year) parts.push(`(${year})`);
+    if (title) parts.push(`"${title}"`);
+    if (journal) parts.push(journal);
+    if (vol) parts.push(vol);
+    if (doi) parts.push(doi);
+
+    return parts.join('. ') || title || 'Academic Publication';
   };
 
   const copyCitation = () => {
@@ -719,7 +762,7 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
                   <Search size={13} className="absolute left-3 top-2.5 text-slate-500" />
                   <input
                     type="text"
-                    placeholder="Search modules & topics..."
+                    placeholder="Search manuscript sections..."
                     value={chapterSearch}
                     onChange={(e) => setChapterSearch(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
@@ -727,31 +770,49 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
                 </div>
 
                 <div className="space-y-1.5 max-h-[500px] overflow-y-auto pr-1">
-                  {filteredChapters.map(c => {
-                    const isCurrent = currentPage >= c.page && (!chapters.find(next => next.page > c.page && currentPage >= next.page));
-                    return (
+                  {chapters.length > 1 ? (
+                    filteredChapters.map(c => {
+                      const isCurrent = currentPage >= c.page && (!chapters.find(next => next.page > c.page && currentPage >= next.page));
+                      return (
+                        <button
+                          key={c.id || c.page}
+                          onClick={() => {
+                            sounds.playClick();
+                            setCurrentPage(c.page);
+                          }}
+                          className={`w-full text-left p-3 rounded-xl text-xs transition border flex items-start justify-between gap-2 ${
+                            isCurrent
+                              ? 'bg-emerald-950/70 border-emerald-700/80 text-emerald-300 shadow'
+                              : 'bg-slate-950/60 border-slate-800/80 text-slate-300 hover:bg-slate-800/80'
+                          }`}
+                        >
+                          <div className="space-y-0.5">
+                            <div className="font-bold line-clamp-2">{c.title}</div>
+                          </div>
+                          <span className="font-mono text-[10px] text-emerald-400 bg-slate-900 px-2 py-0.5 rounded shrink-0">
+                            p.{c.page}
+                          </span>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-center space-y-2">
+                      <div className="text-xs text-white font-semibold line-clamp-2">
+                        {currentBook.title}
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {totalPages > 1 ? `Full Document (${totalPages} Pages)` : 'Full Document'}
+                      </div>
                       <button
-                        key={c.id || c.page}
-                        onClick={() => {
-                          sounds.playClick();
-                          setCurrentPage(c.page);
-                        }}
-                        className={`w-full text-left p-3 rounded-xl text-xs transition border flex items-start justify-between gap-2 ${
-                          isCurrent
-                            ? 'bg-emerald-950/70 border-emerald-700/80 text-emerald-300 shadow'
-                            : 'bg-slate-950/60 border-slate-800/80 text-slate-300 hover:bg-slate-800/80'
-                        }`}
+                        type="button"
+                        onClick={() => setReaderMode('pdf')}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition inline-flex items-center gap-1.5 shadow"
                       >
-                        <div className="space-y-0.5">
-                          <div className="font-bold line-clamp-2">{c.title}</div>
-                          <div className="text-[10px] text-slate-500">Est. duration: {c.duration || '20 min'}</div>
-                        </div>
-                        <span className="font-mono text-[10px] text-emerald-400 bg-slate-900 px-2 py-0.5 rounded shrink-0">
-                          p.{c.page}
-                        </span>
+                        <FileText size={13} />
+                        <span>View in PDF Stream</span>
                       </button>
-                    );
-                  })}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -763,43 +824,55 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-emerald-900/50 space-y-2">
                   <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
                     <ShieldCheck size={16} />
-                    <span>Accredited Institutional Publication</span>
+                    <span>{isOnlineBook(currentBook) ? 'Verified Scholarly Record' : 'Accredited Institutional Publication'}</span>
                   </div>
                   <div className="text-xs font-semibold text-white">
-                    Endorsed & Uploaded By:
+                    {isOnlineBook(currentBook) ? 'Indexed By / Source:' : 'Endorsed & Uploaded By:'}
                   </div>
                   <div className="text-sm font-bold text-emerald-300">
-                    {currentBook.uploadedBy}
+                    {currentBook.uploadedBy || (isOnlineBook(currentBook) ? 'OpenAlex Scholarly Graph' : 'Institutional Library')}
                   </div>
-                  <div className="text-[11px] text-slate-300 flex items-center gap-1.5 pt-1 border-t border-slate-800/60">
-                    <Building2 size={13} className="text-slate-400 shrink-0" />
-                    <span>{currentBook.department}</span>
-                  </div>
-                  <div className="text-[11px] text-slate-300 flex items-center gap-1.5">
-                    <GraduationCap size={13} className="text-slate-400 shrink-0" />
-                    <span>Course: {currentBook.courseCode} ({currentBook.targetLevel})</span>
-                  </div>
+                  {currentBook.department && (
+                    <div className="text-[11px] text-slate-300 flex items-center gap-1.5 pt-1 border-t border-slate-800/60">
+                      <Building2 size={13} className="text-slate-400 shrink-0" />
+                      <span>{currentBook.department}</span>
+                    </div>
+                  )}
+                  {currentBook.courseCode && (
+                    <div className="text-[11px] text-slate-300 flex items-center gap-1.5">
+                      <GraduationCap size={13} className="text-slate-400 shrink-0" />
+                      <span>Course: {currentBook.courseCode} {currentBook.targetLevel ? `(${currentBook.targetLevel})` : ''}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Bibliographic Record Card */}
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-2">
                   <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Catalogue Metadata</div>
-                  <div className="text-[11px] text-slate-300 flex justify-between">
-                    <span className="text-slate-500">Author:</span>
-                    <strong className="text-white text-right max-w-[160px] truncate">{currentBook.author}</strong>
-                  </div>
-                  <div className="text-[11px] text-slate-300 flex justify-between">
-                    <span className="text-slate-500">Call Number:</span>
-                    <span className="font-mono text-emerald-400">{currentBook.callNumber}</span>
-                  </div>
-                  <div className="text-[11px] text-slate-300 flex justify-between">
-                    <span className="text-slate-500">Shelf Stack:</span>
-                    <span className="text-slate-300 text-right truncate">{currentBook.shelfLocation}</span>
-                  </div>
-                  <div className="text-[11px] text-slate-300 flex justify-between">
-                    <span className="text-slate-500">File Payload:</span>
-                    <span className="font-mono text-slate-300">{currentBook.fileSize || '7.4 MB'}</span>
-                  </div>
+                  {currentBook.author && (
+                    <div className="text-[11px] text-slate-300 flex justify-between">
+                      <span className="text-slate-500">Author:</span>
+                      <strong className="text-white text-right max-w-[160px] truncate">{currentBook.author}</strong>
+                    </div>
+                  )}
+                  {currentBook.callNumber && (
+                    <div className="text-[11px] text-slate-300 flex justify-between">
+                      <span className="text-slate-500">Call Number:</span>
+                      <span className="font-mono text-emerald-400">{currentBook.callNumber}</span>
+                    </div>
+                  )}
+                  {currentBook.shelfLocation && (
+                    <div className="text-[11px] text-slate-300 flex justify-between">
+                      <span className="text-slate-500">Shelf Stack:</span>
+                      <span className="text-slate-300 text-right truncate">{currentBook.shelfLocation}</span>
+                    </div>
+                  )}
+                  {currentBook.fileSize && (
+                    <div className="text-[11px] text-slate-300 flex justify-between">
+                      <span className="text-slate-500">File Payload:</span>
+                      <span className="font-mono text-slate-300">{currentBook.fileSize}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Citation Generator */}
@@ -914,7 +987,7 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
                         <div className="text-[11px] text-slate-400 truncate">{b.author}</div>
                         <div className="text-[10px] text-slate-500 flex justify-between items-center pt-1 border-t border-slate-800/40">
                           <span className={`font-mono font-bold ${isOnline ? 'text-sky-400' : 'text-emerald-400'}`}>
-                            {isOnline ? (b.issn ? `ISSN: ${b.issn}` : 'ONLINE') : (b.courseCode || 'FCC.LIB')}
+                            {isOnline ? (b.issn ? `ISSN: ${b.issn}` : 'ONLINE') : (b.courseCode || b.callNumber || '')}
                           </span>
                           <span className="truncate max-w-[150px]">
                             {isOnline ? 'OpenAlex Scholarly API' : `By: ${b.uploadedBy || 'HOD'}`}
@@ -1075,7 +1148,7 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
               {/* Header Bar */}
               <div className="flex justify-between items-center text-[11px] font-sans font-bold uppercase tracking-widest text-emerald-500 pb-3 border-b border-dashed border-slate-700/50">
                 <span>{currentChapter.title}</span>
-                <span>Ref: {currentBook.callNumber || currentBook.call_number || 'FCC.LIB.DIGITAL'}</span>
+                {currentBook.callNumber ? <span>Ref: {currentBook.callNumber}</span> : null}
               </div>
 
               {/* Book / Journal Title & Bibliographic Heading */}
@@ -1084,9 +1157,13 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
                   {currentBook.title}
                 </h2>
                 <div className="text-xs font-sans text-slate-400 mt-2 flex flex-wrap items-center gap-2">
-                  <span>Author: <strong className="text-white">{currentBook.author}</strong></span>
-                  <span>•</span>
-                  <span>Dept / Topic: <strong className="text-emerald-400">{currentBook.department || currentBook.subject || 'Academic Research'}</strong></span>
+                  {currentBook.author && <span>Author: <strong className="text-white">{currentBook.author}</strong></span>}
+                  {currentBook.department && (
+                    <>
+                      <span>•</span>
+                      <span>Dept / Faculty: <strong className="text-emerald-400">{currentBook.department}</strong></span>
+                    </>
+                  )}
                   {currentBook.year && (
                     <>
                       <span>•</span>
@@ -1122,41 +1199,58 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
                       <ExternalLink size={11} /> DOI: {currentBook.doi}
                     </a>
                   )}
-                  <span className="px-2.5 py-1 rounded-lg bg-amber-950/60 border border-amber-800 text-amber-300 font-medium">
-                    ✓ Verified Academic Record
-                  </span>
                 </div>
               </div>
 
-              {/* Verified Abstract Box */}
-              <div className={`p-4 rounded-xl border font-sans text-xs leading-relaxed space-y-1.5 ${
-                theme === 'dark'
-                  ? 'bg-emerald-950/30 border-emerald-800/40 text-emerald-300'
-                  : theme === 'sepia'
-                  ? 'bg-[#f4ebe1] border-[#dfd2be] text-[#332a1e]'
-                  : 'bg-emerald-50 border-emerald-200 text-emerald-950'
-              }`}>
-                <div className="font-bold flex items-center gap-1.5">
-                  <Sparkles size={14} /> Executive Abstract & Scholarly Scope:
+              {/* Verified Abstract Box (Rendered only if real abstract exists in database) */}
+              {currentBook.abstract ? (
+                <div className={`p-4 rounded-xl border font-sans text-xs leading-relaxed space-y-1.5 ${
+                  theme === 'dark'
+                    ? 'bg-emerald-950/30 border-emerald-800/40 text-emerald-300'
+                    : theme === 'sepia'
+                    ? 'bg-[#f4ebe1] border-[#dfd2be] text-[#332a1e]'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                }`}>
+                  <div className="font-bold flex items-center gap-1.5">
+                    <Sparkles size={14} /> Executive Abstract & Scholarly Scope:
+                  </div>
+                  <p>{currentBook.abstract}</p>
                 </div>
-                <p>
-                  {currentBook.abstract || `Scholarly publication by ${currentBook.author || 'academic faculty'} indexed in the Federal Co-operative College Institutional Repository and academic databases.`}
-                </p>
-              </div>
+              ) : null}
 
-              {/* Section Analytical Content */}
+              {/* Real Content or High-Fidelity PDF Manuscript Stream */}
               <div className="space-y-4 font-sans text-sm">
                 <h3 className="text-lg font-bold font-sans">
                   {currentChapter.title}
                 </h3>
 
-                <p className="leading-relaxed">
-                  This section examines the critical theoretical foundations, empirical developments, and applied frameworks presented in <strong>&ldquo;{currentBook.title}&rdquo;</strong> by <strong>{currentBook.author}</strong>. The analysis emphasizes rigorous academic standards, verified peer-reviewed methodology, and comprehensive scholarly inquiry.
-                </p>
-
-                <p className="leading-relaxed">
-                  Scholars and researchers investigating <strong>{currentBook.department || 'contemporary curriculum'}</strong> can review the primary experimental arguments, data sets, and institutional applications documented within this work.
-                </p>
+                {currentBook.content || currentBook.extractedText ? (
+                  <div className="leading-relaxed whitespace-pre-line text-slate-200">
+                    {currentBook.content || currentBook.extractedText}
+                  </div>
+                ) : (
+                  <div className="p-6 rounded-2xl bg-slate-950/80 border border-slate-800 text-center space-y-3 my-4">
+                    <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center">
+                      <FileText size={22} />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Full Manuscript Stream</h4>
+                      <p className="text-xs text-slate-400 max-w-md mx-auto mt-1 leading-relaxed">
+                        This work is streamed directly from its official document PDF payload. Click below to view the original manuscript in high-fidelity canvas mode.
+                      </p>
+                    </div>
+                    {currentBook.pdfUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setReaderMode('pdf')}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition inline-flex items-center gap-2 shadow"
+                      >
+                        <BookOpen size={14} />
+                        <span>View in PDF Canvas Stream</span>
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 {/* Scholarly Citation Box */}
                 <div className={`p-4 rounded-xl border text-xs my-3 space-y-2 ${
