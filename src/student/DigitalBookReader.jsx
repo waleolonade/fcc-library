@@ -1,1 +1,1 @@
-export { default } from '../common/DigitalBookReader';
+export { default, DEFAULT_INSTITUTIONAL_BOOK } from '../common/DigitalBookReader';

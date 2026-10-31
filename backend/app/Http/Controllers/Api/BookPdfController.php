@@ -94,8 +94,9 @@ class BookPdfController extends Controller
             }
         }
 
-        // Glob fallback
-        if (!$foundAbsolutePath && $cleanSuffix && strlen($cleanSuffix) >= 3) {
+        // Glob fallback for valid ID suffixes (avoid scanning for generic keywords like 'pdf' or 'file')
+        $ignoredSuffixes = ['pdf', 'file', 'undefined', 'null', 'book', 'upload'];
+        if (!$foundAbsolutePath && $cleanSuffix && strlen($cleanSuffix) >= 3 && !in_array(strtolower($cleanSuffix), $ignoredSuffixes)) {
             foreach ($searchDirs as $dir) {
                 if (!is_dir($dir)) continue;
                 $matches = glob($dir . '/*' . $cleanSuffix . '*.pdf');

@@ -387,8 +387,9 @@ class CatalogController extends Controller
             }
         }
 
-        // Also do a glob search if cleanSuffix is available (e.g. *1527*.pdf)
-        if (!$foundDiskPath && $cleanSuffix && strlen($cleanSuffix) >= 3) {
+        // Also do a glob search if cleanSuffix is available (avoid scanning for generic keywords like 'pdf' or 'file')
+        $ignoredSuffixes = ['pdf', 'file', 'undefined', 'null', 'book', 'upload'];
+        if (!$foundDiskPath && $cleanSuffix && strlen($cleanSuffix) >= 3 && !in_array(strtolower($cleanSuffix), $ignoredSuffixes)) {
             foreach ($storageDirs as $dir) {
                 if (!is_dir($dir)) continue;
                 $matches = glob($dir . '/*' . $cleanSuffix . '*.pdf');

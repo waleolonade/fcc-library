@@ -16,7 +16,7 @@ import SelfServiceKiosk from './common/SelfServiceKiosk';
 import FccAdminLibrary from './fcc_admin_library/FccAdminLibrary';
 import HodDashboard from './hod/HodDashboard';
 import PublicDiscovery from './public_opac/PublicDiscovery';
-import DigitalBookReader from './student/DigitalBookReader';
+import DigitalBookReader, { DEFAULT_INSTITUTIONAL_BOOK } from './student/DigitalBookReader';
 import StudentPortal from './student/StudentPortal';
 import DeveloperMasterPortal from './developer/DeveloperMasterPortal';
 import PageMaintenanceGuard from './common/PageMaintenanceGuard';
@@ -408,6 +408,8 @@ export default function App() {
           const initialPick = pickBestUploadedBook(books);
           if (initialPick) {
             setActiveBookForReader(initialPick);
+          } else {
+            setActiveBookForReader(DEFAULT_INSTITUTIONAL_BOOK);
           }
 
           // Always fetch live from backend API to ensure freshly uploaded HOD/Admin books are loaded

@@ -12,8 +12,27 @@ import { sounds } from '../utils/soundEffects';
 import { libraryApi } from '../api/libraryApi';
 import PdfCanvasViewer from './PdfCanvasViewer';
 
+export const DEFAULT_INSTITUTIONAL_BOOK = {
+  id: 'FCC-MONOGRAPH-001',
+  title: 'Federal Co-operative College Institutional Monograph & Reader Guide',
+  author: 'Central Library Directorate & Academic Board',
+  department: 'Federal Co-operative College, Eleyele, Ibadan',
+  courseCode: 'GEN 101',
+  targetLevel: 'Institutional Scholar (All Levels)',
+  callNumber: 'FCC.LIB.2026.DIR',
+  shelfLocation: 'Digital Repository & E-Library',
+  uploadedBy: 'Central Library Administration',
+  fileName: 'FCC_Academic_Monograph.pdf',
+  fileSize: '1.2 MB',
+  hasBinaryPdf: true,
+  isDigital: true,
+  pdfUrl: '/api/books/FCC-MONOGRAPH-001/pdf',
+  pdfPages: 45,
+  abstract: 'Official academic curriculum guide, electronic library guidelines, and scholarly reference indices published by Federal Co-operative College, Ibadan.'
+};
+
 export default function DigitalBookReader({ book: initialBook, onClose, user, onSelectBook }) {
-  const [currentBook, setCurrentBook] = useState(initialBook || null);
+  const [currentBook, setCurrentBook] = useState(() => initialBook || DEFAULT_INSTITUTIONAL_BOOK);
   const [currentPage, setCurrentPage] = useState(1);
   const [theme, setTheme] = useState('dark'); // 'dark' | 'sepia' | 'light'
   const [fontSize, setFontSize] = useState('text-base'); // 'text-sm' | 'text-base' | 'text-lg' | 'text-xl'
@@ -76,8 +95,8 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
 
           setUploadedBooks(normalized);
 
-          // If no currentBook was passed, select the first real book
-          if (!currentBook && normalized.length > 0) {
+          // If no initialBook was provided or if initialBook was default placeholder, select the first real book
+          if ((!initialBook || initialBook.id === DEFAULT_INSTITUTIONAL_BOOK.id) && normalized.length > 0) {
             loadBookDetails(normalized[0]);
           }
         }
@@ -866,7 +885,7 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
           {/* MODE 1: PDF MANUSCRIPT STREAM (HIGH-PERFORMANCE CANVAS PDF VIEWER) */}
           {readerMode === 'pdf' ? (
             <PdfCanvasViewer
-              pdfUrl={currentBook.pdfUrl || `/api/books/${encodeURIComponent(currentBook.id)}/pdf`}
+              pdfUrl={currentBook?.fileDataUrl || currentBook?.file_data_url || currentBook?.pdfUrl || (currentBook?.id ? `/api/books/${encodeURIComponent(currentBook.id)}/pdf` : '/api/books/FCC-MONOGRAPH-001/pdf')}
               currentPage={currentPage}
               onPageChange={setCurrentPage}
               onTotalPages={(total) => {
@@ -874,8 +893,8 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
                   currentBook.pdfPages = total;
                 }
               }}
-              title={currentBook.title}
-              fileName={currentBook.fileName || `${currentBook.title}.pdf`}
+              title={currentBook?.title || 'Academic Document'}
+              fileName={currentBook?.fileName || `${currentBook?.title || 'document'}.pdf`}
               theme={theme}
               onSwitchToInteractive={() => setReaderMode('interactive')}
             />

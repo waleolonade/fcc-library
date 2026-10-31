@@ -34,7 +34,7 @@ import { pwaHistory } from '../utils/pwaHistoryManager';
 // Student Subcomponents
 import BiometricScannerModal from '../common/BiometricScannerModal';
 import BookDetailsModal from '../common/BookDetailsModal';
-import DigitalBookReader from '../common/DigitalBookReader';
+import DigitalBookReader, { DEFAULT_INSTITUTIONAL_BOOK } from '../common/DigitalBookReader';
 import PartnerLibrariesGateway from '../common/PartnerLibrariesGateway';
 import { useDeviceType } from '../utils/useDeviceType';
 import AcademicJournalsDirectory from './AcademicJournalsDirectory';
@@ -215,6 +215,8 @@ export default function StudentStandaloneApp() {
           setActiveBookForReader(withPdf);
         } else if (loadedBooks && loadedBooks.length > 0) {
           setActiveBookForReader(loadedBooks[0]);
+        } else {
+          setActiveBookForReader(DEFAULT_INSTITUTIONAL_BOOK);
         }
       }
       return;
