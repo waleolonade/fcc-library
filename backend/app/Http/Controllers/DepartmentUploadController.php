@@ -1160,6 +1160,10 @@ class DepartmentUploadController extends Controller
 
         foreach ($candidatePaths as $cp) {
             if (file_exists($cp) && filesize($cp) > 200) {
+                if ($this->isFakeMonographPdf($cp)) {
+                    @unlink($cp);
+                    continue;
+                }
                 $fileName = $upload?->file_name ?: basename($cp);
                 return response()->file($cp, [
                     'Content-Type' => 'application/pdf',
@@ -1177,6 +1181,10 @@ class DepartmentUploadController extends Controller
             if (!empty($globMatches)) {
                 foreach ($globMatches as $gm) {
                     if (filesize($gm) > 200) {
+                        if ($this->isFakeMonographPdf($gm)) {
+                            @unlink($gm);
+                            continue;
+                        }
                         $fileName = $upload?->file_name ?: basename($gm);
                         return response()->file($gm, [
                             'Content-Type' => 'application/pdf',
@@ -1239,173 +1247,45 @@ class DepartmentUploadController extends Controller
             }
         } catch (\Throwable $e) {}
 
-        // 5. Generate high-fidelity, publication-grade academic PDF manuscript dynamically
-        $generatedPdf = $this->generateAcademicManuscriptPdf($upload, $id);
-        @file_put_contents($diskPath, $generatedPdf);
+        // 4. Check if record has external link or DOI to redirect to authentic PDF
+        $doi = $upload?->doi;
+        if (!empty($doi)) {
+            try {
+                $openAlex = app(\App\Services\OpenAlexService::class);
+                $work = $openAlex->getWorkByDoi($doi);
+                $oaUrl = $work['open_access']['oa_url']
+                      ?? $work['best_oa_location']['pdf_url']
+                      ?? $work['primary_location']['pdf_url']
+                      ?? null;
+                if ($oaUrl) {
+                    return redirect()->away($oaUrl);
+                }
+            } catch (\Throwable $e) {}
+        }
 
-        $fileName = $upload?->file_name ?: ($safeId . '.pdf');
-        return response()->file($diskPath, [
-            'Content-Type' => 'application/pdf',
-            'Accept-Ranges' => 'bytes',
-            'Content-Disposition' => ($isDownload ? 'attachment' : 'inline') . '; filename="' . $fileName . '"'
-        ]);
+        $extUrl = $upload?->external_url ?: $upload?->pdf_url;
+        if (!empty($extUrl) && filter_var($extUrl, FILTER_VALIDATE_URL)) {
+            return redirect()->away($extUrl);
+        }
+
+        // Return honest 404 response instead of forging fake syllabus monograph
+        return response()->json([
+            'error' => 'Digital PDF document not available for this catalog record.',
+            'id' => $id,
+            'title' => $upload?->title ?: 'Document',
+            'has_pdf' => false
+        ], 404);
     }
 
-    /**
-     * Builds an authentic, 5-page publication-grade PDF 1.4 manuscript with official institutional
-     * styling for the Federal Co-operative College Ibadan Academic Repository.
-     */
-    private function generateAcademicManuscriptPdf($upload, $fallbackId): string
+    private function isFakeMonographPdf(string $path): bool
     {
-        $title = $upload ? ($upload->title ?: 'Departmental Academic Curriculum Text') : 'Academic Curriculum Monograph';
-        $author = $upload ? ($upload->author ?: 'Departmental Faculty Scholar / HOD') : 'Federal Co-operative College Faculty';
-        $dept = $upload ? ($upload->department_name ?: 'Academic Department') : 'Academic Studies';
-        $code = $upload ? ($upload->course_code ?: 'GEN 101') : 'GEN 101';
-        $level = $upload ? ($upload->target_level ?: 'HND II') : 'HND II';
-        $semester = $upload ? ($upload->semester ?: 'First Semester') : 'First Semester';
-        $resType = $upload ? ($upload->resource_type ?: 'Curriculum Monograph') : 'Curriculum Monograph';
-        $id = $upload ? $upload->id : $fallbackId;
-        $callNumber = $upload ? ($upload->assigned_call_number ?: ('QA76.9 .' . strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $author), 0, 3) ?: 'FCC') . ' 2026')) : 'FCC.2026';
-        $shelf = $upload ? ($upload->assigned_shelf ?: 'Floor 2 • Aisle 4 • Shelf 12B') : 'Digital Institutional Repository';
-        $date = date('F Y');
-
-        $pages = [];
-
-        // --- PAGE 1: TITLE PAGE & ACADEMIC FRONTISPIECE ---
-        $p1 = "BT\n";
-        $p1 .= "/F2 20 Tf 50 720 Td (FEDERAL CO-OPERATIVE COLLEGE, IBADAN) Tj\n";
-        $p1 .= "/F1 11 Tf 0 -22 Td (P.M.B. 5033, Eleyele, Ibadan, Oyo State, Nigeria) Tj\n";
-        $p1 .= "/F2 13 Tf 0 -28 Td (CENTRAL LIBRARY DIRECTORATE • ACADEMIC REPOSITORY) Tj\n";
-        $p1 .= "/F2 10 Tf 0 -18 Td (OFFICIAL INSTITUTIONAL CURRICULUM MANUSCRIPT) Tj\n";
-        $p1 .= "/F2 17 Tf 0 -45 Td (" . addcslashes(mb_strimwidth($title, 0, 52, "..."), "()\\") . ") Tj\n";
-        if (mb_strlen($title) > 52) {
-            $p1 .= "/F2 15 Tf 0 -22 Td (" . addcslashes(mb_substr($title, 52, 55), "()\\") . ") Tj\n";
-        }
-        $p1 .= "/F3 12 Tf 0 -30 Td (Principal Author / Contributor: " . addcslashes($author, "()\\") . ") Tj\n";
-        $p1 .= "/F1 11 Tf 0 -22 Td (Academic Department: " . addcslashes($dept, "()\\") . ") Tj\n";
-        $p1 .= "/F1 11 Tf 0 -18 Td (Course Code: " . addcslashes($code, "()\\") . " | Level: " . addcslashes($level, "()\\") . " | Semester: " . addcslashes($semester, "()\\") . ") Tj\n";
-        $p1 .= "/F1 10 Tf 0 -18 Td (Resource Category: " . addcslashes($resType, "()\\") . " | Ingestion ID: " . addcslashes($id, "()\\") . ") Tj\n";
-        $p1 .= "/F1 10 Tf 0 -18 Td (Assigned Call Number: " . addcslashes($callNumber, "()\\") . " | Location: " . addcslashes($shelf, "()\\") . ") Tj\n";
-        $p1 .= "/F2 11 Tf 0 -45 Td (DIRECTORATE OF LIBRARY SERVICES STAGING STAMP) Tj\n";
-        $p1 .= "/F1 9 Tf 0 -18 Td (Staged for Chief College Librarian evaluation, syllabus verification, and OPAC ingestion.) Tj\n";
-        $p1 .= "/F1 9 Tf 0 -15 Td (Certified for institutional research and student academic learning under NBTE Standards.) Tj\n";
-        $p1 .= "/F3 9 Tf 0 -25 Td (Publication Session: " . $date . " • Federal Co-operative College Ibadan Press) Tj\n";
-        $p1 .= "ET\n";
-        $pages[] = $p1;
-
-        // --- PAGE 2: SYLLABUS ALIGNMENT & EDUCATIONAL OBJECTIVES ---
-        $p2 = "BT\n";
-        $p2 .= "/F2 16 Tf 50 720 Td (MODULE OVERVIEW & EDUCATIONAL OBJECTIVES) Tj\n";
-        $p2 .= "/F2 11 Tf 0 -25 Td (1.1 Course Description & Syllabus Benchmarks) Tj\n";
-        $p2 .= "/F1 10 Tf 0 -18 Td (This publication serves as the official curriculum reference monograph for " . addcslashes($code, "()\\") . ".) Tj\n";
-        $p2 .= "/F1 10 Tf 0 -15 Td (It provides foundational paradigms, applied techniques, and systematic modules.) Tj\n";
-        $p2 .= "/F1 10 Tf 0 -15 Td (Structured in full accordance with National Board for Technical Education guidelines.) Tj\n";
-        $p2 .= "/F2 11 Tf 0 -28 Td (1.2 Formative Learning Objectives) Tj\n";
-        $p2 .= "/F1 10 Tf 0 -18 Td (Upon successful mastery of this course text, students of " . addcslashes($dept, "()\\") . " will:) Tj\n";
-        $p2 .= "/F1 10 Tf 0 -16 Td (- Understand core structural frameworks, operational mechanics, and theoretical foundations.) Tj\n";
-        $p2 .= "/F1 10 Tf 0 -15 Td (- Implement practical computational and workstation exercises in industrial contexts.) Tj\n";
-        $p2 .= "/F1 10 Tf 0 -15 Td (- Analyze empirical problem sets, case scenarios, and institutional co-operative structures.) Tj\n";
-        $p2 .= "/F1 10 Tf 0 -15 Td (- Demonstrate technical proficiency required for terminal assessments and certifications.) Tj\n";
-        $p2 .= "/F2 11 Tf 0 -28 Td (1.3 Academic Integrity & Accreditation Standards) Tj\n";
-        $p2 .= "/F1 10 Tf 0 -18 Td (All instructional contents have been verified by the Departmental Academic Board.) Tj\n";
-        $p2 .= "ET\n";
-        $pages[] = $p2;
-
-        // --- PAGE 3: CURRICULUM CHAPTER MODULES & APPLIED WORKSTATION GUIDELINES ---
-        $p3 = "BT\n";
-        $p3 .= "/F2 16 Tf 50 720 Td (CURRICULUM CHAPTER MODULES & APPLIED PRACTICE) Tj\n";
-        $p3 .= "/F2 11 Tf 0 -25 Td (Module 1: Foundational Principles & Structural Architecture) Tj\n";
-        $p3 .= "/F1 10 Tf 0 -18 Td (Exploration of underlying mechanisms, technical terminology, and design models.) Tj\n";
-        $p3 .= "/F1 10 Tf 0 -15 Td (Detailed historical evolution and contemporary industrial applications in Nigeria.) Tj\n";
-        $p3 .= "/F2 11 Tf 0 -28 Td (Module 2: Practical Workstation Laboratory Exercises) Tj\n";
-        $p3 .= "/F1 10 Tf 0 -18 Td (Hands-on workshop guidelines, procedural step-by-step algorithms, and empirical setups.) Tj\n";
-        $p3 .= "/F1 10 Tf 0 -15 Td (Laboratory security protocols, equipment handling, and experimental validation logs.) Tj\n";
-        $p3 .= "/F2 11 Tf 0 -28 Td (Module 3: Co-operative & Commercial Implementations) Tj\n";
-        $p3 .= "/F1 10 Tf 0 -18 Td (Field studies addressing management efficiency, cost-benefit optimizations, and scale.) Tj\n";
-        $p3 .= "/F1 10 Tf 0 -15 Td (Best practice guidelines for co-operative societies, agro-allied, and tech firms.) Tj\n";
-        $p3 .= "ET\n";
-        $pages[] = $p3;
-
-        // --- PAGE 4: EXAMINATION REVIEW QUESTIONS & CASE SCENARIOS ---
-        $p4 = "BT\n";
-        $p4 .= "/F2 16 Tf 50 720 Td (EXAMINATION REVIEW QUESTIONS & CASE SCENARIOS) Tj\n";
-        $p4 .= "/F2 11 Tf 0 -25 Td (Section A: Theory & Conceptual Review) Tj\n";
-        $p4 .= "/F1 10 Tf 0 -18 Td (1. Define the core tenets of " . addcslashes($code, "()\\") . " and explain their operational implications.) Tj\n";
-        $p4 .= "/F1 10 Tf 0 -16 Td (2. Contrast modern methodologies with traditional frameworks in " . addcslashes($dept, "()\\") . ".) Tj\n";
-        $p4 .= "/F1 10 Tf 0 -16 Td (3. Outline the practical constraints faced in developing economies and propose solutions.) Tj\n";
-        $p4 .= "/F2 11 Tf 0 -28 Td (Section B: Applied Laboratory & Practical Analysis) Tj\n";
-        $p4 .= "/F1 10 Tf 0 -18 Td (4. Given a realistic institutional scenario, construct a complete structural model.) Tj\n";
-        $p4 .= "/F1 10 Tf 0 -16 Td (5. Document an empirical diagnostic log and describe testing procedures.) Tj\n";
-        $p4 .= "/F2 11 Tf 0 -28 Td (Continuous Assessment Note) Tj\n";
-        $p4 .= "/F1 10 Tf 0 -18 Td (Students are required to maintain a physical or digital logbook for module reviews.) Tj\n";
-        $p4 .= "ET\n";
-        $pages[] = $p4;
-
-        // --- PAGE 5: CENTRAL LIBRARY CLEARANCE & CATALOGING DOSSIER ---
-        $p5 = "BT\n";
-        $p5 .= "/F2 16 Tf 50 720 Td (CENTRAL LIBRARY CLEARANCE & CATALOGING DOSSIER) Tj\n";
-        $p5 .= "/F2 11 Tf 0 -25 Td (Official Library of Congress / NBTE Cataloging Data) Tj\n";
-        $p5 .= "/F1 10 Tf 0 -18 Td (Institution: Federal Co-operative College, Ibadan Central Library) Tj\n";
-        $p5 .= "/F1 10 Tf 0 -15 Td (Ingestion Identifier: " . addcslashes($id, "()\\") . ") Tj\n";
-        $p5 .= "/F1 10 Tf 0 -15 Td (Title: " . addcslashes($title, "()\\") . ") Tj\n";
-        $p5 .= "/F1 10 Tf 0 -15 Td (Department: " . addcslashes($dept, "()\\") . " | Level: " . addcslashes($level, "()\\") . ") Tj\n";
-        $p5 .= "/F1 10 Tf 0 -15 Td (Access Level: Institution-Wide Digital Scholar Access) Tj\n";
-        $p5 .= "/F2 11 Tf 0 -28 Td (Recommended Reference Literature) Tj\n";
-        $p5 .= "/F1 10 Tf 0 -18 Td (- National Board for Technical Education (NBTE) Standard Curriculum Guides) Tj\n";
-        $p5 .= "/F1 10 Tf 0 -15 Td (- Federal Co-operative College Institutional Repository, Research Compendium) Tj\n";
-        $p5 .= "/F1 10 Tf 0 -15 Td (- African Journals Online (AJOL) & Academic Open Access Publications) Tj\n";
-        $p5 .= "/F2 11 Tf 0 -35 Td (DIRECTORATE CLEARANCE CERTIFICATE) Tj\n";
-        $p5 .= "/F1 10 Tf 0 -18 Td (Certified by: Chief College Librarian & Directorate of Academic Planning) Tj\n";
-        $p5 .= "/F3 9 Tf 0 -15 Td (Digital Security Stamp: SHA256 VALIDATED • FCC SMART ILS 2026) Tj\n";
-        $p5 .= "ET\n";
-        $pages[] = $p5;
-
-        // Assemble standard PDF 1.4 binary structure
-        $objs = [];
-        $objs[1] = "<< /Type /Catalog /Pages 2 0 R >>";
-        
-        $kids = [];
-        for ($i = 0; $i < count($pages); $i++) {
-            $kids[] = (3 + $i * 2) . " 0 R";
-        }
-        $objs[2] = "<< /Type /Pages /Kids [" . implode(' ', $kids) . "] /Count " . count($pages) . " >>";
-        
-        $fontF1 = 3 + count($pages) * 2;
-        $fontF2 = $fontF1 + 1;
-        $fontF3 = $fontF2 + 1;
-
-        for ($i = 0; $i < count($pages); $i++) {
-            $pageObjNum = 3 + $i * 2;
-            $contentObjNum = $pageObjNum + 1;
-            $objs[$pageObjNum] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 {$fontF1} 0 R /F2 {$fontF2} 0 R /F3 {$fontF3} 0 R >> >> /Contents {$contentObjNum} 0 R >>";
-            $stream = $pages[$i];
-            $objs[$contentObjNum] = "<< /Length " . strlen($stream) . " >>\nstream\n" . $stream . "\nendstream";
-        }
-
-        $objs[$fontF1] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
-        $objs[$fontF2] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
-        $objs[$fontF3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
-
-        ksort($objs);
-
-        $out = "%PDF-1.4\n";
-        $offsets = [];
-        foreach ($objs as $num => $body) {
-            $offsets[$num] = strlen($out);
-            $out .= "{$num} 0 obj\n{$body}\nendobj\n";
-        }
-
-        $xrefOffset = strlen($out);
-        $out .= "xref\n0 " . (max(array_keys($objs)) + 1) . "\n";
-        $out .= "0000000000 65535 f \n";
-        for ($i = 1; $i <= max(array_keys($objs)); $i++) {
-            $off = $offsets[$i] ?? 0;
-            $out .= sprintf("%010d 00000 n \n", $off);
-        }
-        $out .= "trailer\n<< /Size " . (max(array_keys($objs)) + 1) . " /Root 1 0 R >>\n";
-        $out .= "startxref\n{$xrefOffset}\n%%EOF\n";
-
-        return $out;
+        if (!file_exists($path) || filesize($path) > 50000) return false;
+        $fh = @fopen($path, 'rb');
+        if (!$fh) return false;
+        $bytes = fread($fh, 4096);
+        fclose($fh);
+        return str_contains($bytes, 'OFFICIAL INSTITUTIONAL CURRICULUM MANUSCRIPT')
+            || str_contains($bytes, 'CENTRAL LIBRARY DIRECTORATE');
     }
 
     public function destroy(Request $request, $id)
@@ -1713,15 +1593,29 @@ class DepartmentUploadController extends Controller
 
         // Space-Saving Physical Storage: Save binary PDF to local disk to preserve database memory
         $rawBinary = null;
-        if (!empty($validated['file_data_url'])) {
-            try {
-                $storageDir = storage_path('app/public/department_uploads');
-                $booksDir = storage_path('app/public/books');
-                if (!is_dir($storageDir)) @mkdir($storageDir, 0755, true);
-                if (!is_dir($booksDir)) @mkdir($booksDir, 0755, true);
+        $storageDir = storage_path('app/public/department_uploads');
+        $booksDir = storage_path('app/public/books');
+        $libDir = storage_path('app/library-books');
+        if (!is_dir($storageDir)) @mkdir($storageDir, 0755, true);
+        if (!is_dir($booksDir)) @mkdir($booksDir, 0755, true);
+        if (!is_dir($libDir)) @mkdir($libDir, 0755, true);
 
-                $safeId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $id);
-                $diskPath = $storageDir . '/' . $safeId . '.pdf';
+        $safeId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $id);
+        $diskPath = $storageDir . '/' . $safeId . '.pdf';
+
+        if ($request->hasFile('file') && $request->file('file')->isValid()) {
+            try {
+                $uploadedFile = $request->file('file');
+                $uploadedFile->move($storageDir, $safeId . '.pdf');
+                @copy($diskPath, $booksDir . '/' . $safeId . '.pdf');
+                @copy($diskPath, $libDir . '/' . $safeId . '.pdf');
+                $rawBinary = @file_get_contents($diskPath);
+                if (empty($validated['file_name'])) {
+                    $validated['file_name'] = $uploadedFile->getClientOriginalName();
+                }
+            } catch (\Throwable $fileErr) {}
+        } elseif (!empty($validated['file_data_url'])) {
+            try {
                 if (str_starts_with($validated['file_data_url'], 'data:')) {
                     [, $b64] = explode(',', $validated['file_data_url'], 2);
                     $rawBinary = base64_decode($b64);
@@ -1731,6 +1625,7 @@ class DepartmentUploadController extends Controller
                 if ($rawBinary) {
                     @file_put_contents($diskPath, $rawBinary);
                     @file_put_contents($booksDir . '/' . $safeId . '.pdf', $rawBinary);
+                    @file_put_contents($libDir . '/' . $safeId . '.pdf', $rawBinary);
                 }
             } catch (\Throwable $fileErr) {}
         }
@@ -1885,19 +1780,24 @@ class DepartmentUploadController extends Controller
                 'book_id' => $bookId
             ]);
 
-            // Ensure physical disk PDF exists for both $id and $bookId in both storage directories
+            // Ensure physical disk PDF exists for both $id and $bookId in all storage directories
             $bDir = storage_path('app/public/books');
             $sDir = storage_path('app/public/department_uploads');
+            $lDir = storage_path('app/library-books');
             if (!is_dir($bDir)) @mkdir($bDir, 0755, true);
             if (!is_dir($sDir)) @mkdir($sDir, 0755, true);
+            if (!is_dir($lDir)) @mkdir($lDir, 0755, true);
 
             if (isset($diskPath) && file_exists($diskPath)) {
                 @copy($diskPath, $sDir . '/' . $bookId . '.pdf');
                 @copy($diskPath, $bDir . '/' . $bookId . '.pdf');
+                @copy($diskPath, $lDir . '/' . $bookId . '.pdf');
                 @copy($diskPath, $bDir . '/' . $safeId . '.pdf');
+                @copy($diskPath, $lDir . '/' . $safeId . '.pdf');
             } elseif ($rawBinary) {
                 @file_put_contents($sDir . '/' . $bookId . '.pdf', $rawBinary);
                 @file_put_contents($bDir . '/' . $bookId . '.pdf', $rawBinary);
+                @file_put_contents($lDir . '/' . $bookId . '.pdf', $rawBinary);
             }
 
             $this->syncBookToMysql($book);

@@ -2431,135 +2431,170 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
                           </div>
                         )}
 
-                        {/* PAGE 2: SYLLABUS & TABLE OF CONTENTS */}
+                        {/* PAGE 2: SCHOLARLY ABSTRACT & EXECUTIVE SYNOPSIS */}
                         {readerPage === 2 && (
                           <div className="space-y-3.5 animate-fadeIn">
                             <div className="flex items-center justify-between border-b pb-2 border-slate-700/60">
                               <span className="font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 text-teal-400">
                                 <Bookmark size={14} />
-                                <span>Table of Contents & Curriculum Matrix</span>
+                                <span>Scholarly Abstract & Executive Synopsis</span>
                               </span>
-                              <span className="text-[10px] font-mono opacity-70">{courseCode} Syllabus</span>
+                              <span className="text-[10px] font-mono opacity-70">{cat === 'journal' ? 'Journal Article' : cat === 'project' ? 'Capstone Thesis' : 'Academic Work'}</span>
                             </div>
 
-                            <div className="space-y-2 text-xs">
-                              {[
-                                { num: 'Module 1', title: `Theoretical Foundations & Principles of ${courseCode}`, pages: 'pp. 1 - 28', desc: 'Core foundational principles, historical evolution, and institutional scope.' },
-                                { num: 'Module 2', title: `Applied Methodologies & Technical Frameworks`, pages: 'pp. 29 - 64', desc: 'Practical implementations, laboratory exercises, and industrial best practices.' },
-                                { num: 'Module 3', title: `Case Studies, Analytical Models & Field Data`, pages: 'pp. 65 - 98', desc: 'Empirical departmental case studies aligned with NBTE accreditation.' },
-                                { num: 'Module 4', title: `Evaluation Metrics, Review Questions & Examination Compendium`, pages: 'pp. 99 - 134', desc: 'Comprehensive past questions, practice problem sets, and grading rubrics.' },
-                                { num: 'Appendix', title: `Official Bibliography, Glossary & Authoritative Citations`, pages: 'pp. 135 - 148', desc: 'Scholarly citations, library indexes, and central archive registry.' }
-                              ].map((m, idx) => (
-                                <div key={idx} className="p-2.5 rounded-xl bg-slate-950/40 border border-slate-800/60 flex items-start justify-between gap-3">
-                                  <div className="space-y-0.5">
-                                    <div className="font-bold flex items-center gap-2">
-                                      <span className="text-teal-400 font-mono text-[11px]">{m.num}:</span>
-                                      <span>{m.title}</span>
-                                    </div>
-                                    <p className="text-[11px] opacity-75">{m.desc}</p>
-                                  </div>
-                                  <span className="text-[10px] font-mono opacity-60 shrink-0">{m.pages}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* PAGE 3: CHAPTER 1: THEORETICAL FOUNDATIONS */}
-                        {readerPage === 3 && (
-                          <div className="space-y-3 animate-fadeIn text-xs leading-relaxed">
-                            <div className="border-b pb-2 border-slate-700/60 flex justify-between items-center">
-                              <h4 className="font-bold text-sm text-teal-400">Chapter 1: Theoretical Foundations & Executive Synopsis</h4>
-                              <span className="text-[10px] font-mono opacity-70">Course: {courseCode}</span>
-                            </div>
-
-                            <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/60 text-[11.5px] italic leading-relaxed">
-                              <strong className="block text-slate-300 not-italic uppercase text-[10px] tracking-wider mb-1">
-                                Executive Monograph Abstract:
-                              </strong>
-                              {extra.abstract || up.abstract || modifyForm.abstract || 'This departmental publication represents an authoritative academic treatise authored and verified under the supervision of Federal Co-operative College, Ibadan. It is structured to provide students and faculty with comprehensive conceptual mastery and applied technical competence.'}
-                            </div>
-
-                            {extra.problem_statement && (
-                              <div className="space-y-1">
-                                <strong className="font-bold text-indigo-400 block text-[11px]">1.1 Problem Statement & Background:</strong>
-                                <p className="opacity-90">{extra.problem_statement}</p>
-                              </div>
-                            )}
-
-                            <div className="space-y-1.5 pt-1">
-                              <strong className="font-bold text-emerald-400 block text-[11px]">1.2 Educational Objectives & Expected Outcomes:</strong>
-                              <ul className="list-disc list-inside space-y-1 pl-1 opacity-90 text-[11px]">
-                                <li>Enable students in {targetLevel} ({deptName}) to master critical theoretical principles.</li>
-                                <li>Bridge classroom syllabus guidelines with real-world institutional standards.</li>
-                                <li>Facilitate self-paced study, research inquiry, and examinations preparation.</li>
-                              </ul>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* PAGE 4: CHAPTER 2: METHODOLOGY & APPLIED LABORATORY WORK */}
-                        {readerPage === 4 && (
-                          <div className="space-y-3 animate-fadeIn text-xs leading-relaxed">
-                            <div className="border-b pb-2 border-slate-700/60 flex justify-between items-center">
-                              <h4 className="font-bold text-sm text-teal-400">Chapter 2: Applied Methodologies & Practical Guidelines</h4>
-                              <span className="text-[10px] font-mono opacity-70">Level: {targetLevel}</span>
-                            </div>
-
-                            {extra.methodology ? (
-                              <div className="space-y-1">
-                                <strong className="font-bold text-indigo-400 block text-[11px]">2.1 Research Methodology & Laboratory Procedures:</strong>
-                                <p className="opacity-90">{extra.methodology}</p>
-                              </div>
-                            ) : (
-                              <div className="space-y-2">
-                                <p className="opacity-90">
-                                  The instructional framework for {up.title} incorporates rigorous laboratory demonstrations, hands-on tutorials, and empirical problem solving designed for the National Diploma & Higher National Diploma standards.
+                            <div className="space-y-3 text-xs">
+                              <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80 leading-relaxed space-y-2">
+                                <strong className="block text-teal-400 uppercase text-[10.5px] tracking-wider font-bold">
+                                  Verified Document Abstract:
+                                </strong>
+                                <p className="opacity-90 text-[12px] leading-relaxed italic">
+                                  {extra.abstract || up.abstract || modifyForm.abstract || 'No abstract text provided for this submission. The full content is available in the attached document payload.'}
                                 </p>
-                                <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800/60 space-y-1.5">
-                                  <div className="font-bold text-emerald-400 text-[11px]">Practical Workstation Guidelines:</div>
-                                  <p className="text-[11px] opacity-80">
-                                    Each module requires documented student laboratory logs, supervisor sign-offs, and compliance with FCC Academic Integrity Regulations.
-                                  </p>
-                                </div>
                               </div>
-                            )}
 
-                            <div className="p-2.5 rounded-xl bg-teal-950/30 border border-teal-800/50 text-[11px] space-y-1">
-                              <strong className="text-teal-300 font-bold block">Accreditation Verification Note:</strong>
-                              <p className="text-slate-300">
-                                Evaluated and staged through the FCC Staging Pipeline. Digital manuscript formatting conforms to NBTE curriculum benchmarks.
-                              </p>
+                              {extra.problem_statement && (
+                                <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800/60 space-y-1">
+                                  <strong className="text-indigo-400 block font-bold text-[11px]">Problem Statement & Research Inquiry:</strong>
+                                  <p className="opacity-85 text-[11.5px] leading-relaxed">{extra.problem_statement}</p>
+                                </div>
+                              )}
+
+                              {extra.keywords && (
+                                <div className="p-2.5 rounded-xl bg-slate-950/40 border border-slate-800/60 flex items-center gap-2">
+                                  <span className="text-slate-400 font-bold text-[10.5px]">Index Keywords:</span>
+                                  <span className="font-mono text-emerald-400 text-[11px]">{extra.keywords}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}
 
-                        {/* PAGE 5: EXAMINATION REVIEW QUESTIONS & CITATIONS */}
-                        {readerPage === 5 && (
-                          <div className="space-y-3 animate-fadeIn text-xs leading-relaxed">
+                        {/* PAGE 3: BIBLIOGRAPHIC & CITATION IDENTIFIERS */}
+                        {readerPage === 3 && (
+                          <div className="space-y-3.5 animate-fadeIn text-xs leading-relaxed">
                             <div className="border-b pb-2 border-slate-700/60 flex justify-between items-center">
-                              <h4 className="font-bold text-sm text-teal-400">Chapter 3: Examination Practice Compendium & References</h4>
-                              <span className="text-[10px] font-mono opacity-70">Institutional Review</span>
+                              <h4 className="font-bold text-sm text-teal-400">Bibliographic & Publication Identifiers</h4>
+                              <span className="text-[10px] font-mono opacity-70">Scholarly Index</span>
                             </div>
 
-                            <div className="space-y-2">
-                              <strong className="font-bold text-indigo-400 block text-[11px]">3.1 Formative Practice Questions (Section A & B):</strong>
-                              <div className="space-y-1.5 pl-2 text-[11px]">
-                                <div className="p-2 rounded-lg bg-slate-950/40 border border-slate-800/60">
-                                  <strong>Question 1:</strong> Detail the primary theoretical constructs established in {courseCode} and discuss their relevance to contemporary industry operations in Nigeria.
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                              {extra.journal_name && (
+                                <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                                  <span className="text-slate-500 text-[10px] uppercase font-bold block">Journal Title</span>
+                                  <strong className="text-indigo-300 text-xs block truncate">{extra.journal_name}</strong>
                                 </div>
-                                <div className="p-2 rounded-lg bg-slate-950/40 border border-slate-800/60">
-                                  <strong>Question 2:</strong> Propose an empirical framework addressing modern constraints in {deptName}, citing authoritative reference literature.
+                              )}
+                              {extra.volume_issue && (
+                                <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                                  <span className="text-slate-500 text-[10px] uppercase font-bold block">Volume & Issue</span>
+                                  <strong className="text-white text-xs block font-mono">{extra.volume_issue}</strong>
                                 </div>
+                              )}
+                              {extra.issn && (
+                                <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                                  <span className="text-slate-500 text-[10px] uppercase font-bold block">ISSN Code</span>
+                                  <strong className="text-emerald-400 text-xs block font-mono">{extra.issn}</strong>
+                                </div>
+                              )}
+                              {extra.doi && (
+                                <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                                  <span className="text-slate-500 text-[10px] uppercase font-bold block">Digital Object Identifier (DOI)</span>
+                                  <strong className="text-cyan-400 text-xs block font-mono truncate">{extra.doi}</strong>
+                                </div>
+                              )}
+                              {extra.isbn && (
+                                <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                                  <span className="text-slate-500 text-[10px] uppercase font-bold block">ISBN</span>
+                                  <strong className="text-emerald-400 text-xs block font-mono">{extra.isbn}</strong>
+                                </div>
+                              )}
+                              {extra.publisher && (
+                                <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                                  <span className="text-slate-500 text-[10px] uppercase font-bold block">Publisher / Press</span>
+                                  <strong className="text-slate-200 text-xs block truncate">{extra.publisher}</strong>
+                                </div>
+                              )}
+                              {extra.publication_year && (
+                                <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                                  <span className="text-slate-500 text-[10px] uppercase font-bold block">Publication Year</span>
+                                  <strong className="text-white text-xs block font-mono">{extra.publication_year}</strong>
+                                </div>
+                              )}
+                              {cat === 'project' && (
+                                <>
+                                  {extra.student_matric && (
+                                    <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                                      <span className="text-slate-500 text-[10px] uppercase font-bold block">Student Matric</span>
+                                      <strong className="text-purple-300 text-xs block font-mono">{extra.student_matric}</strong>
+                                    </div>
+                                  )}
+                                  {extra.supervisor_name && (
+                                    <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                                      <span className="text-slate-500 text-[10px] uppercase font-bold block">Project Supervisor</span>
+                                      <strong className="text-teal-300 text-xs block truncate">{extra.supervisor_name}</strong>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* PAGE 4: ATTACHED DOCUMENT STREAM & VERIFICATION */}
+                        {readerPage === 4 && (
+                          <div className="space-y-3.5 animate-fadeIn text-xs leading-relaxed">
+                            <div className="border-b pb-2 border-slate-700/60 flex justify-between items-center">
+                              <h4 className="font-bold text-sm text-teal-400">Attached Document Payload & Verification</h4>
+                              <span className="text-[10px] font-mono opacity-70">Integrity Gate</span>
+                            </div>
+
+                            <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800/80 space-y-3 text-center">
+                              <div className="w-12 h-12 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 mx-auto flex items-center justify-center">
+                                <FileText size={22} />
+                              </div>
+                              <div>
+                                <h5 className="text-sm font-bold text-white">{up.file_name || `${up.title}.pdf`}</h5>
+                                <p className="text-[11px] text-slate-400 mt-0.5">{up.file_size || 'Verified Digital Document'}</p>
+                              </div>
+                              <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewTab('pdf')}
+                                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition flex items-center gap-1.5 shadow"
+                                >
+                                  <Eye size={13} />
+                                  <span>View in PDF Canvas Stream</span>
+                                </button>
+                                <a
+                                  href={up.file_data_url || `${getApiBase()}/department-uploads/${up.id}/file?download=1`}
+                                  download={up.file_name || `${up.title}.pdf`}
+                                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition flex items-center gap-1.5 border border-slate-700"
+                                >
+                                  <Download size={13} />
+                                  <span>Download Original File</span>
+                                </a>
                               </div>
                             </div>
+                          </div>
+                        )}
 
-                            <div className="pt-2 border-t border-slate-700/40 space-y-1">
-                              <strong className="font-bold text-slate-300 block text-[11px]">Official Recommended Reference Texts:</strong>
-                              <p className="text-[10px] font-mono opacity-75">
-                                • Federal Co-operative College Institutional Repository, Vol. 2026.1<br />
-                                • NBTE National Curricula Guide for Nigerian Polytechnics & Colleges of Agriculture
-                              </p>
+                        {/* PAGE 5: CATALOGING & OPAC INGESTION DOSSIER */}
+                        {readerPage === 5 && (
+                          <div className="space-y-3.5 animate-fadeIn text-xs leading-relaxed">
+                            <div className="border-b pb-2 border-slate-700/60 flex justify-between items-center">
+                              <h4 className="font-bold text-sm text-teal-400">Official Cataloging & OPAC Ingestion Gate</h4>
+                              <span className="text-[10px] font-mono opacity-70">Chief Librarian Authority</span>
+                            </div>
+
+                            <div className="space-y-2.5">
+                              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1.5">
+                                <div className="text-[10px] text-slate-500 uppercase font-bold">Catalog Distribution Rules:</div>
+                                <ul className="list-disc list-inside space-y-1 pl-1 text-[11px] text-slate-300">
+                                  <li>Upon approval, item is indexed into Central OPAC with assigned Call Number: <strong className="text-emerald-400 font-mono">{reviewForm.assigned_call_number || up.assigned_call_number || 'Auto-Assigned'}</strong>.</li>
+                                  <li>Accessible to enrolled students and faculty under access scope: <strong className="text-indigo-300">{up.access_scope || 'Public Institution-Wide'}</strong>.</li>
+                                  <li>Dynamic matriculation security watermarking embedded on digital reader views.</li>
+                                </ul>
+                              </div>
                             </div>
                           </div>
                         )}
@@ -2599,7 +2634,7 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
                             </button>
                           ))}
                           <span className="text-[11px] text-slate-400 font-mono ml-1">
-                            ({readerPage === 1 ? 'Cover' : readerPage === 2 ? 'Contents' : readerPage === 3 ? 'Synopsis' : readerPage === 4 ? 'Methods' : 'Review'})
+                            ({readerPage === 1 ? 'Title' : readerPage === 2 ? 'Abstract' : readerPage === 3 ? 'Metadata' : readerPage === 4 ? 'File Payload' : 'OPAC Rules'})
                           </span>
                         </div>
 

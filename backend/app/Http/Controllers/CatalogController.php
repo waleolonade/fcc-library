@@ -518,6 +518,10 @@ class CatalogController extends Controller
             fclose($fh);
             return false;
         }
+        if (str_contains($head, 'OFFICIAL INSTITUTIONAL CURRICULUM MANUSCRIPT') || str_contains($head, 'CENTRAL LIBRARY DIRECTORATE')) {
+            fclose($fh);
+            return false;
+        }
         $size = filesize($path);
         fseek($fh, max(0, $size - 2048));
         $tail = fread($fh, 2048);

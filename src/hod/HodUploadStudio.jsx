@@ -1779,6 +1779,20 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
         : ''
     );
 
+    // Ensure binary payload is loaded before transmission
+    let finalFileUrl = fileDataUrlRef.current || formData.file_data_url || '';
+    if (!finalFileUrl && selectedFileObj) {
+      try {
+        finalFileUrl = await new Promise((resolve) => {
+          const r = new FileReader();
+          r.onload = (ev) => resolve(ev.target?.result || '');
+          r.onerror = () => resolve('');
+          r.readAsDataURL(selectedFileObj);
+        });
+        fileDataUrlRef.current = finalFileUrl;
+      } catch (e) {}
+    }
+
     const payload = {
       title: formData.title.trim(),
       author: effectiveAuthor,
@@ -1792,7 +1806,7 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
       resource_type: chosenResourceType,
       upload_category: uploadCategory,
       file_name: formData.file_name || `${formData.title.toLowerCase().replace(/[^a-z0-9]/g, '-')}.pdf`,
-      file_data_url: fileDataUrlRef.current || formData.file_data_url || '',
+      file_data_url: finalFileUrl,
       cover_image: effectiveCoverImage,
       access_scope: formData.access_scope || 'Public Institution-Wide',
       status: 'pending',
@@ -1837,33 +1851,28 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
     try {
       const endpoint = `${getApiBase()}/department-uploads`;
       let res;
-      try {
+
+      // Prefer FormData multipart streaming when real physical File object is selected (zero base64 bloat)
+      if (selectedFileObj && ingestionMode === 'digital') {
+        const fd = new FormData();
+        fd.append('file', selectedFileObj);
+        Object.entries(payload).forEach(([k, v]) => {
+          if (k !== 'file_data_url' && v !== undefined && v !== null) {
+            fd.append(k, typeof v === 'object' ? JSON.stringify(v) : v);
+          }
+        });
+        if (finalFileUrl && finalFileUrl.length < 15000000) {
+          fd.append('file_data_url', finalFileUrl);
+        }
+        res = await fetch(endpoint, {
+          method: 'POST',
+          body: fd
+        });
+      } else {
         res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
-        });
-      } catch (netErr) {
-        // If network error occurred with massive base64 payload (> 35MB), retry with metadata
-        if (payload.file_data_url && payload.file_data_url.length > 35000000) {
-          const lightweightPayload = { ...payload, file_data_url: '' };
-          res = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(lightweightPayload)
-          });
-        } else {
-          throw netErr;
-        }
-      }
-
-      // If server returned 413 (Entity Too Large) or 500 on big base64, retry with lightweight payload
-      if (res && !res.ok && payload.file_data_url && payload.file_data_url.length > 35000000) {
-        const lightweightPayload = { ...payload, file_data_url: '' };
-        res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(lightweightPayload)
         });
       }
 
