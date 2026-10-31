@@ -13,8 +13,6 @@ import { libraryApi } from '../api/libraryApi';
 import PdfCanvasViewer from './PdfCanvasViewer';
 import { fetchLiveAcademicJournals } from '../services/openSourceJournalsApi';
 
-export const DEFAULT_INSTITUTIONAL_BOOK = null;
-
 export default function DigitalBookReader({ book: initialBook, onClose, user, onSelectBook }) {
   const [currentBook, setCurrentBook] = useState(() => initialBook || null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -80,10 +78,15 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
       // Combine catalog uploads and authentic live open-access journals
       const combined = [...normalizedCatalog, ...rawJournals];
 
-      // Sort: items with verified PDF or OpenAlex full text first
+      // Prioritize institutional uploads by Admin, HODs, and departmental staff
       combined.sort((a, b) => {
-        const aHasPdf = Boolean(a.hasBinaryPdf || a.hasPdf || a.file_data_url || a.fileDataUrl);
-        const bHasPdf = Boolean(b.hasBinaryPdf || b.hasPdf || b.file_data_url || b.fileDataUrl);
+        const aIsHodAdmin = Boolean(a.hasBinaryPdf || a.file_data_url || (a.id && (a.id.startsWith('FCC-HOD') || a.id.startsWith('HOD-UP') || a.id.startsWith('FCC-PRJ') || a.id.startsWith('FCC-JRN') || a.id.startsWith('FCC-B'))));
+        const bIsHodAdmin = Boolean(b.hasBinaryPdf || b.file_data_url || (b.id && (b.id.startsWith('FCC-HOD') || b.id.startsWith('HOD-UP') || b.id.startsWith('FCC-PRJ') || b.id.startsWith('FCC-JRN') || b.id.startsWith('FCC-B'))));
+        if (aIsHodAdmin && !bIsHodAdmin) return -1;
+        if (!aIsHodAdmin && bIsHodAdmin) return 1;
+
+        const aHasPdf = Boolean(a.hasBinaryPdf || a.hasPdf || a.pdfUrl);
+        const bHasPdf = Boolean(b.hasBinaryPdf || b.hasPdf || b.pdfUrl);
         if (aHasPdf && !bHasPdf) return -1;
         if (!aHasPdf && bHasPdf) return 1;
         return 0;
@@ -655,7 +658,7 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-emerald-900/50 space-y-2">
                   <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
                     <ShieldCheck size={16} />
-                    <span>Accredited Academic Monograph</span>
+                    <span>Accredited Institutional Publication</span>
                   </div>
                   <div className="text-xs font-semibold text-white">
                     Endorsed & Uploaded By:
@@ -897,7 +900,7 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
           {/* MODE 1: PDF MANUSCRIPT STREAM (HIGH-PERFORMANCE CANVAS PDF VIEWER) */}
           {readerMode === 'pdf' ? (
             <PdfCanvasViewer
-              pdfUrl={currentBook?.fileDataUrl || currentBook?.file_data_url || currentBook?.pdfUrl || (currentBook?.id ? `/api/books/${encodeURIComponent(currentBook.id)}/pdf` : '/api/books/FCC-MONOGRAPH-001/pdf')}
+              pdfUrl={currentBook?.fileDataUrl || currentBook?.file_data_url || currentBook?.pdfUrl || (currentBook?.id ? `/api/books/${encodeURIComponent(currentBook.id)}/pdf` : null)}
               currentPage={currentPage}
               onPageChange={setCurrentPage}
               onTotalPages={(total) => {
