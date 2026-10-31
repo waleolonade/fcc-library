@@ -1307,6 +1307,10 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
       file_size: item.file_size,
       cover_image: item.cover_image,
       file_data_url: (item.file_data_url && item.file_data_url.length < 35000000) ? item.file_data_url : '',
+      status: publishingMode === 'direct' ? 'approved' : 'pending',
+      approval_mode: publishingMode,
+      direct_publish: publishingMode === 'direct',
+      destination: publishingMode === 'direct' ? 'direct' : 'approval',
       review_notes: JSON.stringify({
         batch_ingestion: true,
         batch_count: batchItems.length,
@@ -1326,6 +1330,10 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
       department_name: batchDeptName,
       uploaded_by_hod_id: batchHodId,
       hod_name: batchHodName,
+      approval_mode: publishingMode,
+      direct_publish: publishingMode === 'direct',
+      destination: publishingMode === 'direct' ? 'direct' : 'approval',
+      publishing_mode: publishingMode,
       uploads: uploadsPayload
     };
 
@@ -1383,7 +1391,12 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
           department_id: batchDeptId,
           department_name: batchDeptName,
           uploaded_by_hod_id: batchHodId,
-          hod_name: batchHodName
+          hod_name: batchHodName,
+          approval_mode: publishingMode,
+          direct_publish: publishingMode === 'direct',
+          destination: publishingMode === 'direct' ? 'direct' : 'approval',
+          publishing_mode: publishingMode,
+          status: publishingMode === 'direct' ? 'approved' : 'pending'
         };
 
         try {
@@ -1399,6 +1412,9 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
             const sData = await sRes.json();
             if (sData.upload) processed.push(sData.upload);
             if (sData.book) booksCreated.push(sData.book);
+            if (sData.published_books && Array.isArray(sData.published_books)) {
+              booksCreated.push(...sData.published_books);
+            }
           } else {
             processed.push({
               id: item.existing_id || `HOD-UP-${Date.now()}-${i}`,
@@ -1427,7 +1443,8 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
         total_submitted: uploadsPayload.length,
         direct_published: publishingMode === 'direct',
         uploads: processed,
-        books: booksCreated
+        books: booksCreated,
+        published_books: booksCreated
       };
     }
 
@@ -1437,7 +1454,8 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
     fetchBatchDatabaseMetadata(false);
 
     const createdUploads = resultData.uploads || [];
-    const isDirect = resultData.direct_published === true;
+    const publishedBooks = resultData.published_books || resultData.books || [];
+    const isDirect = resultData.direct_published === true || publishingMode === 'direct';
 
     try {
       const existing = JSON.parse(localStorage.getItem('fcc_pending_department_uploads') || '[]');
@@ -1450,19 +1468,27 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('fcc-submissions-updated', { detail: createdUploads }));
-      if (isDirect && resultData.books && resultData.books.length > 0) {
-        window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: resultData.books }));
+      if (publishedBooks && publishedBooks.length > 0) {
+        window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: publishedBooks }));
       }
       publishRealtimeEvent({
         action: 'UPLOAD',
         entity: bulkCategory || 'book',
         ids: createdUploads.map(u => u.id).filter(Boolean),
-        title: `${createdUploads.length || uploadsPayload.length} materials published in batch`
+        title: `${createdUploads.length || uploadsPayload.length} materials published in batch`,
+        data: {
+          uploads: createdUploads,
+          books: publishedBooks
+        }
       });
     }
 
     if (onUploadSuccess) {
-      onUploadSuccess(createdUploads);
+      try {
+        onUploadSuccess(createdUploads);
+      } catch (err) {
+        console.warn('onUploadSuccess handler error:', err);
+      }
     }
 
     setBatchSuccessData(resultData);
@@ -1847,7 +1873,11 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
       file_data_url: finalFileUrl,
       cover_image: effectiveCoverImage,
       access_scope: formData.access_scope || 'Public Institution-Wide',
-      status: 'pending',
+      status: publishingMode === 'direct' ? 'approved' : 'pending',
+      approval_mode: publishingMode,
+      direct_publish: publishingMode === 'direct',
+      destination: publishingMode === 'direct' ? 'direct' : 'approval',
+      publishing_mode: publishingMode,
       // Top-level Academic Journal & Student Project fields for direct backend indexing
       journal_name: formData.journal_name,
       volume_issue: formData.volume_issue,
@@ -1949,7 +1979,13 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
           title: savedUpload.title,
           data: data.book || savedUpload
         });
-        if (onUploadSuccess) onUploadSuccess(savedUpload);
+        if (onUploadSuccess) {
+          try {
+            onUploadSuccess(savedUpload);
+          } catch (e) {
+            console.warn('onUploadSuccess error:', e);
+          }
+        }
       } else {
         throw new Error(data?.message || 'Submission to backend database failed');
       }
@@ -1960,7 +1996,7 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
         id: `HOD-UP-${Math.floor(1000 + Math.random() * 9000)}`,
         ...payload,
         file_data_url: (payload.file_data_url && payload.file_data_url.length < 500000) ? payload.file_data_url : '',
-        status: 'pending',
+        status: publishingMode === 'direct' ? 'approved' : 'pending',
         book_id: null,
         created_at: new Date().toISOString()
       };
@@ -1975,7 +2011,13 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('fcc-submissions-updated', { detail: offlineUpload }));
       }
-      if (onUploadSuccess) onUploadSuccess(offlineUpload);
+      if (onUploadSuccess) {
+        try {
+          onUploadSuccess(offlineUpload);
+        } catch (e) {
+          console.warn('onUploadSuccess fallback error:', e);
+        }
+      }
     } finally {
       setIsSubmitting(false);
     }

@@ -3155,12 +3155,19 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                       theme={theme}
                       onUploadSuccess={(newUp) => {
                         if (newUp) {
-                          setUploads(prev => [newUp, ...prev.filter(u => String(u.id) !== String(newUp.id))]);
+                          const items = Array.isArray(newUp) ? newUp : [newUp];
+                          setUploads(prev => {
+                            const newIds = new Set(items.map(i => String(i?.id)));
+                            return [...items, ...prev.filter(u => u && !newIds.has(String(u?.id)))];
+                          });
                         }
-                        fetchUploads();
-                        fetchCourses();
-                        fetchCatalogBooks();
-                        setSuccessMsg(`✓ Resource "${newUp?.title || 'Batch'}" synchronized with the Central Library Database!`);
+                        if (typeof fetchDepartmentUploads === 'function') fetchDepartmentUploads();
+                        if (typeof fetchCourses === 'function') fetchCourses();
+                        if (typeof fetchCatalogBooks === 'function') fetchCatalogBooks();
+                        const titleText = Array.isArray(newUp)
+                          ? `${newUp.length} books`
+                          : (newUp?.title || 'Batch');
+                        setSuccessMsg(`✓ Resource "${titleText}" synchronized with the Central Library Database!`);
                       }}
                     />
                   </div>
@@ -4955,10 +4962,18 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                 user={uploadStudioUser}
                 theme={theme}
                 onUploadSuccess={(newUp) => {
-                  setUploads([newUp, ...uploads]);
-                  fetchCourses();
-                  fetchCatalogBooks();
-                  setSuccessMsg(`Resource "${newUp.title}" submitted to the Central Library Review Queue. Pending Chief Librarian approval at #/admin/hod-submissions before student access.`);
+                  if (newUp) {
+                    const items = Array.isArray(newUp) ? newUp : [newUp];
+                    setUploads(prev => {
+                      const newIds = new Set(items.map(i => String(i?.id)));
+                      return [...items, ...prev.filter(u => u && !newIds.has(String(u?.id)))];
+                    });
+                  }
+                  if (typeof fetchDepartmentUploads === 'function') fetchDepartmentUploads();
+                  if (typeof fetchCourses === 'function') fetchCourses();
+                  if (typeof fetchCatalogBooks === 'function') fetchCatalogBooks();
+                  const titleText = Array.isArray(newUp) ? `${newUp.length} books` : (newUp?.title || 'Resource');
+                  setSuccessMsg(`✓ Resource "${titleText}" successfully synchronized with the Central Library!`);
                   handleTabSwitch('submissions');
                 }}
               />

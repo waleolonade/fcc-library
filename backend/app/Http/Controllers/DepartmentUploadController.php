@@ -655,7 +655,9 @@ class DepartmentUploadController extends Controller
                 ->value('setting_value');
             if ($cfgRow) {
                 $cfg = json_decode($cfgRow, true);
-                if (!empty($cfg['hodFeatures']['directPublishToStudents']['enabled']) || ($cfg['hodUploadWorkflow']['mode'] ?? '') === 'direct') {
+                if (!empty($cfg['hodFeatures']['directPublishToStudents']['enabled']) || 
+                    ($cfg['hodUploadWorkflow']['mode'] ?? '') === 'direct' || 
+                    !empty($cfg['features']['hodFeatures']['directPublishToStudents'])) {
                     return true;
                 }
             }
@@ -1733,7 +1735,12 @@ class DepartmentUploadController extends Controller
         }
 
         // Check if Developer configured Direct Instant Publish to students or Wait for Admin Approval
-        $isDirect = $this->isDirectPublishEnabled() || $request->input('approval_mode') === 'direct' || $request->boolean('direct_publish');
+        $isDirect = $this->isDirectPublishEnabled() 
+            || $request->input('approval_mode') === 'direct' 
+            || $request->input('destination') === 'direct'
+            || $request->input('publishing_mode') === 'direct'
+            || $request->input('status') === 'approved'
+            || $request->boolean('direct_publish');
 
         $extraMeta = array_filter([
             'upload_category' => $request->input('upload_category') ?? $request->input('uploadCategory'),
@@ -2239,7 +2246,21 @@ class DepartmentUploadController extends Controller
         $items = array_slice($rawItems, 0, 25);
 
         // Fetch developer direct publishing mode setting
-        $directPublish = $this->isDirectPublishEnabled() || $request->input('approval_mode') === 'direct' || $request->boolean('direct_publish');
+        $directPublish = $this->isDirectPublishEnabled() 
+            || $request->input('approval_mode') === 'direct' 
+            || $request->input('destination') === 'direct'
+            || $request->input('publishing_mode') === 'direct'
+            || $request->boolean('direct_publish');
+
+        if (!$directPublish) {
+            foreach ($items as $it) {
+                if (($it['approval_mode'] ?? '') === 'direct' || ($it['destination'] ?? '') === 'direct' || !empty($it['direct_publish']) || ($it['status'] ?? '') === 'approved') {
+                    $directPublish = true;
+                    break;
+                }
+            }
+        }
+
         if (!$directPublish) {
             try {
                 $mode = \Illuminate\Support\Facades\DB::table('system_settings')
@@ -2615,6 +2636,7 @@ class DepartmentUploadController extends Controller
             'total_submitted' => count($items),
             'direct_published' => $directPublish,
             'uploads' => $processedUploads,
+            'books' => $publishedBooks,
             'published_books' => $publishedBooks,
             'errors' => $errors,
             'message' => "{$count} books processed and successfully registered in library database!"
@@ -3395,6 +3417,10 @@ class DepartmentUploadController extends Controller
             $pdo = \App\Services\DatabaseService::getPdo();
             if (!$pdo) return;
 
+            $describe = $pdo->query("DESCRIBE books");
+            if ($describe === false) return;
+            $bookCols = $describe->fetchAll(\PDO::FETCH_COLUMN);
+
             $fileData = $book->file_data_url;
             if (strlen((string)$fileData) > 200000) {
                 $fileData = '';
@@ -3404,38 +3430,57 @@ class DepartmentUploadController extends Controller
                 $coverData = '';
             }
 
-            $stmt = $pdo->prepare("
-                INSERT INTO books (id, title, subtitle, author, department, course_code, target_level, call_number, shelf_location, isbn, doi, publisher, year, pdf_pages, file_size, file_name, file_data_url, cover_image, is_digital, access_level, copies_total, copies_available, uploaded_at, uploaded_by)
-                VALUES (:id, :title, :subtitle, :author, :department, :course_code, :target_level, :call_number, :shelf_location, :isbn, :doi, :publisher, :year, :pdf_pages, :file_size, :file_name, :file_data_url, :cover_image, :is_digital, :access_level, :copies_total, :copies_available, :uploaded_at, :uploaded_by)
-                ON DUPLICATE KEY UPDATE
-                title = VALUES(title), subtitle = VALUES(subtitle), author = VALUES(author), department = VALUES(department), course_code = VALUES(course_code), target_level = VALUES(target_level), call_number = VALUES(call_number), shelf_location = VALUES(shelf_location), isbn = VALUES(isbn), doi = VALUES(doi), publisher = VALUES(publisher), year = VALUES(year), pdf_pages = VALUES(pdf_pages), file_size = VALUES(file_size), file_name = VALUES(file_name), file_data_url = IF(VALUES(file_data_url) != '', VALUES(file_data_url), file_data_url), cover_image = IF(VALUES(cover_image) != '', VALUES(cover_image), cover_image), is_digital = VALUES(is_digital), access_level = VALUES(access_level), copies_total = VALUES(copies_total), copies_available = VALUES(copies_available), uploaded_at = VALUES(uploaded_at), uploaded_by = VALUES(uploaded_by)
-            ");
-            $stmt->execute([
-                ':id' => $book->id,
-                ':title' => $book->title,
-                ':subtitle' => $book->subtitle,
-                ':author' => $book->author,
-                ':department' => $book->department,
-                ':course_code' => $book->course_code,
-                ':target_level' => $book->target_level,
-                ':call_number' => $book->call_number,
-                ':shelf_location' => $book->shelf_location,
-                ':isbn' => $book->isbn,
-                ':doi' => $book->doi,
-                ':publisher' => $book->publisher,
-                ':year' => $book->year,
-                ':pdf_pages' => $book->pdf_pages,
-                ':file_size' => $book->file_size,
-                ':file_name' => $book->file_name,
-                ':file_data_url' => $fileData,
-                ':cover_image' => $coverData,
-                ':is_digital' => $book->is_digital ? 1 : 0,
-                ':access_level' => $book->access_level,
-                ':copies_total' => $book->copies_total,
-                ':copies_available' => $book->copies_available,
-                ':uploaded_at' => $book->uploaded_at ?? date('Y-m-d H:i:s'),
-                ':uploaded_by' => $book->uploaded_by ?? 'Department HOD'
-            ]);
+            $candidateData = [
+                'id' => $book->id,
+                'title' => $book->title,
+                'subtitle' => $book->subtitle,
+                'author' => $book->author,
+                'department' => $book->department,
+                'subject' => $book->subject ?: $book->department,
+                'course_code' => $book->course_code,
+                'target_level' => $book->target_level,
+                'call_number' => $book->call_number,
+                'shelf_location' => $book->shelf_location,
+                'isbn' => $book->isbn,
+                'doi' => $book->doi,
+                'publisher' => $book->publisher,
+                'year' => $book->year,
+                'edition' => $book->edition ?: '1st Official Edition',
+                'pdf_pages' => $book->pdf_pages ?: 120,
+                'file_size' => $book->file_size ?: '4.5 MB',
+                'file_name' => $book->file_name,
+                'file_path' => $book->file_path ?: ($book->id . '.pdf'),
+                'file_data_url' => $fileData,
+                'cover_image' => $coverData,
+                'is_digital' => $book->is_digital ? 1 : 0,
+                'access_level' => $book->access_level ?: 'Public Institution-Wide',
+                'rights_status' => $book->rights_status ?: 'Approved Academic Book',
+                'status' => 'approved',
+                'copies_total' => $book->copies_total ?: 10,
+                'copies_available' => $book->copies_available ?: 10,
+                'rating' => $book->rating ?: 5.0,
+                'citations' => $book->citations ?: 0,
+                'abstract' => $book->abstract ?: '',
+                'uploaded_at' => $book->uploaded_at ?? date('Y-m-d H:i:s'),
+                'uploaded_by' => $book->uploaded_by ?? 'Department HOD'
+            ];
+
+            // Only insert columns that actually exist in the live MySQL books table
+            $data = array_intersect_key($candidateData, array_flip($bookCols));
+            $fields = array_keys($data);
+            $placeholders = array_map(fn($f) => ":{$f}", $fields);
+            $updates = array_map(fn($f) => "{$f} = VALUES({$f})", array_filter($fields, fn($f) => $f !== 'id'));
+
+            $sql = "INSERT INTO books (" . implode(', ', $fields) . ")
+                    VALUES (" . implode(', ', $placeholders) . ")
+                    ON DUPLICATE KEY UPDATE " . implode(', ', $updates);
+
+            $stmt = $pdo->prepare($sql);
+            $params = [];
+            foreach ($data as $k => $v) {
+                $params[":{$k}"] = $v;
+            }
+            $stmt->execute($params);
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning("[syncBookToMysql] error: " . $e->getMessage());
         }
