@@ -183,6 +183,25 @@ class ThesisController extends Controller
     {
         $this->ensureSchema();
         $thesis = Thesis::where('id', $id)->first();
+
+        // High-Speed Streaming: Check if physical file exists on disk
+        $safeId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $id);
+        $diskPath = storage_path('app/public/theses/' . $safeId . '.pdf');
+        if (file_exists($diskPath)) {
+            if ($request->query('download') && $thesis) {
+                $thesis->downloads = (int) $thesis->downloads + 1;
+                $thesis->save();
+                $this->syncToMysql($thesis);
+            }
+            $filename = $thesis?->file_name ?: ($id . '.pdf');
+            $disposition = $request->query('download') ? 'attachment' : 'inline';
+            return response()->file($diskPath, [
+                'Content-Type' => 'application/pdf',
+                'Accept-Ranges' => 'bytes',
+                'Content-Disposition' => "{$disposition}; filename=\"{$filename}\""
+            ]);
+        }
+
         $dataUrl = $thesis?->getAttribute('file_data_url');
         if (!$thesis || !$dataUrl) {
             return response()->json(['message' => 'No manuscript file uploaded for this thesis'], 404);
@@ -233,6 +252,28 @@ class ThesisController extends Controller
 
         $id = 'TH-' . date('Y') . '-' . strtoupper(substr(uniqid(), -5));
         $fileData = $data['file_data_url'] ?? $data['fileDataUrl'] ?? null;
+
+        // Persist binary PDF manuscript to physical storage for high performance streaming
+        if ($fileData) {
+            try {
+                $storageDir = storage_path('app/public/theses');
+                if (!is_dir($storageDir)) {
+                    @mkdir($storageDir, 0755, true);
+                }
+                $safeId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $id);
+                $diskPath = $storageDir . '/' . $safeId . '.pdf';
+                $rawBinary = null;
+                if (str_starts_with($fileData, 'data:')) {
+                    [, $b64] = explode(',', $fileData, 2);
+                    $rawBinary = base64_decode($b64);
+                } else {
+                    $rawBinary = base64_decode($fileData);
+                }
+                if ($rawBinary) {
+                    @file_put_contents($diskPath, $rawBinary);
+                }
+            } catch (\Throwable $fileErr) {}
+        }
 
         $thesis = Thesis::create([
             'id' => $id,

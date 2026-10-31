@@ -28,6 +28,8 @@ import { libraryApi } from '../api/libraryApi';
 import TraceBadge from '../common/TraceBadge';
 import { INSTITUTION } from '../data/institutionalSeedData';
 import { sounds } from '../utils/soundEffects';
+import { storeUserSession, clearAllAuthStores, getActiveUserSession } from '../utils/authSessionManager';
+import { pwaHistory } from '../utils/pwaHistoryManager';
 
 // Student Subcomponents
 import BiometricScannerModal from '../common/BiometricScannerModal';
@@ -58,34 +60,22 @@ import TabletStudentNavigation from './TabletStudentNavigation';
 
 export default function StudentStandaloneApp() {
   const [studentUser, setStudentUser] = useState(() => {
-    const saved = localStorage.getItem('fcc_student_session');
-    if (saved) {
-      try {
+    try {
+      const active = getActiveUserSession();
+      if (active && active.role === 'student') {
+        return active;
+      }
+      const saved = localStorage.getItem('fcc_student_session');
+      if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.matric && parsed.matric !== 'FCC/CEM/2024/042') {
+        if (parsed && parsed.matric) {
           return parsed;
         }
-      } catch (e) {
-        console.error(e);
       }
+    } catch (e) {
+      console.error(e);
     }
-    return {
-      id: 1754,
-      name: "OLAWALE AKEEM OLONADE",
-      matric: "FCC/CSC/2026/409",
-      library_id: "FCC-STU-CSC-26409",
-      barcode: "FCC-STU-CSC-26409",
-      email: "w.olonade@student.fccibadan.edu.ng",
-      dept: "Computer Science & Information Technology",
-      level: "HND I",
-      status: "Active",
-      phone: "+234 803 491 8821",
-      photoUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80",
-      borrowingLimit: 5,
-      currentBorrows: 0,
-      finesDue: 0,
-      turnstileAccess: "Granted"
-    };
+    return null;
   });
 
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -187,7 +177,7 @@ export default function StudentStandaloneApp() {
     const [pathPart, queryPart] = clean.split('?');
     const params = new URLSearchParams(queryPart || '');
 
-    // 1. Direct PDF Reader deep link (e.g. #/reader/, #/reader/FCC-HOD-8201, #/read/3, #/read/thesis/1)
+    // 1. Direct PDF Reader deep link (e.g. #/reader/, #/reader/FCC-B001, #/read/3, #/read/thesis/1)
     if (pathPart.startsWith('read/thesis/')) {
       const thesisId = pathPart.replace('read/thesis/', '');
       const match = (loadedTheses || []).find(t => String(t.id) === String(thesisId));
@@ -426,8 +416,9 @@ export default function StudentStandaloneApp() {
     setAuthError('');
     const res = await libraryApi.patrons.authenticate(matricInput, pinInput);
     if (res.success) {
-      setStudentUser(res.patron);
-      localStorage.setItem('fcc_student_session', JSON.stringify(res.patron));
+      const cleanPatron = { ...res.patron, role: 'student' };
+      storeUserSession(cleanPatron, null, 'student');
+      setStudentUser(cleanPatron);
       sounds.playSuccessChime();
     } else {
       sounds.playErrorBuzz();
@@ -437,7 +428,7 @@ export default function StudentStandaloneApp() {
 
   const handleStudentLogout = () => {
     setStudentUser(null);
-    localStorage.removeItem('fcc_student_session');
+    clearAllAuthStores({ reason: 'student_standalone_logout' });
     sounds.playClick();
   };
 
@@ -712,6 +703,26 @@ export default function StudentStandaloneApp() {
             </button>
             <img src="/assets/fcc-logo.png" alt="FCC Logo" className="w-7 h-7 object-cover rounded-lg border border-emerald-500/40 shrink-0" />
             <span className="font-bold text-white text-sm">{INSTITUTION.shortName}</span>
+          </div>
+
+          {/* Desktop Back & Front Controls */}
+          <div className="hidden sm:flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+            <button
+              onClick={() => pwaHistory.goBack()}
+              title="Go Back / Previous (Alt + ←)"
+              className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-600 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1 transition"
+            >
+              <ChevronLeft size={14} />
+              <span>Back</span>
+            </button>
+            <button
+              onClick={() => pwaHistory.goForward()}
+              title="Go Front / Forward (Alt + →)"
+              className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-600 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1 transition"
+            >
+              <span>Front</span>
+              <ChevronRight size={14} />
+            </button>
           </div>
 
           {/* Traceable URL Deep-Link Address Bar */}

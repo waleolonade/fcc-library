@@ -3,7 +3,6 @@ import {
   GraduationCap, BookOpen, Download, Eye, FileText, Search,
   CheckCircle, Sparkles, Filter, ExternalLink, ShieldAlert, Tag, MapPin, User, X
 } from 'lucide-react';
-import { getBookCoverUrl, DEFAULT_BOOK_COVER, OFFLINE_BOOK_COVER_SVG } from '../utils/bookCoverResolver';
 
 export default function DepartmentalResourcesView({ user, onOpenReader }) {
   const [uploads, setUploads] = useState([]);
@@ -233,15 +232,11 @@ export default function DepartmentalResourcesView({ user, onOpenReader }) {
                   {/* FRONT COVER ARTWORK CANVAS */}
                   <div className="w-20 sm:w-24 h-28 sm:h-32 rounded-xl overflow-hidden shrink-0 relative shadow-xl shadow-black/60 border border-slate-700/80 bg-slate-950 group-hover:border-teal-500/60 transition self-center sm:self-start">
                     <img
-                      src={getBookCoverUrl(item)}
+                      src={item.cover_image || item.coverImage || item.cover || item.cover_path || '/assets/fcc-logo.png'}
                       alt={`Cover of ${item.title}`}
                       onError={(e) => {
-                        if (e.currentTarget.src !== DEFAULT_BOOK_COVER && e.currentTarget.src !== OFFLINE_BOOK_COVER_SVG) {
-                          e.currentTarget.src = DEFAULT_BOOK_COVER;
-                        } else {
-                          e.currentTarget.onerror = null;
-                          e.currentTarget.src = OFFLINE_BOOK_COVER_SVG;
-                        }
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = '/assets/fcc-logo.png';
                       }}
                       className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                       loading="lazy"
@@ -318,8 +313,8 @@ export default function DepartmentalResourcesView({ user, onOpenReader }) {
                           shelfLocation: item.assigned_shelf || 'Digital Library Stacks',
                           fileDataUrl: item.file_data_url || item.fileDataUrl || '',
                           pdfUrl: item.file_data_url || item.fileDataUrl || '',
-                          cover_image: item.cover_image || item.coverImage || '',
-                          coverImage: item.cover_image || item.coverImage || '',
+                          cover_image: item.cover_image || item.coverImage || item.cover || item.cover_path || '',
+                          coverImage: item.cover_image || item.coverImage || item.cover || item.cover_path || '',
                           fileName: item.file_name || `${item.title}.pdf`,
                           abstract: item.abstract || 'Approved Departmental Curriculum Resource.',
                           isDigital: true,

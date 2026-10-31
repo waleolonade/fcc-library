@@ -14,14 +14,6 @@ export default function BarcodeCatalogScanner({ catalog = [], onAddBookToCatalog
   const [previewingBook, setPreviewingBook] = useState(null);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
 
-  // Sample ISBNs for fast demo & testing (includes Roald Dahl's Matilda as specified by user)
-  const sampleIsbns = [
-    { label: 'Matilda (Roald Dahl)', isbn: '9780140328721' },
-    { label: 'Clean Architecture (Martin)', isbn: '9780134494166' },
-    { label: 'Intro to Algorithms (CLRS)', isbn: '9780262033848' },
-    { label: 'Designing Data-Intensive Apps', isbn: '9781491950296' },
-    { label: 'FCC Local Book (Nigeria)', isbn: '978-978-49021-1-4' }
-  ];
 
   const handleExecuteScan = async (targetIsbn = isbnInput) => {
     const raw = targetIsbn || isbnInput;
@@ -166,23 +158,6 @@ export default function BarcodeCatalogScanner({ catalog = [], onAddBookToCatalog
           </button>
         </div>
 
-        {/* Quick Sample Presets */}
-        <div className="pt-2 flex flex-wrap items-center gap-2">
-          <span className="text-[11px] text-slate-500 font-semibold">Test Presets:</span>
-          {sampleIsbns.map((s, idx) => (
-            <button
-              key={idx}
-              onClick={() => {
-                setIsbnInput(s.isbn);
-                handleExecuteScan(s.isbn);
-              }}
-              className="px-2.5 py-1 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[11px] text-slate-300 font-mono transition flex items-center gap-1.5"
-            >
-              <span>{s.label}</span>
-              <span className="text-emerald-400 font-bold">[{s.isbn}]</span>
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Resolution Pipeline Activity Log */}

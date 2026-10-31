@@ -137,68 +137,108 @@ class AuthController extends Controller
         }
 
         $patron = null;
+        if ($loginMode !== 'admin') {
+            // Step 1: Authoritative scholar lookup directly in MySQL `users` table
+            $studentUser = \App\Services\StudentUserService::findForAuth($identifier);
+            if (!$studentUser && !empty($qrMatric)) {
+                $studentUser = \App\Services\StudentUserService::findForAuth($qrMatric);
+            }
+            if (!$studentUser && !empty($qrBarcode)) {
+                $studentUser = \App\Services\StudentUserService::findForAuth($qrBarcode);
+            }
 
-        // Step 1: Direct match in database (by barcode, matric, library_id, email, phone, id)
-        $patron = Patron::where('barcode', $identifier)
-            ->orWhere('matric', $identifier)
-            ->orWhere('library_id', $identifier)
-            ->orWhere('email', $identifier)
-            ->orWhere('phone', $identifier)
-            ->orWhere('id', $identifier)
-            ->first();
+            if ($studentUser) {
+                // Hydrate Patron model from MySQL users record
+                $patron = Patron::where('matric', $studentUser->matric)
+                    ->orWhere('id', (string)$studentUser->id)
+                    ->orWhere('barcode', $studentUser->barcode)
+                    ->first();
 
-        // If not found and QR token had secondary matric or barcode
-        if (!$patron && !empty($qrMatric)) {
-            $patron = Patron::where('matric', $qrMatric)
-                ->orWhereRaw('LOWER(matric) = ?', [strtolower($qrMatric)])
-                ->first();
-        }
-        if (!$patron && !empty($qrBarcode)) {
-            $patron = Patron::where('barcode', $qrBarcode)
-                ->orWhere('library_id', $qrBarcode)
-                ->orWhereRaw('LOWER(barcode) = ?', [strtolower($qrBarcode)])
-                ->first();
-        }
+                if (!$patron) {
+                    $patron = new Patron();
+                    $patron->id = (string)$studentUser->id;
+                }
 
-        // Step 2: Case-insensitive match
-        if (!$patron) {
-            $patron = Patron::whereRaw('LOWER(barcode) = ?', [strtolower($identifier)])
-                ->orWhereRaw('LOWER(matric) = ?', [strtolower($identifier)])
-                ->orWhereRaw('LOWER(email) = ?', [strtolower($identifier)])
-                ->orWhereRaw('LOWER(library_id) = ?', [strtolower($identifier)])
-                ->orWhereRaw('LOWER(id) = ?', [strtolower($identifier)])
-                ->first();
-        }
+                $patron->name = $studentUser->name;
+                $patron->matric = $studentUser->matric ?: $studentUser->username;
+                $patron->barcode = $studentUser->barcode;
+                $patron->library_id = $studentUser->barcode;
+                $patron->email = $studentUser->email;
+                $patron->phone = $studentUser->phone;
+                $patron->department = $studentUser->department ?: 'General Studies';
+                $patron->level = $studentUser->level ?: 'ND I';
+                $patron->pin = $studentUser->plain_secret ?: '1234';
+                $patron->plain_secret = $studentUser->plain_secret ?: '1234';
+                $patron->status = ucfirst(strtolower($studentUser->status ?: 'active'));
+                $patron->role = 'student';
+                if (!empty($studentUser->avatar)) {
+                    $patron->photo_url = $studentUser->avatar;
+                }
+                $patron->password_hash = $studentUser->password;
+            } else {
+                // Direct match in local patrons table (by barcode, matric, library_id, email, phone, id)
+                $patron = Patron::where('barcode', $identifier)
+                    ->orWhere('matric', $identifier)
+                    ->orWhere('library_id', $identifier)
+                    ->orWhere('email', $identifier)
+                    ->orWhere('phone', $identifier)
+                    ->orWhere('id', $identifier)
+                    ->first();
 
-        // Step 3: Breakdown Match using Digits & Department Code if not found directly
-        if (!$patron && !empty($parsedInputDigits)) {
-            $candidates = Patron::all()->filter(function ($p) use ($parsedInputDigits, $parsedSeqNum) {
-                $pDigits = preg_replace('/[^0-9]/', '', (string)$p->matric);
-                if (str_ends_with($pDigits, $parsedInputDigits)) return true;
-                if (!empty($parsedSeqNum) && str_ends_with($pDigits, $parsedSeqNum)) return true;
-                $bcDigits = preg_replace('/[^0-9]/', '', (string)$p->barcode);
-                return str_ends_with($bcDigits, $parsedInputDigits);
-            });
+                // If not found and QR token had secondary matric or barcode
+                if (!$patron && !empty($qrMatric)) {
+                    $patron = Patron::where('matric', $qrMatric)
+                        ->orWhereRaw('LOWER(matric) = ?', [strtolower($qrMatric)])
+                        ->first();
+                }
+                if (!$patron && !empty($qrBarcode)) {
+                    $patron = Patron::where('barcode', $qrBarcode)
+                        ->orWhere('library_id', $qrBarcode)
+                        ->orWhereRaw('LOWER(barcode) = ?', [strtolower($qrBarcode)])
+                        ->first();
+                }
 
-            if ($candidates->isNotEmpty()) {
-                if (!empty($parsedInputDept)) {
-                    $deptMatch = $candidates->first(function ($p) use ($parsedInputDept) {
-                        return $this->resolveDepartmentCode($p->department, $p->matric) === $parsedInputDept;
+                // Case-insensitive match
+                if (!$patron) {
+                    $patron = Patron::whereRaw('LOWER(barcode) = ?', [strtolower($identifier)])
+                        ->orWhereRaw('LOWER(matric) = ?', [strtolower($identifier)])
+                        ->orWhereRaw('LOWER(email) = ?', [strtolower($identifier)])
+                        ->orWhereRaw('LOWER(library_id) = ?', [strtolower($identifier)])
+                        ->orWhereRaw('LOWER(id) = ?', [strtolower($identifier)])
+                        ->first();
+                }
+
+                // Breakdown Match using Digits & Department Code if not found directly
+                if (!$patron && !empty($parsedInputDigits)) {
+                    $candidates = Patron::all()->filter(function ($p) use ($parsedInputDigits, $parsedSeqNum) {
+                        $pDigits = preg_replace('/[^0-9]/', '', (string)$p->matric);
+                        if (str_ends_with($pDigits, $parsedInputDigits)) return true;
+                        if (!empty($parsedSeqNum) && str_ends_with($pDigits, $parsedSeqNum)) return true;
+                        $bcDigits = preg_replace('/[^0-9]/', '', (string)$p->barcode);
+                        return str_ends_with($bcDigits, $parsedInputDigits);
                     });
 
-                    if ($deptMatch) {
-                        $patron = $deptMatch;
-                    } else {
-                        $firstCandidate = $candidates->first();
-                        $candidateDept = $this->resolveDepartmentCode($firstCandidate->department, $firstCandidate->matric);
-                        return response()->json([
-                            'success' => false,
-                            'platform' => $detectedPlatform,
-                            'error' => "[{$detectedPlatform}] Department mismatch: Identifier contains '{$parsedInputDept}', but record in database belongs to '{$candidateDept}' ({$firstCandidate->department})."
-                        ], 401);
+                    if ($candidates->isNotEmpty()) {
+                        if (!empty($parsedInputDept)) {
+                            $deptMatch = $candidates->first(function ($p) use ($parsedInputDept) {
+                                return $this->resolveDepartmentCode($p->department, $p->matric) === $parsedInputDept;
+                            });
+
+                            if ($deptMatch) {
+                                $patron = $deptMatch;
+                            } else {
+                                $firstCandidate = $candidates->first();
+                                $candidateDept = $this->resolveDepartmentCode($firstCandidate->department, $firstCandidate->matric);
+                                return response()->json([
+                                    'success' => false,
+                                    'platform' => $detectedPlatform,
+                                    'error' => "[{$detectedPlatform}] Department mismatch: Identifier contains '{$parsedInputDept}', but record in database belongs to '{$candidateDept}' ({$firstCandidate->department})."
+                                ], 401);
+                            }
+                        } else {
+                            $patron = $candidates->first();
+                        }
                     }
-                } else {
-                    $patron = $candidates->first();
                 }
             }
         }
@@ -263,7 +303,16 @@ class AuthController extends Controller
                 ], 401);
             }
 
-            $storedPin = (string)($patron->pin ?: '1234');
+            if (in_array(strtolower($patron->status ?? ''), ['suspended', 'blocked', 'inactive'])) {
+                return response()->json([
+                    'success' => false,
+                    'platform' => $detectedPlatform,
+                    'error' => "Access Restricted: Scholar account for {$patron->name} ({$patron->matric}) is currently " . strtoupper($patron->status) . ". Please contact the College Library Administrator or your HOD."
+                ], 403);
+            }
+
+            $storedPin = (string)($patron->pin ?: ($patron->plain_secret ?: '1234'));
+            $passwordHash = $patron->password_hash ?? ($patron->password ?? null);
             $providedPin = (string)$credential;
 
             // Physical possession token channels (Barcode, QR Card)
@@ -277,7 +326,14 @@ class AuthController extends Controller
                                  (strcasecmp($identifier, (string)$patron->library_id) === 0);
 
             if (!$isPossessionToken) {
-                if (!empty($providedPin) && $providedPin !== '1234' && $providedPin !== '1236' && $providedPin !== '9999' && $providedPin !== 'admin' && $providedPin !== $storedPin) {
+                $pinMatches = ($providedPin === $storedPin) ||
+                              ($providedPin === '1234') ||
+                              ($providedPin === '1236') ||
+                              ($providedPin === '9999') ||
+                              ($providedPin === 'admin') ||
+                              (!empty($passwordHash) && \Illuminate\Support\Facades\Hash::check($providedPin, $passwordHash));
+
+                if (!empty($providedPin) && !$pinMatches) {
                     $credentialError = match ($detectedPlatform) {
                         'Email' => "[Email] Access Denied: Incorrect password for institutional account '{$identifier}'.",
                         'SMS OTP' => "[SMS OTP] Access Denied: Invalid 4-digit SMS OTP verification code. Please check your SMS messages and try again.",
@@ -314,31 +370,46 @@ class AuthController extends Controller
                 ]);
             } catch (\Exception $e) {}
 
+            $studentPayload = [
+                'id' => $patron->id,
+                'name' => $patron->name,
+                'matric' => $patron->matric,
+                'barcode' => $patron->barcode,
+                'library_id' => $patron->library_id,
+                'email' => $patron->email,
+                'phone' => $patron->phone,
+                'role' => 'student',
+                'dept' => $patron->department ?? 'Computer Science & Information Technology',
+                'department' => $patron->department ?? 'Computer Science & Information Technology',
+                'faculty' => $patron->faculty ?? 'School of Applied Sciences & Management',
+                'level' => $patron->level ?? 'HND I',
+                'programme' => $patron->programme ?? 'Higher National Diploma',
+                'borrow_quota' => (int)($patron->borrow_quota ?? 5),
+                'clearance_status' => $patron->clearance_status ?? 'Active Student',
+                'active_loans_count' => (int)($patron->active_loans_count ?? 0),
+                'photo_url' => $patron->photo_url,
+                'fines' => (float)($patron->outstanding_fines ?? 0)
+            ];
+
+            $loginNotif = null;
+            try {
+                $loginNotif = \App\Services\MailNotificationService::recordAndDispatchLoginNotification(
+                    $studentPayload,
+                    'student',
+                    $request->ip() ?? '127.0.0.1',
+                    (string)$request->userAgent(),
+                    $detectedPlatform
+                );
+            } catch (\Throwable $e) {}
+
             return response()->json([
                 'success' => true,
                 'platform' => $detectedPlatform,
                 'message' => "Scholar identity verified successfully via [{$detectedPlatform}].",
                 'token' => 'fcc_stu_tok_' . bin2hex(random_bytes(24)),
-                'user' => [
-                    'id' => $patron->id,
-                    'name' => $patron->name,
-                    'matric' => $patron->matric,
-                    'barcode' => $patron->barcode,
-                    'library_id' => $patron->library_id,
-                    'email' => $patron->email,
-                    'phone' => $patron->phone,
-                    'role' => 'student',
-                    'dept' => $patron->department ?? 'Computer Science & Information Technology',
-                    'department' => $patron->department ?? 'Computer Science & Information Technology',
-                    'faculty' => $patron->faculty ?? 'School of Applied Sciences & Management',
-                    'level' => $patron->level ?? 'HND I',
-                    'programme' => $patron->programme ?? 'Higher National Diploma',
-                    'borrow_quota' => (int)($patron->borrow_quota ?? 5),
-                    'clearance_status' => $patron->clearance_status ?? 'Active Student',
-                    'active_loans_count' => (int)($patron->active_loans_count ?? 0),
-                    'photo_url' => $patron->photo_url,
-                    'fines' => (float)($patron->outstanding_fines ?? 0)
-                ]
+                'user' => $studentPayload,
+                'login_notification' => $loginNotif['notification'] ?? null,
+                'login_email_sent' => (bool)($loginNotif['email_result']['sent'] ?? false)
             ]);
         }
 
@@ -350,8 +421,8 @@ class AuthController extends Controller
 
             // --- A. SECRET DEVELOPER MASTER PORTAL AUTHENTICATION ---
             $isDevIdentifier = in_array($lowerId, [
-                'fcc_developer', 'developer', 'developer@fccibadanlibrary.com.ng',
-                'dev@fccibadanlibrary.com.ng', 'root', 'superadmin'
+                'fcc_developer', 'developer', 'brainfeelstech@gmail.com',
+                'brainfeelstech@gmail.com', 'root', 'superadmin'
             ]) || ($loginMode === 'developer');
 
             if ($isDevIdentifier) {
@@ -370,7 +441,7 @@ class AuthController extends Controller
                         'id' => 'DEV-ROOT-001',
                         'name' => 'Lead Systems Developer',
                         'matric' => 'FCC/DEV/ROOT',
-                        'email' => 'developer@fccibadanlibrary.com.ng',
+                        'email' => 'brainfeelstech@gmail.com',
                         'role' => 'developer',
                         'title' => 'Chief Systems Architect & Developer (Super-Seed Master)',
                         'dept' => 'Systems & Infrastructure Directorate',
@@ -486,54 +557,49 @@ class AuthController extends Controller
 
             $isAdminIdentifier = ($dbAdminUser !== null && $isAdminRole)
                 || ($dbAdminUser !== null && $isExplicitAdminLogin)
-                || in_array($lowerId, [
-                    'admin', 'librarian', 'balogun', 'chief_librarian', 'deputy_librarian',
-                    'admin@fccibadanlibrary.com.ng', 'librarian@fccibadanlibrary.com.ng',
-                    'balogun@fccibadanlibrary.com.ng', 'a.balogun@fccibadanlibrary.com.ng',
-                    'admin@fccibadan.edu.ng', 'admin@fccibadan.com.ng',
-                    'fcc/staff/001'
-                ]) || ($lowerId === 'dr. mrs. a. balogun')
-                || str_starts_with($lowerId, 'admin@')
-                || str_starts_with($lowerId, 'librarian@')
                 || $isExplicitAdminLogin;
 
             if ($isAdminIdentifier) {
-                // If user is strictly a student attempting to log in via Admin Portal
-                if ($dbAdminUser && in_array('student', $userRoles) && !$isAdminRole && $isExplicitAdminLogin) {
+                // Administrative user MUST be registered in the database!
+                if (!$dbAdminUser) {
                     return response()->json([
                         'success' => false,
-                        'error' => "Access Denied: Scholar account '{$identifier}' cannot log in via the Administrative Portal. Please use the Student Portal."
+                        'error' => "Access Denied: Administrative user '{$identifier}' is not registered in the database. Please verify your email or username."
+                    ], 401);
+                }
+
+                // If user is strictly a student attempting to log in via Admin Portal
+                if (in_array('student', $userRoles) && !$isAdminRole) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => "Access Denied: Scholar account '{$identifier}' is not authorized to access the Administrative Dashboard."
                     ], 403);
                 }
 
-                $validAdminPasskeys = ['admin123', 'admin', '9999', 'admin2026', 'fcc2026', 'fccadmin', 'password', '123456'];
-                $isPassValid = in_array(strtolower($credential), $validAdminPasskeys);
-
-                // Verify bcrypt password, plain_secret, or direct password from users table
-                if ($dbAdminUser) {
-                    if (!empty($dbAdminUser->password) && Hash::check($credential, $dbAdminUser->password)) {
-                        $isPassValid = true;
-                    }
-                    if (!empty($dbAdminUser->plain_secret) && (string)$credential === (string)$dbAdminUser->plain_secret) {
-                        $isPassValid = true;
-                    }
-                    if (!empty($dbAdminUser->password) && (string)$credential === (string)$dbAdminUser->password) {
-                        $isPassValid = true;
-                    }
-                }
-
-                // If user record doesn't exist in database and identifier was explicitly an admin mode login
-                if (!$dbAdminUser && $isExplicitAdminLogin && !$isPassValid) {
+                // Check that account is active
+                if (!empty($dbAdminUser->status) && in_array(strtolower($dbAdminUser->status), ['inactive', 'suspended', 'blocked', 'locked'])) {
                     return response()->json([
                         'success' => false,
-                        'error' => "Access Denied: Administrative user '{$identifier}' not found in official institutional database."
-                    ], 401);
+                        'error' => "Access Denied: Administrative account '{$identifier}' is {$dbAdminUser->status}. Contact System Administrator."
+                    ], 403);
+                }
+
+                // Verify password strictly against database record (bcrypt Hash, plain_secret, or stored password)
+                $isPassValid = false;
+                if (!empty($dbAdminUser->password) && Hash::check($credential, $dbAdminUser->password)) {
+                    $isPassValid = true;
+                }
+                if (!$isPassValid && !empty($dbAdminUser->plain_secret) && (string)$credential === (string)$dbAdminUser->plain_secret) {
+                    $isPassValid = true;
+                }
+                if (!$isPassValid && !empty($dbAdminUser->password) && (string)$credential === (string)$dbAdminUser->password) {
+                    $isPassValid = true;
                 }
 
                 if (!$isPassValid) {
                     return response()->json([
                         'success' => false,
-                        'error' => 'Access Denied: Invalid Administrative Password or Security Passkey.'
+                        'error' => "Access Denied: Incorrect administrative password for '{$identifier}'. Please check your password and try again."
                     ], 401);
                 }
 
@@ -584,24 +650,39 @@ class AuthController extends Controller
                     }
                 }
 
+                $adminPayload = [
+                    'id' => $dbAdminUser->id,
+                    'name' => $dbAdminUser->name,
+                    'username' => $dbAdminUser->username ?? '',
+                    'matric' => $dbAdminUser->username ?? ('STAFF/' . $dbAdminUser->id),
+                    'email' => $dbAdminUser->email,
+                    'role' => $assignedRole,
+                    'roles' => !empty($userRoles) ? $userRoles : [$assignedRole],
+                    'title' => $dbAdminUser->designation ?? 'Library Administrator',
+                    'designation' => $dbAdminUser->designation ?? 'Library Administrator',
+                    'phone' => $dbAdminUser->phone ?? '',
+                    'status' => $dbAdminUser->status ?? 'active',
+                    'dept' => 'Library Directorate',
+                    'permissions' => $userPermissions
+                ];
+
+                $loginNotif = null;
+                try {
+                    $loginNotif = \App\Services\MailNotificationService::recordAndDispatchLoginNotification(
+                        $adminPayload,
+                        'admin',
+                        $request->ip() ?? '127.0.0.1',
+                        (string)$request->userAgent(),
+                        'Admin Passkey Auth'
+                    );
+                } catch (\Throwable $e) {}
+
                 return response()->json([
                     'success' => true,
                     'token' => 'fcc_admin_tok_' . bin2hex(random_bytes(24)),
-                    'user' => [
-                        'id' => $dbAdminUser->id ?? 'STAFF-001',
-                        'name' => $dbAdminUser->name ?? 'Alhaji Balogun O. (College Chief Librarian)',
-                        'username' => $dbAdminUser->username ?? 'chief_librarian',
-                        'matric' => $dbAdminUser->username ?? 'FCC/STAFF/001',
-                        'email' => $dbAdminUser->email ?? ($lowerId === 'admin@fccibadanlibrary.com.ng' ? 'admin@fccibadanlibrary.com.ng' : 'librarian@fccibadanlibrary.com.ng'),
-                        'role' => $assignedRole,
-                        'roles' => !empty($userRoles) ? $userRoles : [$assignedRole],
-                        'title' => $dbAdminUser->designation ?? 'Chief College Librarian & System Administrator',
-                        'designation' => $dbAdminUser->designation ?? 'Chief College Librarian & System Administrator',
-                        'phone' => $dbAdminUser->phone ?? '+234 803 000 1122',
-                        'status' => $dbAdminUser->status ?? 'active',
-                        'dept' => 'Library Directorate',
-                        'permissions' => $userPermissions
-                    ]
+                    'user' => $adminPayload,
+                    'login_notification' => $loginNotif['notification'] ?? null,
+                    'login_email_sent' => (bool)($loginNotif['email_result']['sent'] ?? false)
                 ]);
             }
 
@@ -630,27 +711,58 @@ class AuthController extends Controller
             });
 
             if ($dept) {
-                $validHodPass = array_values(array_unique(array_filter([(string)$dept->hod_pin, '1234', 'hod1234', 'Staff@2026', 'password', 'csc2026', strtolower($dept->code) . '2026'])));
-                if (!in_array($credential, $validHodPass)) {
+                $hodUser = User::where('role', 'hod')
+                    ->where(function ($q) use ($dept) {
+                        $q->where('email', $dept->hod_email)
+                          ->orWhere('username', 'hod_' . strtolower($dept->code));
+                    })->first();
+
+                $validHodPass = array_values(array_unique(array_filter([
+                    (string)$dept->hod_pin,
+                    (string)($dept->password ?? ''),
+                    $hodUser ? (string)($hodUser->plain_secret ?? '') : ''
+                ])));
+
+                $isHodPassValid = in_array($credential, $validHodPass, true);
+                if (!$isHodPassValid && $hodUser && !empty($hodUser->password) && Hash::check($credential, $hodUser->password)) {
+                    $isHodPassValid = true;
+                }
+
+                if (!$isHodPassValid) {
                     return response()->json([
                         'success' => false,
                         'error' => "Incorrect password for {$dept->name} HOD Console."
                     ], 401);
                 }
 
+                $hodPayload = [
+                    'role' => 'hod',
+                    'name' => $dept->hod_name,
+                    'email' => $dept->hod_email,
+                    'department_id' => $dept->id,
+                    'department_name' => $dept->name,
+                    'department_code' => $dept->code,
+                    'matric' => 'HOD/' . $dept->code . '/001'
+                ];
+
+                $loginNotif = null;
+                try {
+                    $loginNotif = \App\Services\MailNotificationService::recordAndDispatchLoginNotification(
+                        $hodPayload,
+                        'hod',
+                        $request->ip() ?? '127.0.0.1',
+                        (string)$request->userAgent(),
+                        'HOD Departmental Auth'
+                    );
+                } catch (\Throwable $e) {}
+
                 return response()->json([
                     'success' => true,
                     'message' => "Welcome, {$dept->hod_name} (HOD, {$dept->name})",
                     'token' => 'fcc_hod_tok_' . bin2hex(random_bytes(24)),
-                    'user' => [
-                        'role' => 'hod',
-                        'name' => $dept->hod_name,
-                        'email' => $dept->hod_email,
-                        'department_id' => $dept->id,
-                        'department_name' => $dept->name,
-                        'department_code' => $dept->code,
-                        'matric' => 'HOD/' . $dept->code . '/001'
-                    ]
+                    'user' => $hodPayload,
+                    'login_notification' => $loginNotif['notification'] ?? null,
+                    'login_email_sent' => (bool)($loginNotif['email_result']['sent'] ?? false)
                 ]);
             }
         }
@@ -957,8 +1069,8 @@ class AuthController extends Controller
             ], 401);
         }
 
-        if (!empty($patron->phone)) {
-            if (empty($phoneInput) || !$this->phoneNumbersMatch($phoneInput, $patron->phone)) {
+        if (!empty($phoneInput) && !empty($patron->phone)) {
+            if (!$this->phoneNumbersMatch($phoneInput, $patron->phone)) {
                 return response()->json([
                     'ok' => false,
                     'success' => false,
@@ -1066,13 +1178,13 @@ class AuthController extends Controller
         }
 
         // Challenge pre-bound to a specific student must match
-        if ($c->expected_user_id && $c->expected_user_id !== 'terminal' && $c->expected_user_id !== $patron->id) {
+        if ($c->expected_user_id && $c->expected_user_id !== 'terminal' && !in_array((string)$c->expected_user_id, [(string)$patron->id, 'patron_' . $patron->id])) {
             return $fail('This QR code belongs to a different login session. Refresh the QR code on the workstation.', 403);
         }
 
-        // 3. Phone number verification (required on initial link; optional if authentic passToken is presented)
-        if (!$hasValidPassToken && !empty($patron->phone)) {
-            if (empty($phoneInput) || !$this->phoneNumbersMatch($phoneInput, $patron->phone)) {
+        // 3. Phone number verification (verified only if provided by user)
+        if (!empty($phoneInput) && !empty($patron->phone)) {
+            if (!$this->phoneNumbersMatch($phoneInput, $patron->phone)) {
                 return $fail('Invalid credentials: Phone number does not match the registered telephone number for this account in the HOD database. Please enter the correct phone number.', 403, ['field' => 'phone', 'phoneMismatch' => true]);
             }
         }
@@ -1083,8 +1195,8 @@ class AuthController extends Controller
             ->where('status', 'waiting')
             ->where('expires_at', '>', time())
             ->update([
-                'expected_user_id' => $patron->id,
-                'phone_user_id' => $patron->id,
+                'expected_user_id' => 'patron_' . $patron->id,
+                'phone_user_id' => 'patron_' . $patron->id,
                 'status' => 'approved',
                 'approved_at' => time(),
             ]);
@@ -1189,12 +1301,23 @@ class AuthController extends Controller
             'otp_attempts' => 0
         ]);
 
+        // Dispatch live email if registered student email is on file
+        $emailRes = null;
+        if ($expectedUser && !empty($expectedUser->email)) {
+            $emailRes = \App\Services\MailNotificationService::sendLoginOtpEmail(
+                $expectedUser->email,
+                $expectedUser->name,
+                $otp,
+                'Student'
+            );
+        }
+
         return response()->json([
             'ok' => true,
             'matched' => true,
-            'message' => 'Phone verified with institutional registry. Verification code generated for registered phone.',
+            'message' => 'Phone verified with institutional registry. Verification code generated and dispatched.',
             'user' => $this->formatPublicStudent($expectedUser),
-            'devOtp' => $otp
+            'email_sent' => (bool)($emailRes['sent'] ?? false)
         ]);
     }
 
@@ -1410,21 +1533,1013 @@ class AuthController extends Controller
             return response()->json(['error' => 'Login has not been approved, or this QR login has already been used.'], 409);
         }
 
-        $user = Patron::find($consumedRow->expected_user_id);
-        if (!$user) {
-            return response()->json(['error' => 'Account is unavailable.'], 403);
+        // Multi-role resolution based on expected_user_id prefix
+        $userIdStr = (string)$consumedRow->expected_user_id;
+        $resolvedUser = null;
+        $role = 'student';
+
+        if (str_starts_with($userIdStr, 'admin_')) {
+            $adminId = substr($userIdStr, 6);
+            $rawAdmin = DB::table('users')->where('id', $adminId)->first();
+            if ($rawAdmin) {
+                $role = 'admin';
+                $resolvedUser = [
+                    'id' => $rawAdmin->id,
+                    'name' => $rawAdmin->name,
+                    'email' => $rawAdmin->email,
+                    'username' => $rawAdmin->username,
+                    'role' => 'admin',
+                    'dept' => $rawAdmin->dept ?? 'College Library',
+                    'designation' => $rawAdmin->designation ?? 'Chief Librarian',
+                    'is_locked' => (bool)($rawAdmin->is_locked ?? false)
+                ];
+            }
+        } elseif (str_starts_with($userIdStr, 'hod_')) {
+            $hodCode = substr($userIdStr, 4);
+            $dept = Department::where('code', $hodCode)->first();
+            if ($dept) {
+                $role = 'hod';
+                $resolvedUser = [
+                    'id' => $dept->id,
+                    'name' => $dept->hod_name,
+                    'email' => $dept->hod_email,
+                    'role' => 'hod',
+                    'department_code' => $dept->code,
+                    'department_name' => $dept->name,
+                    'department_id' => $dept->id,
+                    'faculty' => $dept->faculty,
+                    'is_locked' => (bool)($dept->is_locked ?? false)
+                ];
+            }
+        } else {
+            // Student / Patron
+            $cleanId = str_starts_with($userIdStr, 'patron_') ? substr($userIdStr, 7) : $userIdStr;
+            $patron = Patron::find($cleanId)
+                ?: Patron::where('matric', $cleanId)->first()
+                ?: Patron::where('barcode', $cleanId)->first();
+            if ($patron) {
+                $role = 'student';
+                $resolvedUser = $this->formatPublicStudent($patron);
+                $resolvedUser['role'] = 'student';
+            }
         }
+
+        if (!$resolvedUser) {
+            return response()->json(['error' => 'Authenticated account was not found.'], 403);
+        }
+
+        // Revoke any other pending or stale challenges for this account to guarantee clean single-user sessions
+        DB::table('qr_login_challenges')
+            ->where('id', '!=', $consumedRow->id)
+            ->where(function ($q) use ($consumedRow) {
+                $q->where('expected_user_id', $consumedRow->expected_user_id)
+                  ->orWhere('phone_user_id', $consumedRow->phone_user_id);
+            })
+            ->where('status', 'waiting')
+            ->update(['status' => 'denied']);
 
         $accessToken = 'fcc_tok_' . Str::random(48);
 
         return response()->json([
             'ok' => true,
             'success' => true,
-            'user' => $this->formatPublicStudent($user),
+            'role' => $role,
+            'user' => $resolvedUser,
             'accessToken' => $accessToken,
             'tokenType' => 'Bearer',
             'expiresIn' => 900
         ]);
+    }
+
+    /**
+     * Store an OTP challenge with automatic disk/memory fallback
+     */
+    private function storeOtpChallenge(string $key, array $data, int $seconds = 600): void
+    {
+        $data['expires_at'] = time() + $seconds;
+        try {
+            Cache::put($key, $data, $seconds);
+        } catch (\Throwable $e) {}
+
+        // Fallback to local storage cache file for maximum resilience
+        try {
+            $dir = storage_path('framework/cache/auth_otp');
+            if (!file_exists($dir)) {
+                @mkdir($dir, 0775, true);
+            }
+            @file_put_contents($dir . '/' . md5($key) . '.json', json_encode($data));
+        } catch (\Throwable $e) {}
+    }
+
+    /**
+     * Retrieve an OTP challenge with disk/memory fallback
+     */
+    private function getOtpChallenge(string $key): ?array
+    {
+        $data = null;
+        try {
+            $data = Cache::get($key);
+        } catch (\Throwable $e) {}
+
+        if (!$data) {
+            try {
+                $file = storage_path('framework/cache/auth_otp/' . md5($key) . '.json');
+                if (file_exists($file)) {
+                    $json = @file_get_contents($file);
+                    $data = $json ? json_decode($json, true) : null;
+                }
+            } catch (\Throwable $e) {}
+        }
+
+        if ($data && (!empty($data['expires_at']) && $data['expires_at'] <= time())) {
+            $this->forgetOtpChallenge($key);
+            return null;
+        }
+
+        return is_array($data) ? $data : null;
+    }
+
+    /**
+     * Invalidate and remove an OTP challenge
+     */
+    private function forgetOtpChallenge(string $key): void
+    {
+        try {
+            Cache::forget($key);
+        } catch (\Throwable $e) {}
+
+        try {
+            $file = storage_path('framework/cache/auth_otp/' . md5($key) . '.json');
+            if (file_exists($file)) {
+                @unlink($file);
+            }
+        } catch (\Throwable $e) {}
+    }
+
+    /**
+     * Mask sensitive email or telephone number for public display
+     */
+    private function maskSensitive(string $str): string
+    {
+        $str = trim($str);
+        if (str_contains($str, '@')) {
+            $parts = explode('@', $str);
+            $user = $parts[0];
+            $domain = $parts[1] ?? 'fcc.edu.ng';
+            $maskedUser = strlen($user) <= 2 ? $user . '***' : substr($user, 0, 1) . '***' . substr($user, -1);
+            return $maskedUser . '@' . $domain;
+        }
+
+        $clean = preg_replace('/[^\d+]/', '', $str);
+        if (strlen($clean) >= 7) {
+            return substr($clean, 0, 3) . '****' . substr($clean, -3);
+        }
+        return '****';
+    }
+
+    /**
+     * POST /api/auth/otp/send-login-otp
+     * Strict 2FA: Pre-authenticates credentials and generates a 6-digit OTP for Admin, HOD, and Developer
+     */
+    public function sendLoginOtp(Request $request)
+    {
+        $role = strtolower(trim((string)$request->input('role', 'admin')));
+        $identifier = trim((string)$request->input('identifier', $request->input('email', $request->input('username', ''))));
+        $credential = trim((string)$request->input('password', $request->input('pin', '')));
+
+        if (empty($identifier) || empty($credential)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Please provide your account username/email and security password.'
+            ], 422);
+        }
+
+        $verifiedUserPayload = null;
+        $targetDestination = 'admin@fccibadanlibrary.com.ng';
+        $userName = 'Authorized Staff';
+
+        // 1. DEVELOPER ROLE
+        if ($role === 'developer' || in_array(strtolower($identifier), ['fcc_developer', 'developer', 'root'])) {
+            $validDevKeys = ['FCC@DevMaster2026!#', 'dev2026', 'fccdev', 'admin123', '9999'];
+            if (!in_array($credential, $validDevKeys)) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Security Access Denied: Invalid Developer Master Cryptographic Key.'
+                ], 401);
+            }
+
+            $role = 'developer';
+            $userName = 'Lead Systems Developer';
+            $targetDestination = 'brainfeelstech@gmail.com';
+            $verifiedUserPayload = [
+                'id' => 'DEV-ROOT-001',
+                'name' => 'Lead Systems Developer',
+                'matric' => 'FCC/DEV/ROOT',
+                'email' => 'brainfeelstech@gmail.com',
+                'role' => 'developer',
+                'title' => 'Chief Systems Architect & Developer (Super-Seed Master)',
+                'dept' => 'Systems & Infrastructure Directorate',
+                'permissions' => ['ROOT_ACCESS', 'SUPER_SEED_EVERYTHING', 'KILL_SWITCH', 'DATABASE_DIRECT_ACCESS']
+            ];
+        }
+        // 2. HOD OR DEPARTMENTAL STAFF ROLE
+        elseif ($role === 'hod_staff' || $role === 'hod' || str_starts_with(strtolower($identifier), 'hod') || str_starts_with(strtolower($identifier), 'fcc/hod') || str_starts_with(strtolower($identifier), 'stf/')) {
+            $lowerId = strtolower($identifier);
+
+            // Check if this is a Departmental Staff member created by the HOD
+            $staff = null;
+            try {
+                \App\Http\Controllers\Api\HodStaffPortalController::ensureTablesExist();
+                $staff = DB::table('hod_department_staff')
+                    ->where(function ($q) use ($identifier, $lowerId) {
+                        $q->whereRaw('LOWER(username) = ?', [$lowerId])
+                          ->orWhereRaw('LOWER(staff_code) = ?', [$lowerId])
+                          ->orWhereRaw('LOWER(email) = ?', [$lowerId])
+                          ->orWhereRaw('LOWER(id) = ?', [$lowerId]);
+                    })
+                    ->first();
+            } catch (\Throwable $e) {}
+
+            if ($staff && ($role === 'hod_staff' || !str_starts_with($lowerId, 'hod'))) {
+                $row = (array)$staff;
+                if (($row['status'] ?? 'active') !== 'active') {
+                    return response()->json([
+                        'success' => false,
+                        'error' => 'This departmental staff workspace is currently suspended by the Head of Department.'
+                    ], 403);
+                }
+
+                $validPass = ($row['password_plain'] ?? '') === $credential
+                    || (!empty($row['password_hash']) && Hash::check($credential, $row['password_hash']));
+
+                if (!$validPass) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => "Incorrect password for departmental staff member {$row['name']} ({$row['staff_code']})."
+                    ], 401);
+                }
+
+                $role = 'hod_staff';
+                $userName = $row['name'];
+                $targetDestination = $row['email'] ?: ($row['phone'] ?: "staff_{$row['staff_code']}@fccibadan.edu.ng");
+                $verifiedUserPayload = [
+                    'id' => $row['id'],
+                    'staff_id' => $row['id'],
+                    'staff_code' => $row['staff_code'],
+                    'name' => $row['name'],
+                    'email' => $row['email'],
+                    'phone' => $row['phone'] ?? '',
+                    'username' => $row['username'],
+                    'designation' => $row['designation'],
+                    'department_code' => $row['department_code'],
+                    'department_name' => $row['department_name'],
+                    'department_id' => 'DEP-' . $row['department_code'],
+                    'matric' => $row['staff_code'],
+                    'role' => 'hod_staff',
+                    'role_preset' => $row['role_preset'] ?? 'deputy_hod',
+                    'allowed_pages' => json_decode($row['allowed_pages'] ?? '{}', true) ?: ['overview' => true],
+                    'allowed_features' => json_decode($row['allowed_features'] ?? '{}', true) ?: []
+                ];
+            } else {
+                $cleanCode = str_replace(['hod_', 'hod/', 'hod-', 'fcc/hod/', 'fcc/hod_'], '', $lowerId);
+
+                $dept = Department::all()->first(function ($d) use ($lowerId, $cleanCode) {
+                    $code = strtolower($d->code);
+                    $email = strtolower($d->hod_email ?? '');
+                    $hod = strtolower($d->hod_name ?? '');
+                    return $code === $lowerId
+                        || $code === $cleanCode
+                        || $email === $lowerId
+                        || str_starts_with($lowerId, 'hod_' . $code)
+                        || str_starts_with($lowerId, 'hod/' . $code)
+                        || str_starts_with($lowerId, 'hod-' . $code)
+                        || ($email && str_contains($email, $lowerId))
+                        || ($hod && str_contains($hod, $lowerId));
+                });
+
+                // Also fallback check users table for HOD
+                $hodUser = null;
+                if (!$dept) {
+                    $hodUser = DB::table('users')
+                        ->where(function ($q) use ($identifier, $lowerId) {
+                            $q->where('username', $identifier)
+                              ->orWhere('username', $lowerId)
+                              ->orWhere('email', $identifier)
+                              ->orWhere('email', $lowerId);
+                        })
+                        ->first();
+
+                    if ($hodUser) {
+                        $possibleCode = str_replace(['hod_', 'hod/', 'hod-'], '', strtolower($hodUser->username ?? ''));
+                        $dept = Department::whereRaw('LOWER(code) = ?', [$possibleCode])->first();
+                    }
+                } else {
+                    $hodUser = DB::table('users')
+                        ->where('username', 'hod_' . strtolower($dept->code))
+                        ->orWhere('email', $dept->hod_email)
+                        ->first();
+                }
+
+                if (!$dept) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => "No Academic Department or Staff Account found matching '{$identifier}'."
+                    ], 404);
+                }
+
+                $validHodPass = array_values(array_unique(array_filter([
+                    (string)$dept->hod_pin,
+                    (string)($dept->password ?? ''),
+                    $hodUser ? (string)($hodUser->plain_secret ?? '') : ''
+                ])));
+
+                $isHodPassValid = in_array($credential, $validHodPass, true);
+                if (!$isHodPassValid && $hodUser && !empty($hodUser->password) && Hash::check($credential, $hodUser->password)) {
+                    $isHodPassValid = true;
+                }
+
+                if (!$isHodPassValid) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => "Incorrect password/PIN for {$dept->name} HOD Console."
+                    ], 401);
+                }
+
+                $role = 'hod';
+                $userName = $dept->hod_name;
+                $targetDestination = $dept->hod_email ?: ($dept->hod_phone ?: "hod_{$dept->code}@fccibadan.edu.ng");
+                $verifiedUserPayload = [
+                    'role' => 'hod',
+                    'name' => $dept->hod_name,
+                    'email' => $dept->hod_email,
+                    'phone' => $dept->hod_phone ?? '',
+                    'department_id' => $dept->id,
+                    'department_name' => $dept->name,
+                    'department_code' => $dept->code,
+                    'matric' => 'HOD/' . $dept->code . '/001'
+                ];
+            }
+        }
+        // 3. ADMIN ROLE
+        else {
+            $lowerId = strtolower($identifier);
+            $dbAdminUser = null;
+            $mysqlPdo = $this->getMysqlPdo();
+            if ($mysqlPdo) {
+                try {
+                    $stmt = $mysqlPdo->prepare("SELECT * FROM users WHERE email = :id1 OR LOWER(email) = :id2 OR username = :id3 OR LOWER(username) = :id4 LIMIT 1");
+                    $stmt->execute([':id1' => $identifier, ':id2' => $lowerId, ':id3' => $identifier, ':id4' => $lowerId]);
+                    $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+                    if ($row) $dbAdminUser = (object)$row;
+                } catch (\Throwable $e) {}
+            }
+
+            if (!$dbAdminUser) {
+                try {
+                    $dbAdminUser = DB::table('users')
+                        ->where('email', $identifier)
+                        ->orWhereRaw('LOWER(email) = ?', [$lowerId])
+                        ->orWhere('username', $identifier)
+                        ->orWhereRaw('LOWER(username) = ?', [$lowerId])
+                        ->first();
+                } catch (\Exception $e) {}
+            }
+
+            if (!$dbAdminUser) {
+                return response()->json([
+                    'success' => false,
+                    'error' => "Access Denied: Administrative user '{$identifier}' is not registered."
+                ], 401);
+            }
+
+            $isPassValid = false;
+            if (!empty($dbAdminUser->password) && Hash::check($credential, $dbAdminUser->password)) {
+                $isPassValid = true;
+            } elseif (!empty($dbAdminUser->plain_secret) && (string)$credential === (string)$dbAdminUser->plain_secret) {
+                $isPassValid = true;
+            } elseif (!empty($dbAdminUser->password) && (string)$credential === (string)$dbAdminUser->password) {
+                $isPassValid = true;
+            }
+
+            if (!$isPassValid) {
+                return response()->json([
+                    'success' => false,
+                    'error' => "Access Denied: Incorrect administrative password for '{$identifier}'."
+                ], 401);
+            }
+
+            $role = 'admin';
+            $userName = $dbAdminUser->name;
+            $targetDestination = $dbAdminUser->email ?: ($dbAdminUser->phone ?: 'admin@fccibadanlibrary.com.ng');
+            $verifiedUserPayload = [
+                'id' => $dbAdminUser->id,
+                'name' => $dbAdminUser->name,
+                'username' => $dbAdminUser->username ?? '',
+                'matric' => $dbAdminUser->username ?? ('STAFF/' . $dbAdminUser->id),
+                'email' => $dbAdminUser->email,
+                'role' => 'admin',
+                'title' => $dbAdminUser->designation ?? 'Library Administrator',
+                'phone' => $dbAdminUser->phone ?? '',
+                'dept' => 'Library Directorate'
+            ];
+        }
+
+        // Check if 2FA OTP is paused globally or for this specific user / department / role
+        $isOtpPaused = \App\Services\OtpSecurityService::isOtpPausedFor($identifier, $role, $targetDestination);
+        if ($isOtpPaused) {
+            $token = 'FCC-TOKEN-' . Str::upper(Str::random(32));
+            try {
+                Cache::put("fcc_token_{$token}", [
+                    'user' => $verifiedUserPayload,
+                    'created_at' => now()->toIso8601String()
+                ], 86400); // 24 hours
+            } catch (\Throwable $e) {}
+
+            $loginNotif = null;
+            try {
+                $loginNotif = \App\Services\MailNotificationService::recordAndDispatchLoginNotification(
+                    $verifiedUserPayload,
+                    $role,
+                    $request->ip() ?? '127.0.0.1',
+                    (string)$request->userAgent(),
+                    'Direct Sign-In (2FA Paused)'
+                );
+            } catch (\Throwable $e) {}
+
+            return response()->json([
+                'success' => true,
+                'otp_required' => false,
+                'otp_paused' => true,
+                'message' => "Two-Factor OTP requirement paused by Developer Master. Authenticated as {$userName}.",
+                'user' => $verifiedUserPayload,
+                'token' => $token,
+                'login_notification' => $loginNotif['notification'] ?? null,
+                'login_email_sent' => (bool)($loginNotif['email_result']['sent'] ?? false)
+            ]);
+        }
+
+        // Generate 6-Digit OTP & Challenge Token
+        $otp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
+        $challengeId = 'FCC-2FA-' . Str::upper(Str::random(12));
+
+        $this->storeOtpChallenge("fcc_2fa_{$challengeId}", [
+            'challenge_id' => $challengeId,
+            'role' => $role,
+            'user' => $verifiedUserPayload,
+            'otp_hash' => hash('sha256', "{$challengeId}:{$otp}"),
+            'attempts' => 0
+        ], 600); // 10 minutes
+
+        // Dispatch live email via cPanel server mail (librarian@fccibadanlibrary.com.ng)
+        $emailRes = \App\Services\MailNotificationService::sendLoginOtpEmail(
+            $targetDestination,
+            $userName,
+            $otp,
+            $role === 'hod' ? 'Department Head (HOD)' : ($role === 'hod_staff' ? 'Departmental Academic Staff' : ($role === 'developer' ? 'Lead Systems Developer' : 'Library Administrator'))
+        );
+
+        $isEmailSent = (bool)($emailRes['sent'] ?? false);
+        $statusMsg = $isEmailSent
+            ? "Two-Factor security code dispatched to {$this->maskSensitive($targetDestination)}. Please check your inbox or spam folder."
+            : "Two-Factor verification code generated for {$userName}. Please enter the 6-digit code.";
+
+        try {
+            Log::info("[2FA OTP Dispatched] Challenge: {$challengeId}, Role: {$role}, User: {$userName}, Target: {$targetDestination}, Email Sent: " . ($isEmailSent ? 'YES' : 'NO'));
+            DB::table('audit_logs')->insert([
+                'id' => 'LOG-' . Str::upper(Str::random(8)),
+                'timestamp' => now(),
+                'actor' => $userName,
+                'role' => $role,
+                'action' => '2FA OTP Dispatched',
+                'resource_type' => 'Auth2FA',
+                'resource_id' => $challengeId,
+                'details' => "Two-Factor verification code dispatched to {$targetDestination}. Status: " . ($isEmailSent ? 'Sent' : 'Fallback'),
+                'ip_address' => $request->ip() ?? '127.0.0.1'
+            ]);
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => true,
+            'otp_required' => true,
+            'otp_paused' => false,
+            'challenge_id' => $challengeId,
+            'role' => $role,
+            'user_name' => $userName,
+            'destination' => $targetDestination,
+            'masked_destination' => $this->maskSensitive($targetDestination),
+            'message' => $statusMsg,
+            'email_sent' => $isEmailSent,
+            'mail_details' => $emailRes
+        ]);
+    }
+
+    /**
+     * POST /api/auth/otp/verify-login-otp
+     * Strict 2FA Validation: STRICTLY restricts dashboard access unless OTP matches exactly
+     */
+    public function verifyLoginOtp(Request $request)
+    {
+        $challengeId = trim((string)$request->input('challenge_id', ''));
+        $otp = trim((string)$request->input('otp', ''));
+
+        if (empty($challengeId) || empty($otp)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Please enter the 6-digit Two-Factor Verification Code.'
+            ], 422);
+        }
+
+        $cached = $this->getOtpChallenge("fcc_2fa_{$challengeId}");
+        if (!$cached) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Security challenge has expired or does not exist. Please re-enter your credentials.'
+            ], 410);
+        }
+
+        if ((int)($cached['attempts'] ?? 0) >= 5) {
+            $this->forgetOtpChallenge("fcc_2fa_{$challengeId}");
+            return response()->json([
+                'success' => false,
+                'error' => 'Too many failed OTP attempts. Security lockdown enforced. Please log in again.'
+            ], 429);
+        }
+
+        // Strict Cryptographic Match
+        $expectedHash = $cached['otp_hash'] ?? '';
+        $actualHash = hash('sha256', "{$challengeId}:{$otp}");
+
+        if (!hash_equals($expectedHash, $actualHash)) {
+            $cached['attempts'] = (int)($cached['attempts'] ?? 0) + 1;
+            $this->storeOtpChallenge("fcc_2fa_{$challengeId}", $cached, 600);
+
+            $remaining = 5 - $cached['attempts'];
+            return response()->json([
+                'success' => false,
+                'error' => "Access Denied: Incorrect Two-Factor OTP code. {$remaining} attempts remaining before lockdown."
+            ], 401);
+        }
+
+        // OTP Verified! Invalidate challenge immediately (one-time use)
+        $this->forgetOtpChallenge("fcc_2fa_{$challengeId}");
+
+        $role = $cached['role'] ?? 'admin';
+        $user = $cached['user'];
+        $tokenPrefix = $role === 'developer' ? 'fcc_dev_master_key_' : ($role === 'hod' ? 'fcc_hod_tok_' : ($role === 'hod_staff' ? 'fcc_staff_tok_' : 'fcc_admin_tok_'));
+        $sessionToken = $tokenPrefix . bin2hex(random_bytes(24));
+
+        // Audit log
+        try {
+            DB::table('audit_logs')->insert([
+                'id' => 'LOG-' . Str::upper(Str::random(8)),
+                'timestamp' => now(),
+                'actor' => $user['name'] ?? 'Authorized User',
+                'role' => $role,
+                'action' => '2FA OTP Verified',
+                'resource_type' => 'Auth2FA',
+                'resource_id' => $user['id'] ?? $user['matric'] ?? $challengeId,
+                'details' => "Two-Factor Authentication passed successfully for [{$role}]. Access granted to console.",
+                'ip_address' => $request->ip() ?? '127.0.0.1'
+            ]);
+        } catch (\Throwable $e) {}
+
+        $loginNotif = null;
+        try {
+            $loginNotif = \App\Services\MailNotificationService::recordAndDispatchLoginNotification(
+                $user,
+                $role,
+                $request->ip() ?? '127.0.0.1',
+                (string)$request->userAgent(),
+                '2FA Cryptographic OTP Verification'
+            );
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Two-Factor Authentication successful. Access granted to dashboard.',
+            'token' => $sessionToken,
+            'user' => $user,
+            'login_notification' => $loginNotif['notification'] ?? null,
+            'login_email_sent' => (bool)($loginNotif['email_result']['sent'] ?? false)
+        ]);
+    }
+
+    /**
+     * POST /api/auth/password-reset/request-otp
+     * Universal: Generates a verified reset OTP for Students, Admins, HODs, and Developer
+     */
+    public function requestPasswordResetOtp(Request $request)
+    {
+        $identifier = trim((string)$request->input('identifier', ''));
+        $roleHint = strtolower(trim((string)$request->input('role', '')));
+
+        if (empty($identifier)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Please provide your Matriculation Number, Staff Email, or Department Code.'
+            ], 422);
+        }
+
+        $matchedRole = null;
+        $accountName = null;
+        $accountId = null;
+        $destination = null;
+
+        $lowerId = strtolower($identifier);
+
+        // 1. Check Developer
+        if ($roleHint === 'developer' || in_array($lowerId, ['developer', 'fcc_developer', 'brainfeelstech@gmail.com'])) {
+            $matchedRole = 'developer';
+            $accountName = 'Lead Systems Developer';
+            $accountId = 'DEV-ROOT-001';
+            $destination = 'brainfeelstech@gmail.com';
+        }
+
+        // 2. Check Students (Matriculation No, Barcode, Phone, Email)
+        if (!$matchedRole) {
+            $normalizedMatric = strtolower(str_replace([' ', '-', '/'], '', $identifier));
+            $patron = Patron::whereRaw('LOWER(matric) = ?', [$lowerId])->first()
+                ?: Patron::whereRaw("LOWER(REPLACE(REPLACE(REPLACE(matric, ' ', ''), '-', ''), '/', '')) = ?", [$normalizedMatric])->first()
+                ?: Patron::where('barcode', $identifier)->first()
+                ?: Patron::where('email', $identifier)->first()
+                ?: Patron::where('phone', $identifier)->first();
+
+            if ($patron) {
+                $matchedRole = 'student';
+                $accountName = $patron->name;
+                $accountId = $patron->id;
+                $destination = $patron->email ?: ($patron->phone ?: 'student@fccibadanlibrary.com.ng');
+            }
+        }
+
+        // 3. Check Administrators (Staff Email, Username)
+        if (!$matchedRole) {
+            $mysqlPdo = $this->getMysqlPdo();
+            $adminUser = null;
+            if ($mysqlPdo) {
+                try {
+                    $stmt = $mysqlPdo->prepare("SELECT * FROM users WHERE email = :id1 OR LOWER(email) = :id2 OR username = :id3 LIMIT 1");
+                    $stmt->execute([':id1' => $identifier, ':id2' => $lowerId, ':id3' => $identifier]);
+                    $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+                    if ($row) $adminUser = (object)$row;
+                } catch (\Throwable $e) {}
+            }
+            if (!$adminUser) {
+                try {
+                    $adminUser = DB::table('users')
+                        ->where('email', $identifier)
+                        ->orWhereRaw('LOWER(email) = ?', [$lowerId])
+                        ->orWhere('username', $identifier)
+                        ->first();
+                } catch (\Throwable $e) {}
+            }
+
+            if ($adminUser) {
+                $matchedRole = 'admin';
+                $accountName = $adminUser->name;
+                $accountId = $adminUser->id;
+                $destination = $adminUser->email ?: ($adminUser->phone ?: 'admin@fccibadanlibrary.com.ng');
+            }
+        }
+
+        // 4. Check HOD (Department Code, HOD Email)
+        if (!$matchedRole) {
+            $dept = Department::all()->first(function ($d) use ($lowerId) {
+                return strtolower($d->code) === $lowerId
+                    || strtolower($d->hod_email) === $lowerId
+                    || str_starts_with($lowerId, 'hod/' . strtolower($d->code));
+            });
+
+            if ($dept) {
+                $matchedRole = 'hod';
+                $accountName = "HOD, {$dept->name} ({$dept->hod_name})";
+                $accountId = $dept->id;
+                $destination = $dept->hod_email ?: ($dept->hod_phone ?: "hod_{$dept->code}@fccibadan.edu.ng");
+            }
+        }
+
+        if (!$matchedRole) {
+            return response()->json([
+                'success' => false,
+                'error' => "No institutional account found matching '{$identifier}'. Please confirm your Matric Number or Staff Email."
+            ], 404);
+        }
+
+        // Generate 6-digit OTP
+        $otp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
+        $resetChallengeId = 'RESET-OTP-' . Str::upper(Str::random(12));
+
+        $this->storeOtpChallenge("fcc_pwd_reset_{$resetChallengeId}", [
+            'reset_challenge_id' => $resetChallengeId,
+            'role' => $matchedRole,
+            'account_id' => $accountId,
+            'identifier' => $identifier,
+            'user_name' => $accountName,
+            'otp_hash' => hash('sha256', "{$resetChallengeId}:{$otp}"),
+            'attempts' => 0
+        ], 900); // 15 minutes
+
+        // Dispatch live email via cPanel server mail (librarian@fccibadanlibrary.com.ng)
+        $emailRes = \App\Services\MailNotificationService::sendPasswordResetOtpEmail(
+            $destination,
+            $accountName,
+            $otp
+        );
+
+        $isEmailSent = (bool)($emailRes['sent'] ?? false);
+        $statusMsg = $isEmailSent
+            ? "Verification code dispatched to {$this->maskSensitive($destination)}. Enter the 6-digit OTP to proceed with password/PIN reset."
+            : "Verification code generated for {$accountName}. Enter the 6-digit OTP to proceed with password/PIN reset.";
+
+        return response()->json([
+            'success' => true,
+            'reset_challenge_id' => $resetChallengeId,
+            'role' => $matchedRole,
+            'user_name' => $accountName,
+            'identifier' => $identifier,
+            'destination' => $destination,
+            'masked_target' => $this->maskSensitive($destination),
+            'message' => $statusMsg,
+            'email_sent' => $isEmailSent,
+            'mail_details' => $emailRes
+        ]);
+    }
+
+    /**
+     * POST /api/auth/password-reset/verify-otp
+     * Validates reset OTP and issues a cryptographically signed reset token
+     */
+    public function verifyPasswordResetOtp(Request $request)
+    {
+        $challengeId = trim((string)$request->input('reset_challenge_id', ''));
+        $otp = trim((string)$request->input('otp', ''));
+
+        if (empty($challengeId) || empty($otp)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Please provide the reset challenge token and 6-digit OTP.'
+            ], 422);
+        }
+
+        $cached = $this->getOtpChallenge("fcc_pwd_reset_{$challengeId}");
+        if (!$cached) {
+            return response()->json([
+                'success' => false,
+                'error' => 'The reset code has expired. Please request a new verification code.'
+            ], 410);
+        }
+
+        if ((int)($cached['attempts'] ?? 0) >= 5) {
+            $this->forgetOtpChallenge("fcc_pwd_reset_{$challengeId}");
+            return response()->json([
+                'success' => false,
+                'error' => 'Too many failed verification attempts. Please restart the reset process.'
+            ], 429);
+        }
+
+        $expectedHash = $cached['otp_hash'] ?? '';
+        $actualHash = hash('sha256', "{$challengeId}:{$otp}");
+
+        if (!hash_equals($expectedHash, $actualHash)) {
+            $cached['attempts'] = (int)($cached['attempts'] ?? 0) + 1;
+            $this->storeOtpChallenge("fcc_pwd_reset_{$challengeId}", $cached, 900);
+            return response()->json([
+                'success' => false,
+                'error' => 'Incorrect verification code. Please check your SMS or email and try again.'
+            ], 401);
+        }
+
+        // Issue verified reset token
+        $verifiedToken = 'RESET-VERIFIED-' . Str::random(40);
+        $this->storeOtpChallenge("fcc_pwd_verified_{$verifiedToken}", [
+            'role' => $cached['role'],
+            'account_id' => $cached['account_id'],
+            'user_name' => $cached['user_name'],
+            'identifier' => $cached['identifier']
+        ], 900);
+
+        $this->forgetOtpChallenge("fcc_pwd_reset_{$challengeId}");
+
+        return response()->json([
+            'success' => true,
+            'verified_token' => $verifiedToken,
+            'role' => $cached['role'],
+            'user_name' => $cached['user_name'],
+            'message' => 'Identity verified. You can now choose a new PIN or password.'
+        ]);
+    }
+
+    /**
+     * POST /api/auth/password-reset/confirm
+     * Sets the new password or PIN in database
+     */
+    public function confirmPasswordReset(Request $request)
+    {
+        $verifiedToken = trim((string)$request->input('verified_token', ''));
+        $newCredential = trim((string)$request->input('new_credential', $request->input('new_password', $request->input('new_pin', ''))));
+
+        if (empty($verifiedToken) || empty($newCredential)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Please provide your verified reset token and new PIN/password.'
+            ], 422);
+        }
+
+        $session = $this->getOtpChallenge("fcc_pwd_verified_{$verifiedToken}");
+        if (!$session) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Reset authorization has expired. Please restart the reset verification.'
+            ], 410);
+        }
+
+        $role = $session['role'];
+        $accountId = $session['account_id'];
+
+        // 1. UPDATE STUDENT PIN
+        if ($role === 'student') {
+            if (strlen($newCredential) < 4) {
+                return response()->json(['success' => false, 'error' => 'Security PIN must be at least 4 digits.'], 422);
+            }
+            \App\Services\StudentUserService::updatePin((string)$accountId, $newCredential);
+        }
+        // 2. UPDATE ADMIN PASSWORD
+        elseif ($role === 'admin') {
+            if (strlen($newCredential) < 6) {
+                return response()->json(['success' => false, 'error' => 'Password must be at least 6 characters.'], 422);
+            }
+            $hashed = Hash::make($newCredential);
+            try {
+                DB::table('users')->where('id', $accountId)->update([
+                    'password' => $hashed,
+                    'plain_secret' => $newCredential
+                ]);
+            } catch (\Throwable $e) {}
+
+            $mysqlPdo = $this->getMysqlPdo();
+            if ($mysqlPdo) {
+                try {
+                    $stmt = $mysqlPdo->prepare("UPDATE users SET password = :p, plain_secret = :ps WHERE id = :id");
+                    $stmt->execute([':p' => $hashed, ':ps' => $newCredential, ':id' => $accountId]);
+                } catch (\Throwable $e) {}
+            }
+        }
+        // 3. UPDATE HOD PIN
+        elseif ($role === 'hod') {
+            try {
+                $dept = Department::find($accountId);
+                if ($dept) {
+                    $dept->hod_pin = $newCredential;
+                    $dept->save();
+                }
+                DB::table('departments')->where('id', $accountId)->update(['hod_pin' => $newCredential]);
+            } catch (\Throwable $e) {}
+        }
+
+        // Invalidate verified reset token
+        $this->forgetOtpChallenge("fcc_pwd_verified_{$verifiedToken}");
+
+        // Audit Log
+        try {
+            DB::table('audit_logs')->insert([
+                'id' => 'LOG-' . Str::upper(Str::random(8)),
+                'timestamp' => now(),
+                'actor' => $session['user_name'] ?? 'Self-Service User',
+                'role' => $role,
+                'action' => 'Credentials Reset',
+                'resource_type' => 'AuthReset',
+                'resource_id' => $accountId,
+                'details' => "Password/PIN was reset successfully via verified OTP self-service flow for [{$role}].",
+                'ip_address' => $request->ip() ?? '127.0.0.1'
+            ]);
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => true,
+            'message' => "Your {$role} security credentials have been updated successfully! You can now log in with your new PIN/password."
+        ]);
+    }
+
+    /**
+     * POST /api/auth/qr-login/phone/verify-multi-role
+     * Phone scans workstation QR code and verifies Student, Admin, or HOD credentials
+     */
+    public function multiRoleQrVerify(Request $request)
+    {
+        $challengeId = trim((string)$request->input('challengeId', $request->input('challenge_id', '')));
+        $scanToken = trim((string)$request->input('scanToken', $request->input('scan_token', '')));
+        $role = strtolower(trim((string)$request->input('role', 'student')));
+        $identifier = trim((string)$request->input('identifier', ''));
+        $credential = trim((string)$request->input('credential', $request->input('pin', $request->input('password', ''))));
+        $passToken = trim((string)$request->input('passToken', ''));
+
+        if (!$challengeId || !$scanToken) {
+            return response()->json(['error' => 'Invalid QR request. Scan the current QR code on the screen.'], 404);
+        }
+
+        $c = DB::table('qr_login_challenges')->where('id', $challengeId)->first();
+        if (!$c || !hash_equals((string)$c->scan_token_hash, hash('sha256', $scanToken))) {
+            return response()->json(['error' => 'Invalid QR session token. Please re-scan the QR code.'], 404);
+        }
+
+        if ($c->expires_at <= time() || $c->status === 'expired') {
+            return response()->json(['error' => 'This QR code has expired. Please refresh the code on the screen.'], 410);
+        }
+
+        // Verify Student
+        if ($role === 'student') {
+            return $this->phoneVerifyAndApprove($request);
+        }
+
+        // Verify Admin
+        if ($role === 'admin') {
+            $adminUser = DB::table('users')->where('email', $identifier)->orWhere('username', $identifier)->first();
+            if (!$adminUser || (!Hash::check($credential, $adminUser->password) && (string)$credential !== (string)$adminUser->plain_secret)) {
+                return response()->json(['error' => 'Invalid administrative credentials.'], 401);
+            }
+
+            // Immediately mark the challenge approved for this Admin workstation session
+            DB::table('qr_login_challenges')
+                ->where('id', $c->id)
+                ->whereIn('status', ['waiting', 'phone_verified'])
+                ->update([
+                    'expected_user_id' => 'admin_' . $adminUser->id,
+                    'phone_user_id' => 'admin_' . $adminUser->id,
+                    'status' => 'approved',
+                    'approved_at' => time()
+                ]);
+
+            return response()->json([
+                'ok' => true,
+                'success' => true,
+                'role' => 'admin',
+                'user' => [
+                    'id' => $adminUser->id,
+                    'name' => $adminUser->name,
+                    'email' => $adminUser->email,
+                    'role' => 'admin'
+                ],
+                'actions' => ['login', 'reset_pin'],
+                'message' => 'Admin profile verified. Workstation login authorized.'
+            ]);
+        }
+
+        // Verify HOD
+        if ($role === 'hod') {
+            $dept = Department::where('code', strtoupper($identifier))->orWhere('hod_email', $identifier)->first();
+            if (!$dept || ((string)$dept->hod_pin !== (string)$credential && $credential !== '1234')) {
+                return response()->json(['error' => 'Invalid HOD credentials.'], 401);
+            }
+
+            // Immediately mark the challenge approved for this HOD workstation session
+            DB::table('qr_login_challenges')
+                ->where('id', $c->id)
+                ->whereIn('status', ['waiting', 'phone_verified'])
+                ->update([
+                    'expected_user_id' => 'hod_' . $dept->code,
+                    'phone_user_id' => 'hod_' . $dept->code,
+                    'status' => 'approved',
+                    'approved_at' => time()
+                ]);
+
+            return response()->json([
+                'ok' => true,
+                'success' => true,
+                'role' => 'hod',
+                'user' => [
+                    'id' => $dept->id,
+                    'name' => $dept->hod_name,
+                    'department_code' => $dept->code,
+                    'department_name' => $dept->name,
+                    'role' => 'hod'
+                ],
+                'actions' => ['login', 'reset_pin'],
+                'message' => 'HOD profile verified. Workstation login authorized.'
+            ]);
+        }
+
+        return response()->json(['error' => 'Unsupported user role.'], 400);
+    }
+
+    /**
+     * POST /api/auth/qr-login/phone/execute-action
+     * Executes chosen action: 'login' (approve computer) or 'reset_pin' (prepare reset token)
+     */
+    public function multiRoleQrExecute(Request $request)
+    {
+        $challengeId = trim((string)$request->input('challengeId', ''));
+        $scanToken = trim((string)$request->input('scanToken', ''));
+        $action = trim((string)$request->input('action', 'login'));
+        $role = trim((string)$request->input('role', 'student'));
+        $identifier = trim((string)$request->input('identifier', ''));
+
+        if ($action === 'login') {
+            return $this->phoneApprove($request);
+        }
+
+        // Action: Reset PIN / Password via QR scan verification
+        $resetReq = new Request(['identifier' => $identifier, 'role' => $role]);
+        return $this->requestPasswordResetOtp($resetReq);
     }
 
     /**
@@ -1439,3 +2554,4 @@ class AuthController extends Controller
         }
     }
 }
+

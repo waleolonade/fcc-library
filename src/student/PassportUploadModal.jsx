@@ -121,28 +121,41 @@ export default function PassportUploadModal({
 
       // 3. Persist to backend database
       const patronId = currentUser?.id || currentUser?.matric || 'FCC/CSC/2026/409';
+      let photoRes = null;
       try {
-        await fetch(`/api/patrons/${encodeURIComponent(patronId)}/photo`, {
+        const res = await fetch(`/api/patrons/${encodeURIComponent(patronId)}/photo`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ photo: processedPhoto, id: patronId, matric: currentUser?.matric })
         });
+        photoRes = await res.json();
       } catch (backendErr) {
         // Fallback: direct backend port 8000
         try {
           const directApi = `${window.location.protocol}//${window.location.hostname}:8000/api/patrons/${encodeURIComponent(patronId)}/photo`;
-          await fetch(directApi, {
+          const res = await fetch(directApi, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ photo: processedPhoto, id: patronId, matric: currentUser?.matric })
           });
+          photoRes = await res.json();
         } catch (e) {}
       }
+
+      // Check if server rejected change due to 30-day policy
+      if (photoRes && photoRes.restricted) {
+        setError(photoRes.message || 'Profile photo changes are restricted to once every 30 days.');
+        sounds.playErrorBuzz();
+        setIsSaving(false);
+        return;
+      }
+
+      const updatedAt = photoRes?.photo_updated_at || new Date().toISOString();
 
       setSaveSuccess(true);
       sounds.playSuccessChime();
       if (onPhotoUpdated) {
-        onPhotoUpdated(processedPhoto);
+        onPhotoUpdated(processedPhoto, updatedAt);
       }
 
       setTimeout(() => {
@@ -152,7 +165,7 @@ export default function PassportUploadModal({
       }, 1200);
     } catch (err) {
       console.error('Failed to save profile photo:', err);
-      setError('Photo processed successfully, but saving to server encountered an error. Applied locally.');
+      setError('Photo processed successfully, but saving to server encountered an error.');
       setIsSaving(false);
     }
   };

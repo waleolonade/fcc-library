@@ -3,10 +3,11 @@ import {
   BookOpen, Star, Bookmark, Share2, Copy, Check, Download,
   Layers, MapPin, Sparkles, Bot, QrCode, FileText, CheckCircle2,
   Clock, AlertCircle, Quote, ChevronRight, ChevronLeft, Search,
-  ArrowLeft, ExternalLink, ShieldCheck, User, Building, Printer,
+  ArrowLeft, ArrowRight, ExternalLink, ShieldCheck, User, Building, Printer,
   Eye, Info, MessageSquare, ThumbsUp, Compass, Hash, Globe, Tag, Barcode
 } from 'lucide-react';
 import { getPermalink, copyToClipboardWithFeedback, navigateTo } from '../utils/router';
+import { pwaHistory } from '../utils/pwaHistoryManager';
 import { sounds } from '../utils/soundEffects';
 import { BarcodeSvg, QrCodeSvg } from './BarcodeQrStudio';
 
@@ -436,16 +437,29 @@ export default function BookDossierView({
               alt="FCC Crest"
               className="w-8 h-8 object-cover rounded-xl border border-emerald-500/40 shadow-sm shrink-0"
             />
-            <button
-              onClick={() => {
-                if (onBackToCatalog) onBackToCatalog();
-                else navigateTo(currentUser ? (currentUser.role === 'admin' ? '/admin/circulation' : '/scholar/catalog') : '/opac');
-              }}
-              className="px-3 py-1.5 rounded-xl bg-[#021810] hover:bg-emerald-950 text-emerald-300 hover:text-white border border-emerald-800/80 text-xs font-semibold flex items-center gap-1.5 transition shadow"
-            >
-              <ArrowLeft size={14} />
-              <span>Back to OPAC</span>
-            </button>
+            <div className="flex items-center gap-1 bg-[#021810] p-1 rounded-xl border border-emerald-800/80">
+              <button
+                onClick={() => {
+                  if (onBackToCatalog) onBackToCatalog();
+                  else pwaHistory.goBack();
+                }}
+                title="Go Back (Alt + ←)"
+                className="px-2.5 py-1 rounded-lg bg-emerald-950/80 hover:bg-emerald-600 text-emerald-200 hover:text-white text-xs font-semibold flex items-center gap-1 transition shadow"
+              >
+                <ArrowLeft size={13} />
+                <span>Back</span>
+              </button>
+              {pwaHistory.canGoForward() && (
+                <button
+                  onClick={() => pwaHistory.goForward()}
+                  title="Go Forward (Alt + →)"
+                  className="px-2.5 py-1 rounded-lg bg-emerald-950/80 hover:bg-emerald-600 text-emerald-200 hover:text-white text-xs font-semibold flex items-center gap-1 transition shadow"
+                >
+                  <span>Front</span>
+                  <ArrowRight size={13} />
+                </button>
+              )}
+            </div>
 
             <div className="hidden sm:flex items-center gap-1.5 text-xs text-emerald-300/70">
               <span className="hover:text-emerald-200 cursor-pointer" onClick={() => navigateTo('/opac')}>OPAC</span>
@@ -730,7 +744,7 @@ export default function BookDossierView({
 
               <div className="p-3 bg-white rounded-2xl inline-block shadow-inner">
                 <QrCodeSvg
-                  value={`http://localhost:5172/#/book/${book.id}`}
+                  value={typeof window !== 'undefined' ? `${window.location.origin}/#/book/${book.id}` : `https://fccibadanlibrary.com.ng/#/book/${book.id}`}
                   size={120}
                   className="mx-auto"
                 />

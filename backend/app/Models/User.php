@@ -19,11 +19,16 @@ class User extends Authenticatable
         'name',
         'email',
         'username',
+        'matric',
+        'barcode',
         'role',
         'password',
         'plain_secret',
         'phone',
         'designation',
+        'department',
+        'level',
+        'avatar',
         'status'
     ];
 

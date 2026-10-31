@@ -5,13 +5,13 @@ import {
   Award, Newspaper, Printer, Link2, Building2, FileUp, Key,
   Lock, ArrowRight, UserCheck, Search, Command, Activity, Bot,
   Users, CheckCircle, ChevronDown, ChevronLeft, ChevronRight,
-  Menu, X, Zap, Bell, HelpCircle, Laptop, Cpu, ArrowUpRight,
+  Menu, X, Zap, Bell, HelpCircle, Laptop, Cpu, ArrowUpRight, GraduationCap,
   Scan, CheckSquare, Plus, Trash2, Download, AlertTriangle,
   Fingerprint, BookDown, BookUp, ShieldAlert, ShieldCheck, Eye, Copy, Check,
   ExternalLink, Share2, Filter, Upload, Sliders, CheckCheck, Tag, Barcode, QrCode, Settings, MessageSquare, Image, UserPlus, FileSpreadsheet, Edit3
 } from 'lucide-react';
 import { INSTITUTION, BRANCHES, INITIAL_BOOKS, INITIAL_LOANS, INITIAL_PARTNER_LIBRARIES } from '../data/institutionalSeedData';
-import { libraryApi } from '../api/libraryApi';
+import { libraryApi, getApiBase } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
 import { navigateTo, parseCurrentRoute } from '../utils/router';
 import { PATTERNS } from '../utils/backgroundPatterns';
@@ -27,6 +27,7 @@ import ConfigurableLibrarySettings from './ConfigurableLibrarySettings';
 import InstitutionalCommunicationHub from '../common/InstitutionalCommunicationHub';
 import DepartmentManagement from './DepartmentManagement';
 import ApiConfigurationManager from './ApiConfigurationManager';
+import AcquisitionsSerialsDesk from './AcquisitionsSerialsDesk';
 import { analyzeUploadedPdf } from '../utils/pdfDeepAnalyzer';
 import PdfAnalysisInspector from '../common/PdfAnalysisInspector';
 import { departmentService } from '../services/departmentService';
@@ -35,7 +36,10 @@ import StudentBulkImportModal from '../common/StudentBulkImportModal';
 import StudentEditModal from '../common/StudentEditModal';
 import AdminSecuritySettingsModal from '../common/AdminSecuritySettingsModal';
 import DigitalBookReader from '../common/DigitalBookReader';
-import { getBookCoverUrl } from '../utils/bookCoverResolver';
+import { developerConfigService } from '../services/developerConfigService';
+import { developerApiCall } from '../services/developerApi';
+import MaintenanceBroadcastBanner from '../common/MaintenanceBroadcastBanner';
+import UniversalNotificationCenter from '../common/UniversalNotificationCenter';
 
 // =========================================================================
 // FCC ADMIN LIBRARY — MASTER CONSOLIDATED ADMIN & STAFF OPERATIONS PLATFORM
@@ -121,6 +125,34 @@ export default function FccAdminLibrary({
   });
   const [showAdminSecurityModal, setShowAdminSecurityModal] = useState(false);
 
+  // Synchronize admin profile directly with live backend database
+  useEffect(() => {
+    let isMounted = true;
+    const syncProfileFromDb = async () => {
+      try {
+        const s = localStorage.getItem('fcc_admin_session');
+        const parsed = s ? JSON.parse(s) : {};
+        const queryParams = new URLSearchParams();
+        if (parsed.id) queryParams.append('user_id', parsed.id);
+        if (parsed.email) queryParams.append('email', parsed.email);
+        if (parsed.username) queryParams.append('username', parsed.username);
+
+        const res = await fetch(`${getApiBase()}/admin/profile?${queryParams.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user && isMounted) {
+            setAdminUserProfile(prev => ({ ...prev, ...data.user }));
+            localStorage.setItem('fcc_admin_session', JSON.stringify({ ...parsed, ...data.user }));
+          }
+        }
+      } catch (e) {
+        // Fallback to existing session
+      }
+    };
+    syncProfileFromDb();
+    return () => { isMounted = false; };
+  }, []);
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Navigation tabs
@@ -133,13 +165,18 @@ export default function FccAdminLibrary({
   });
 
   useEffect(() => {
-    const handleHashSync = () => {
-      const nextTab = resolveAdminTabSlug(window.location.hash);
+    const handleHashSync = (e) => {
+      const rawTarget = e?.detail?.route || window.location.hash;
+      const nextTab = resolveAdminTabSlug(rawTarget);
       setActiveTab(prev => (prev !== nextTab ? nextTab : prev));
     };
     handleHashSync();
     window.addEventListener('hashchange', handleHashSync);
-    return () => window.removeEventListener('hashchange', handleHashSync);
+    window.addEventListener('fcc-notification-navigate', handleHashSync);
+    return () => {
+      window.removeEventListener('hashchange', handleHashSync);
+      window.removeEventListener('fcc-notification-navigate', handleHashSync);
+    };
   }, []);
 
   const [selectedBranch, setSelectedBranch] = useState('All Libraries');
@@ -185,17 +222,37 @@ export default function FccAdminLibrary({
   const [analyticsData, setAnalyticsData] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // Master Developer Configuration & Dynamic Custom Portals
+  const [devConfig, setDevConfig] = useState(() => developerConfigService.getConfig());
   const [customPages, setCustomPages] = useState([]);
 
   useEffect(() => {
-    fetch('/api/admin/custom-pages')
-      .then(res => res.json())
-      .then(data => {
-        if (data && data.pages) {
-          setCustomPages(data.pages);
+    const syncDeveloperSettings = async () => {
+      setDevConfig(developerConfigService.getConfig());
+      try {
+        const res = await developerApiCall('/api/developer/pages');
+        if (res && res.ok) {
+          const data = await res.json();
+          if (data && data.pages) {
+            setCustomPages(data.pages);
+            return;
+          }
         }
-      })
-      .catch(() => {});
+      } catch (err) {
+        // Fallback to local storage if API is momentarily unreachable
+        const local = localStorage.getItem('fcc_developer_config_v5');
+        if (local) {
+          try {
+            const parsed = JSON.parse(local);
+            if (parsed.customPages) setCustomPages(parsed.customPages);
+          } catch (e) {}
+        }
+      }
+    };
+
+    syncDeveloperSettings();
+    window.addEventListener('fcc-config-updated', syncDeveloperSettings);
+    return () => window.removeEventListener('fcc-config-updated', syncDeveloperSettings);
   }, []);
 
   useEffect(() => {
@@ -259,6 +316,116 @@ export default function FccAdminLibrary({
     });
   }, [books, departments, overviewDeptFilter, overviewBookSearch]);
 
+  // Catalog Books Selection & Single/Bulk Deletion State
+  const [selectedBookIds, setSelectedBookIds] = useState([]);
+  const [isDeletingBook, setIsDeletingBook] = useState(false);
+  const [deletingBookId, setDeletingBookId] = useState(null);
+  const [adminDeleteToast, setAdminDeleteToast] = useState(null);
+
+  const toggleSelectBook = (bookId) => {
+    setSelectedBookIds(prev => 
+      prev.includes(bookId) ? prev.filter(id => id !== bookId) : [...prev, bookId]
+    );
+  };
+
+  const toggleSelectAllBooks = () => {
+    const visibleIds = overviewFilteredBooks.map(b => b.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedBookIds.includes(id));
+    if (allSelected) {
+      setSelectedBookIds(prev => prev.filter(id => !visibleIds.includes(id)));
+    } else {
+      setSelectedBookIds(prev => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const handleDeleteSingleBook = async (book) => {
+    if (!book || !book.id) return;
+    const confirmMsg = `Are you sure you want to permanently delete "${book.title}" (${book.id}) from the library catalog and database?\n\nThis will completely purge the monograph from both local storage and the live MySQL database.`;
+    if (!window.confirm(confirmMsg)) {
+      return;
+    }
+    setIsDeletingBook(true);
+    setDeletingBookId(book.id);
+    sounds.playClick();
+    try {
+      const res = await fetch(`${getApiBase()}/catalog/${encodeURIComponent(book.id)}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res && res.ok && data.success) {
+        sounds.playSuccessChime();
+        setAdminDeleteToast({ type: 'success', message: `Monograph "${book.title}" (${book.id}) deleted from catalog and database.` });
+        setTimeout(() => setAdminDeleteToast(null), 4000);
+
+        // Update state and persistent cache
+        const nextBooks = books.filter(b => b.id !== book.id);
+        setBooks(nextBooks);
+        try {
+          localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(nextBooks));
+          localStorage.setItem('fcc_db_catalog', JSON.stringify(nextBooks));
+          window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: nextBooks }));
+        } catch (e) {}
+        setSelectedBookIds(prev => prev.filter(id => id !== book.id));
+      } else {
+        sounds.playErrorBuzz();
+        setAdminDeleteToast({ type: 'error', message: data.error || data.message || 'Failed to delete book from database.' });
+        setTimeout(() => setAdminDeleteToast(null), 5000);
+      }
+    } catch (err) {
+      sounds.playErrorBuzz();
+      setAdminDeleteToast({ type: 'error', message: 'Network error occurred while deleting book.' });
+      setTimeout(() => setAdminDeleteToast(null), 5000);
+    } finally {
+      setIsDeletingBook(false);
+      setDeletingBookId(null);
+    }
+  };
+
+  const handleBulkDeleteBooks = async () => {
+    if (selectedBookIds.length === 0) return;
+    const count = selectedBookIds.length;
+    const confirmMsg = `CRITICAL WARNING: Are you sure you want to permanently delete ${count} selected monographs from the institutional library catalog and database?\n\nThis action cannot be undone and will purge these records from both SQLite and live MySQL.`;
+    if (!window.confirm(confirmMsg)) {
+      return;
+    }
+    setIsDeletingBook(true);
+    sounds.playClick();
+    try {
+      const res = await fetch(`${getApiBase()}/catalog/bulk-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedBookIds })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res && res.ok && data.success) {
+        sounds.playSuccessChime();
+        const deletedQty = data.count || count;
+        setAdminDeleteToast({ type: 'success', message: `Successfully purged ${deletedQty} monographs from catalog and central database.` });
+        setTimeout(() => setAdminDeleteToast(null), 4000);
+
+        // Update state and persistent cache
+        const idSet = new Set(selectedBookIds);
+        const nextBooks = books.filter(b => !idSet.has(b.id));
+        setBooks(nextBooks);
+        try {
+          localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(nextBooks));
+          localStorage.setItem('fcc_db_catalog', JSON.stringify(nextBooks));
+          window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: nextBooks }));
+        } catch (e) {}
+        setSelectedBookIds([]);
+      } else {
+        sounds.playErrorBuzz();
+        setAdminDeleteToast({ type: 'error', message: data.error || data.message || 'Failed to bulk delete books.' });
+        setTimeout(() => setAdminDeleteToast(null), 5000);
+      }
+    } catch (err) {
+      sounds.playErrorBuzz();
+      setAdminDeleteToast({ type: 'error', message: 'Network error occurred while bulk deleting books.' });
+      setTimeout(() => setAdminDeleteToast(null), 5000);
+    } finally {
+      setIsDeletingBook(false);
+    }
+  };
 
   // Patrons Management State
   const [patronFilterLevel, setPatronFilterLevel] = useState('all');
@@ -613,6 +780,16 @@ export default function FccAdminLibrary({
       onSwitchToUserPortal();
     } else {
       navigateTo('/scholar/catalog');
+    }
+  };
+
+  // Direct Admin Access to HOD Portal (No Email/Password Required)
+  const goToHodPortal = (dept = null) => {
+    sounds.playSuccessChime();
+    if (onSwitchToHodPortal) {
+      onSwitchToHodPortal(dept);
+    } else {
+      navigateTo('/hod/overview');
     }
   };
 
@@ -1027,9 +1204,15 @@ export default function FccAdminLibrary({
     if (!researchQuery.trim()) return;
     setIsResearching(true);
     try {
-      // Query OpenAlex API directly (free, no key needed)
+      // Query OpenAlex API with authenticated API key
       const q = encodeURIComponent(researchQuery.trim());
-      const res = await fetch(`https://api.openalex.org/works?search=${q}&per-page=8&filter=is_oa:true`);
+      const res = await fetch(`https://api.openalex.org/works?search=${q}&per-page=8&filter=is_oa:true&mailto=library@fccibadan.edu.ng&api_key=FD6xNHEEyHhLMW5Htsx3Vv`, {
+        headers: {
+          'Accept': 'application/json',
+          'api_key': 'FD6xNHEEyHhLMW5Htsx3Vv',
+          'Authorization': 'Bearer FD6xNHEEyHhLMW5Htsx3Vv'
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         const mapped = (data.results || []).map(w => ({
@@ -1108,6 +1291,9 @@ export default function FccAdminLibrary({
       className="flex flex-col min-h-screen lg:min-h-0 lg:h-screen lg:max-h-full lg:overflow-hidden bg-[#021810] text-emerald-100 font-sans selection:bg-emerald-500 selection:text-white"
       style={{ backgroundImage: PATTERNS.adminPanel }}
     >
+      {/* Targeted Developer Broadcast Banner & Maintenance Lock */}
+      <MaintenanceBroadcastBanner role="admin" currentPage={activeTab} />
+
       {/* =========================================================================
           TOP COMMAND & LARAVEL 11 STATUS BAR (GREEN THEME)
       ========================================================================= */}
@@ -1165,6 +1351,12 @@ export default function FccAdminLibrary({
 
           {/* Right: User Portal Bridge & Controls */}
           <div className="flex items-center gap-2.5">
+            {/* Universal User-Scoped Notification Center */}
+            <UniversalNotificationCenter
+              user={{ ...(adminUserProfile || user || {}), role: 'admin' }}
+              role="admin"
+            />
+
             {/* Admin Profile & Password Settings */}
             <button
               onClick={() => setShowAdminSecurityModal(true)}
@@ -1186,6 +1378,18 @@ export default function FccAdminLibrary({
               <BookOpen size={14} className="text-emerald-400" />
               <span>Scholar User Portal</span>
               <ArrowUpRight size={13} className="text-emerald-400" />
+            </button>
+
+            {/* Direct Bridge to HOD Academic Portal (Admin Master Access without email/password) */}
+            <button
+              onClick={() => goToHodPortal()}
+              id="switch-to-hod-portal-btn"
+              title="Open HOD Academic Portal (Direct Admin Access without password)"
+              className="px-3 py-1.5 rounded-lg bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 hover:text-teal-200 border border-teal-500/40 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm shadow-teal-950 hover:scale-105 active:scale-95 cursor-pointer"
+            >
+              <GraduationCap size={14} className="text-teal-400" />
+              <span>HOD Portal</span>
+              <ArrowUpRight size={13} className="text-teal-400" />
             </button>
 
             {/* Reload from Laravel */}
@@ -1243,7 +1447,7 @@ export default function FccAdminLibrary({
             { id: 'audit', label: 'Laravel Telemetry & Logs', icon: Database },
             { id: 'settings', label: 'Library Settings & Policies', icon: Settings, badge: 'Module 49' },
             { id: 'comms', label: 'Tri-Party Dispatch Hub', icon: MessageSquare, badge: 'Live' }
-          ].map(tab => {
+          ].filter(tab => devConfig?.adminPages?.[tab.id]?.enabled !== false).map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
@@ -1343,7 +1547,7 @@ export default function FccAdminLibrary({
                   <div className="px-3 text-[10px] font-bold text-emerald-400/80 uppercase tracking-wider">
                     {sec.title}
                   </div>
-                  {sec.items.map(item => {
+                  {sec.items.filter(item => devConfig?.adminPages?.[item.id]?.enabled !== false).map(item => {
                     const Icon = item.icon;
                     const isActive = activeTab === item.id;
                     return (
@@ -1409,13 +1613,26 @@ export default function FccAdminLibrary({
             </div>
 
             {/* Bottom Admin Status Card */}
-            <div className="p-3 rounded-2xl bg-[#021810] border border-emerald-800/80 space-y-1.5 text-xs">
+            <div
+              onClick={() => setShowAdminSecurityModal(true)}
+              className="p-3 rounded-2xl bg-[#021810] border border-emerald-800/80 space-y-1.5 text-xs hover:border-emerald-500 cursor-pointer transition group shadow-md"
+              title="Click to view Administrator Profile & Security Settings"
+            >
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono text-emerald-400">CHIEF LIBRARIAN</span>
+                <span className="text-[10px] font-mono text-emerald-400 group-hover:text-emerald-300 flex items-center gap-1">
+                  <Shield size={11} />
+                  <span>CHIEF LIBRARIAN</span>
+                </span>
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               </div>
-              <div className="font-bold text-white truncate">{user.name}</div>
-              <div className="text-[10px] text-emerald-400/70 font-mono">{user.dept || 'College Library'}</div>
+              <div className="font-bold text-white truncate">{adminUserProfile?.name || user.name}</div>
+              <div className="text-[10px] text-emerald-400/70 font-mono truncate">{adminUserProfile?.designation || adminUserProfile?.dept || user.dept || 'College Chief Librarian'}</div>
+              <div className="pt-1 border-t border-emerald-950 flex items-center justify-between text-[9px] text-emerald-400/80 font-mono">
+                <span>Profile &amp; Security</span>
+                <span className="px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
+                  {adminUserProfile?.is_locked ? 'SEC-14D ACTIVE' : 'OPEN'}
+                </span>
+              </div>
             </div>
           </aside>
         )}
@@ -1640,6 +1857,20 @@ export default function FccAdminLibrary({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2.5">
+                  {/* Select All Checkbox Button */}
+                  <button
+                    onClick={toggleSelectAllBooks}
+                    className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 text-xs font-semibold flex items-center gap-1.5 transition"
+                    title="Select or deselect all monographs in view"
+                  >
+                    <CheckSquare size={13} className="text-indigo-400" />
+                    <span>
+                      {overviewFilteredBooks.length > 0 && overviewFilteredBooks.every(b => selectedBookIds.includes(b.id))
+                        ? 'Deselect All'
+                        : `Select All (${overviewFilteredBooks.length})`}
+                    </span>
+                  </button>
+
                   {/* Search inside overview books */}
                   <div className="relative min-w-[220px]">
                     <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -1669,6 +1900,51 @@ export default function FccAdminLibrary({
                   </button>
                 </div>
               </div>
+
+              {/* Admin Deletion Feedback Toast Banner */}
+              {adminDeleteToast && (
+                <div className={`p-4 rounded-2xl border flex items-center justify-between gap-3 text-xs font-semibold animate-fadeIn ${
+                  adminDeleteToast.type === 'error'
+                    ? 'bg-rose-950/90 border-rose-800 text-rose-200'
+                    : 'bg-emerald-950/90 border-emerald-800 text-emerald-200'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {adminDeleteToast.type === 'error' ? <AlertTriangle size={16} className="text-rose-400" /> : <CheckCircle size={16} className="text-emerald-400" />}
+                    <span>{adminDeleteToast.message}</span>
+                  </div>
+                  <button onClick={() => setAdminDeleteToast(null)} className="text-slate-400 hover:text-white p-1">
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Bulk Deletion Action Bar */}
+              {selectedBookIds.length > 0 && (
+                <div className="p-4 rounded-2xl bg-rose-950/90 border border-rose-700/80 text-rose-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xl animate-fadeIn">
+                  <div className="flex items-center gap-2.5 text-xs font-bold">
+                    <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" />
+                    <span className="text-white font-mono text-sm">{selectedBookIds.length}</span>
+                    <span>monographs selected across active departmental catalog</span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setSelectedBookIds([])}
+                      className="px-3.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-900 text-slate-300 text-xs font-semibold transition border border-slate-800"
+                    >
+                      Cancel Selection
+                    </button>
+                    <button
+                      onClick={handleBulkDeleteBooks}
+                      disabled={isDeletingBook}
+                      className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-rose-950 disabled:opacity-50"
+                    >
+                      <Trash2 size={13} className={isDeletingBook ? 'animate-spin' : ''} />
+                      <span>{isDeletingBook ? 'Deleting from Database...' : `Delete Selected (${selectedBookIds.length})`}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Department Filter Tabs */}
               <div className="space-y-2">
@@ -1769,15 +2045,35 @@ export default function FccAdminLibrary({
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {overviewFilteredBooks.map((book, idx) => {
-                    const coverUrl = getBookCoverUrl(book);
+                    const coverUrl = book.cover_image || book.coverImage || book.cover || '/assets/fcc-logo.png';
                     const copiesAvail = book.copies_available ?? book.copiesAvailable ?? 1;
                     const copiesTot = book.copies_total ?? book.copiesTotal ?? 1;
 
                     return (
                       <div
                         key={book.id || idx}
-                        className="bg-slate-950 rounded-2xl border border-slate-800/90 p-3.5 flex flex-col justify-between space-y-3 hover:border-indigo-500/50 hover:shadow-xl transition group relative overflow-hidden"
+                        className={`bg-slate-950 rounded-2xl border p-3.5 flex flex-col justify-between space-y-3 hover:shadow-xl transition group relative overflow-hidden ${
+                          selectedBookIds.includes(book.id)
+                            ? 'border-rose-500/80 ring-1 ring-rose-500/50 bg-rose-950/10'
+                            : 'border-slate-800/90 hover:border-indigo-500/50'
+                        }`}
                       >
+                        {/* Book Selection Checkbox */}
+                        <div
+                          className="absolute top-2.5 left-2.5 z-20"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <label className="flex items-center cursor-pointer group/chk">
+                            <input
+                              type="checkbox"
+                              checked={selectedBookIds.includes(book.id)}
+                              onChange={() => toggleSelectBook(book.id)}
+                              className="w-4 h-4 rounded border-slate-700 bg-slate-900/90 text-rose-600 focus:ring-rose-500 focus:ring-offset-slate-950 cursor-pointer shadow-md transition"
+                              title="Select for bulk actions"
+                            />
+                          </label>
+                        </div>
+
                         {/* 3D Realistic Cover Artwork Presentation */}
                         <div
                           onClick={() => {
@@ -1793,7 +2089,7 @@ export default function FccAdminLibrary({
                             className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
                             onError={(e) => {
                               e.target.onerror = null;
-                              e.target.src = 'https://images.unsplash.com/photo-1532012164546-f432f2e37b73?w=600&auto=format&fit=crop&q=80';
+                              e.target.src = '/assets/fcc-logo.png';
                             }}
                           />
                           <div className="absolute top-0 bottom-0 left-0 w-2.5 bg-gradient-to-r from-black/80 to-transparent pointer-events-none" />
@@ -1872,6 +2168,14 @@ export default function FccAdminLibrary({
                             title="Inspect Bibliographic Record & Metadata"
                           >
                             <Eye size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSingleBook(book)}
+                            disabled={deletingBookId === book.id || isDeletingBook}
+                            className="p-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 text-rose-300 hover:text-white border border-rose-800/80 transition disabled:opacity-50 cursor-pointer shadow-sm hover:border-rose-600"
+                            title="Permanently Delete Monograph from Database"
+                          >
+                            <Trash2 size={14} className={deletingBookId === book.id ? 'animate-spin text-rose-400' : ''} />
                           </button>
                         </div>
                       </div>
@@ -2828,52 +3132,10 @@ export default function FccAdminLibrary({
             TAB 8: ACQUISITIONS & SERIALS
         ------------------------------------------------------------- */}
         {activeTab === 'acquisitions' && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="rounded-2xl bg-slate-900/90 border border-slate-800 p-5 shadow-lg space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <ShoppingBag size={18} className="text-indigo-400" />
-                    <span>Acquisitions & Journal Serials Desk</span>
-                  </h3>
-                  <p className="text-xs text-slate-400">Departmental textbook requests, purchase orders, and periodical subscriptions</p>
-                </div>
-                <span className="px-3 py-1 rounded-full text-xs font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                  Fiscal Budget Active
-                </span>
-              </div>
-
-              {acquisitions.length === 0 && (
-                <div className="text-center py-8 text-slate-500 text-xs">
-                  <ShoppingBag size={28} className="mx-auto mb-2 text-slate-700" />
-                  <p>No acquisition requests found in the database.</p>
-                </div>
-              )}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {acquisitions.map((item, i) => (
-                  <div key={item.id || i} className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
-                    <div className="font-bold text-xs text-white">{item.title}</div>
-                    <div className="text-[11px] text-slate-400">Requested by: {item.requested_by || item.requester}</div>
-                    <div className="text-[10px] text-slate-500 font-mono">{item.isbn || ''} • {item.department || ''}</div>
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs">
-                      <span className="font-mono text-emerald-400 font-bold">
-                        {item.cost_estimate_ngn
-                          ? `₦${Number(item.cost_estimate_ngn).toLocaleString()}`
-                          : item.cost ? `₦${Number(item.cost).toLocaleString()}` : '—'}
-                      </span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                        item.status?.includes('Delivered') || item.status === 'Approved' ? 'bg-emerald-500/20 text-emerald-300' :
-                        item.status?.includes('Review') ? 'bg-amber-500/20 text-amber-300' :
-                        'bg-indigo-500/20 text-indigo-300'
-                      }`}>
-                        {item.status || 'Pending'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <AcquisitionsSerialsDesk
+            departments={departments}
+            currentUser={adminUserProfile || user}
+          />
         )}
 
         {/* -------------------------------------------------------------

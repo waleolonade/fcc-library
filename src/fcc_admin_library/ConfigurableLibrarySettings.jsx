@@ -1,19 +1,25 @@
 import {
-    AlertCircle,
-    AlertTriangle,
-    Building,
-    Check,
-    CheckCircle2,
-    Clock, DollarSign,
-    Lock,
-    RefreshCw,
-    Save,
-    ShieldCheck,
-    Sparkles,
-    Tag
+  AlertCircle,
+  AlertTriangle,
+  Building,
+  Check,
+  CheckCircle2,
+  Clock, DollarSign,
+  Lock,
+  RefreshCw,
+  Save,
+  ShieldCheck,
+  Sparkles,
+  Tag,
+  Mail,
+  Send,
+  Eye,
+  EyeOff,
+  Key
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { institutionalConfigService } from '../services/institutionalConfigService';
+import { libraryApi } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
 
 export default function ConfigurableLibrarySettings({ onSettingsUpdated }) {
@@ -68,9 +74,41 @@ export default function ConfigurableLibrarySettings({ onSettingsUpdated }) {
   const [adminLockedUntil, setAdminLockedUntil] = useState(null);
   const [adminDaysRemaining, setAdminDaysRemaining] = useState(0);
 
+  // cPanel Server Mail & OTP State
+  const [mailConfig, setMailConfig] = useState({
+    host: 'mail.fccibadanlibrary.com.ng',
+    port: 465,
+    username: 'librarian@fccibadanlibrary.com.ng',
+    password: '',
+    encryption: 'ssl',
+    from_email: 'librarian@fccibadanlibrary.com.ng',
+    from_name: 'Federal Cooperative College Library',
+    password_set: false
+  });
+  const [showMailPass, setShowMailPass] = useState(false);
+  const [mailSaving, setMailSaving] = useState(false);
+  const [mailMsg, setMailMsg] = useState({ type: '', text: '' });
+  const [testRecipient, setTestRecipient] = useState('librarian@fccibadanlibrary.com.ng');
+  const [testLoading, setTestLoading] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+
+  const fetchMailConfig = async () => {
+    try {
+      const res = await libraryApi.mail.getConfig();
+      if (res && res.success && res.config) {
+        setMailConfig(prev => ({
+          ...prev,
+          ...res.config,
+          password: ''
+        }));
+      }
+    } catch (e) {}
+  };
+
   useEffect(() => {
     fetchSettings();
     fetchAdminProfile();
+    fetchMailConfig();
 
     const handleUpdate = (e) => {
       if (e.detail?.institution) setInstitutionConfig(e.detail.institution);
@@ -83,6 +121,46 @@ export default function ConfigurableLibrarySettings({ onSettingsUpdated }) {
     });
     return () => window.removeEventListener('fcc-institution-updated', handleUpdate);
   }, []);
+
+  const handleSaveMailConfig = async (e) => {
+    if (e) e.preventDefault();
+    setMailSaving(true);
+    setMailMsg({ type: '', text: '' });
+    try {
+      const res = await libraryApi.mail.updateConfig(mailConfig);
+      if (res && res.success) {
+        sounds?.playSuccessChime?.();
+        setMailMsg({ type: 'success', text: 'cPanel Server Mail parameters saved to database successfully!' });
+        await fetchMailConfig();
+      } else {
+        throw new Error(res?.error || 'Failed to update mail settings');
+      }
+    } catch (err) {
+      sounds?.playErrorBuzz?.();
+      setMailMsg({ type: 'error', text: err.message || 'Error updating mail settings.' });
+    } finally {
+      setMailSaving(false);
+    }
+  };
+
+  const handleSendTestMail = async () => {
+    setTestLoading(true);
+    setTestResult(null);
+    try {
+      const res = await libraryApi.mail.testConnection(testRecipient);
+      setTestResult(res);
+      if (res && res.sent) {
+        sounds?.playSuccessChime?.();
+      } else {
+        sounds?.playErrorBuzz?.();
+      }
+    } catch (err) {
+      setTestResult({ sent: false, error: err.message });
+      sounds?.playErrorBuzz?.();
+    } finally {
+      setTestLoading(false);
+    }
+  };
 
   const handleSaveInstitution = async (e) => {
     if (e) e.preventDefault();
@@ -121,7 +199,7 @@ export default function ConfigurableLibrarySettings({ onSettingsUpdated }) {
   const fetchAdminProfile = async () => {
     try {
       const activeSession = JSON.parse(localStorage.getItem('fcc_admin_session') || '{}');
-      const email = activeSession.email || 'admin@fccibadanlibrary.com.ng';
+      const email = activeSession.email || '@fccibadanlibrary.com.ng';
       const res = await fetch(`/api/admin/profile?email=${encodeURIComponent(email)}`);
       if (res.ok) {
         const data = await res.json();
@@ -305,6 +383,7 @@ export default function ConfigurableLibrarySettings({ onSettingsUpdated }) {
           { id: 'circulation', label: 'Circulation & Fines', icon: DollarSign },
           { id: 'classification', label: 'Classification & Barcodes', icon: Tag },
           { id: 'notifications', label: 'OPAC & Self-Service', icon: Sparkles },
+          { id: 'mail_otp', label: 'cPanel Server Mail & OTP', icon: Mail, badge: 'Live' },
           { id: 'security', label: 'Admin Profile & Password', icon: ShieldCheck },
         ].map(tab => {
           const Icon = tab.icon;
@@ -479,7 +558,7 @@ export default function ConfigurableLibrarySettings({ onSettingsUpdated }) {
                   disabled={!institutionPerms.admin_allowed}
                   value={institutionConfig.systemVersion || ''}
                   onChange={e => setInstitutionConfig({ ...institutionConfig, systemVersion: e.target.value })}
-                  placeholder="v4.8-LSP Enterprise (Localhost Edition)"
+                  placeholder="v4.8-LSP Enterprise (Production Edition)"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#021810] border border-emerald-800 text-white font-mono text-xs focus:outline-none focus:border-emerald-500 disabled:opacity-50"
                 />
               </div>
@@ -841,6 +920,228 @@ export default function ConfigurableLibrarySettings({ onSettingsUpdated }) {
           </div>
         )}
 
+        {/* TAB: CPANEL SERVER MAIL & INSTITUTIONAL OTP DISPATCH */}
+        {activeTab === 'mail_otp' && (
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-800/60 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Mail size={18} className="text-emerald-400" />
+                  <span>cPanel Server Mail (SMTP) &amp; Institutional OTP System</span>
+                </h3>
+                <p className="text-xs text-emerald-300/80 mt-1">
+                  Configure the official outgoing cPanel webmail account used to dispatch high-security 2FA OTP codes, password reset verification tokens, and automated patron book notifications.
+                </p>
+              </div>
+              <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-emerald-950 border border-emerald-700 text-emerald-300 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>SERVER: mail.fccibadanlibrary.com.ng</span>
+              </span>
+            </div>
+
+            {mailMsg.text && (
+              <div className={`p-3.5 rounded-2xl text-xs flex items-center gap-2 font-medium ${
+                mailMsg.type === 'success'
+                  ? 'bg-emerald-950 border border-emerald-500 text-emerald-200'
+                  : 'bg-rose-950 border border-rose-800 text-rose-200'
+              }`}>
+                {mailMsg.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}
+                <span>{mailMsg.text}</span>
+              </div>
+            )}
+
+            {/* Architecture Overview Banner */}
+            <div className="p-4 rounded-2xl bg-[#021810] border border-emerald-800/80 space-y-3">
+              <div className="text-xs font-bold text-emerald-300 flex items-center gap-2">
+                <Key size={14} className="text-emerald-400" />
+                <span>Official Sender Identity: librarian@fccibadanlibrary.com.ng</span>
+              </div>
+              <p className="text-[11px] text-emerald-400/80 leading-relaxed">
+                All 6-digit One-Time Passwords (OTPs) for <strong>Staff 2FA Login</strong>, <strong>HOD Approvals</strong>, <strong>Developer Master Gate</strong>, and <strong>Scholar Password/PIN Resets</strong> are generated cryptographically and dispatched live using this cPanel mail server.
+              </p>
+            </div>
+
+            {/* Form Fields Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-emerald-300 mb-1">
+                  Outgoing Mail Server (Host) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={mailConfig.host}
+                  onChange={e => setMailConfig({ ...mailConfig, host: e.target.value })}
+                  placeholder="mail.fccibadanlibrary.com.ng"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#021810] border border-emerald-800/80 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+                />
+                <span className="text-[10px] text-emerald-500/70 mt-1 block">cPanel SMTP Server Hostname</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-emerald-300 mb-1">
+                  SMTP Port *
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    required
+                    value={mailConfig.port}
+                    onChange={e => setMailConfig({ ...mailConfig, port: Number(e.target.value) })}
+                    placeholder="465"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#021810] border border-emerald-800/80 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+                  />
+                  <select
+                    value={mailConfig.encryption}
+                    onChange={e => setMailConfig({ ...mailConfig, encryption: e.target.value })}
+                    className="px-3.5 py-2.5 rounded-xl bg-[#021810] border border-emerald-800/80 text-white font-mono text-xs focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="ssl">SSL (465)</option>
+                    <option value="tls">TLS (587)</option>
+                  </select>
+                </div>
+                <span className="text-[10px] text-emerald-500/70 mt-1 block">Port 465 (SSL) or 587 (TLS/STARTTLS)</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-emerald-300 mb-1">
+                  cPanel Email Username *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={mailConfig.username}
+                  onChange={e => setMailConfig({ ...mailConfig, username: e.target.value })}
+                  placeholder="librarian@fccibadanlibrary.com.ng"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#021810] border border-emerald-800/80 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+                />
+                <span className="text-[10px] text-emerald-500/70 mt-1 block">Full email address created in cPanel Email Accounts</span>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-emerald-300">
+                    cPanel Email Account Password *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowMailPass(!showMailPass)}
+                    className="text-[11px] text-emerald-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                  >
+                    {showMailPass ? <EyeOff size={12} /> : <Eye size={12} />}
+                    <span>{showMailPass ? 'Hide' : 'Reveal'}</span>
+                  </button>
+                </div>
+                <input
+                  type={showMailPass ? 'text' : 'password'}
+                  value={mailConfig.password}
+                  onChange={e => setMailConfig({ ...mailConfig, password: e.target.value })}
+                  placeholder={mailConfig.password_set ? '•••••••••••• (Leave blank to keep current)' : 'Enter cPanel password'}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#021810] border border-emerald-800/80 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+                />
+                <span className="text-[10px] text-emerald-500/70 mt-1 block">
+                  {mailConfig.password_set ? 'Password is saved in database' : 'Requires your cPanel webmail account password'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-emerald-300 mb-1">
+                  From Address (Sender)
+                </label>
+                <input
+                  type="email"
+                  value={mailConfig.from_email}
+                  onChange={e => setMailConfig({ ...mailConfig, from_email: e.target.value })}
+                  placeholder="librarian@fccibadanlibrary.com.ng"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#021810] border border-emerald-800/80 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-emerald-300 mb-1">
+                  From Display Name
+                </label>
+                <input
+                  type="text"
+                  value={mailConfig.from_name}
+                  onChange={e => setMailConfig({ ...mailConfig, from_name: e.target.value })}
+                  placeholder="Federal Cooperative College Library"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#021810] border border-emerald-800/80 text-white text-xs focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                onClick={handleSaveMailConfig}
+                disabled={mailSaving}
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-950 transition cursor-pointer disabled:opacity-50"
+              >
+                {mailSaving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+                <span>{mailSaving ? 'Saving to Database...' : 'Save cPanel Mail Settings'}</span>
+              </button>
+            </div>
+
+            {/* Diagnostic Test Box */}
+            <div className="p-5 rounded-2xl bg-[#01120b] border-2 border-emerald-700/60 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-800/60 pb-2">
+                <div className="text-xs font-bold text-white flex items-center gap-2">
+                  <Send size={14} className="text-teal-400" />
+                  <span>Live SMTP Verification Diagnostic Test</span>
+                </div>
+                <span className="text-[10px] text-emerald-400 font-mono">Real-Time Delivery Check</span>
+              </div>
+
+              <p className="text-[11px] text-emerald-300/80">
+                Test the live SMTP handshake and authentication against <code className="text-white font-mono">{mailConfig.host}:{mailConfig.port}</code> to verify your cPanel server credentials.
+              </p>
+
+              <div className="flex flex-col sm:flex-row items-center gap-3">
+                <input
+                  type="email"
+                  value={testRecipient}
+                  onChange={e => setTestRecipient(e.target.value)}
+                  placeholder="Enter test email address..."
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#021810] border border-emerald-800 text-white font-mono text-xs focus:outline-none focus:border-teal-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleSendTestMail}
+                  disabled={testLoading}
+                  className="w-full sm:w-auto shrink-0 px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-teal-950 transition cursor-pointer disabled:opacity-50"
+                >
+                  {testLoading ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+                  <span>{testLoading ? 'Testing SMTP...' : 'Send Test Verification Email'}</span>
+                </button>
+              </div>
+
+              {testResult && (
+                <div className={`p-4 rounded-xl text-xs font-mono border ${
+                  testResult.sent
+                    ? 'bg-emerald-950/80 border-emerald-500 text-emerald-200'
+                    : 'bg-rose-950/80 border-rose-500 text-rose-200'
+                }`}>
+                  <div className="font-bold mb-1 flex items-center gap-2">
+                    {testResult.sent ? <CheckCircle2 size={16} className="text-emerald-400" /> : <AlertTriangle size={16} className="text-rose-400" />}
+                    <span>{testResult.sent ? 'SMTP Verification Successful!' : 'SMTP Connection / Authentication Failed'}</span>
+                  </div>
+                  <div className="text-[11px] opacity-90 break-all">
+                    {testResult.sent
+                      ? `Diagnostic test email successfully dispatched to ${testResult.recipient || testRecipient}. Check your inbox!`
+                      : (testResult.error || 'Unknown error occurred')}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* TAB 5: ADMIN PROFILE & SECURITY CREDENTIALS */}
         {activeTab === 'security' && (
           <div className="space-y-6">
@@ -934,7 +1235,7 @@ export default function ConfigurableLibrarySettings({ onSettingsUpdated }) {
                   disabled={adminLocked}
                   value={adminProfile.email}
                   onChange={e => setAdminProfile({ ...adminProfile, email: e.target.value })}
-                  placeholder="admin@fccibadanlibrary.com.ng"
+                  placeholder="@fccibadanlibrary.com.ng"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#021810] border border-emerald-800/80 text-white font-mono focus:outline-none focus:border-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>

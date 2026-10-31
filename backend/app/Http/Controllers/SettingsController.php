@@ -24,6 +24,23 @@ class SettingsController extends Controller
             $map[$s->setting_key] = $val;
         }
 
+        // Developer Master Config has absolute priority across all consumers
+        $devRow = DB::table('library_settings')->where('setting_key', 'fcc_developer_master_config')->value('setting_value');
+        if ($devRow) {
+            $devConfig = json_decode($devRow, true);
+            if ($devConfig && is_array($devConfig)) {
+                $map['developer_master_config'] = $devConfig;
+                if (!empty($devConfig['branding']['institutionName'])) $map['institution_name'] = $devConfig['branding']['institutionName'];
+                if (!empty($devConfig['branding']['shortName'])) $map['institution_short_name'] = $devConfig['branding']['shortName'];
+                if (!empty($devConfig['branding']['motto'])) $map['institution_motto'] = $devConfig['branding']['motto'];
+                if (!empty($devConfig['branding']['logoUrl'])) $map['institution_logo_url'] = $devConfig['branding']['logoUrl'];
+                if (!empty($devConfig['theme']['preset'])) $map['theme_preset'] = $devConfig['theme']['preset'];
+                if (!empty($devConfig['theme']['studentPrimary'])) $map['student_primary_color'] = $devConfig['theme']['studentPrimary'];
+                if (!empty($devConfig['theme']['adminPrimary'])) $map['admin_primary_color'] = $devConfig['theme']['adminPrimary'];
+                if (!empty($devConfig['theme']['hodPrimary'])) $map['hod_primary_color'] = $devConfig['theme']['hodPrimary'];
+            }
+        }
+
         return response()->json([
             'settings' => $map,
             'raw' => $all
@@ -101,7 +118,8 @@ class SettingsController extends Controller
             'institution_current_session',
             'institution_current_semester',
             'institution_today_hours',
-            'institution_config_permissions'
+            'institution_config_permissions',
+            'institution_logo_url'
         ];
 
         $rows = DB::table('library_settings')->whereIn('setting_key', $keys)->pluck('setting_value', 'setting_key');
@@ -126,8 +144,39 @@ class SettingsController extends Controller
             'systemVersion'  => $rows['institution_system_version'] ?? 'v4.8-LSP Enterprise (Localhost Edition)',
             'currentSession' => $rows['institution_current_session'] ?? '2026/2027 Academic Session',
             'currentSemester'=> $rows['institution_current_semester'] ?? 'Second Semester',
-            'todayHours'     => $rows['institution_today_hours'] ?? '08:00 AM – 08:00 PM (Extended Exam Hours: 24/7 Virtual Hub)'
+            'todayHours'     => $rows['institution_today_hours'] ?? '08:00 AM – 08:00 PM (Extended Exam Hours: 24/7 Virtual Hub)',
+            'logoUrl'        => $rows['institution_logo_url'] ?? null
         ];
+
+        // Developer Master Config ALWAYS takes top priority
+        $devRow = DB::table('library_settings')->where('setting_key', 'fcc_developer_master_config')->value('setting_value');
+        if ($devRow) {
+            $devConfig = json_decode($devRow, true);
+            if ($devConfig && is_array($devConfig)) {
+                if (isset($devConfig['branding']) && is_array($devConfig['branding'])) {
+                    $b = $devConfig['branding'];
+                    if (!empty($b['institutionName'])) $institution['name'] = $b['institutionName'];
+                    if (!empty($b['shortName'])) $institution['shortName'] = $b['shortName'];
+                    if (!empty($b['motto'])) $institution['motto'] = $b['motto'];
+                    if (!empty($b['libraryTitle'])) $institution['libraryTitle'] = $b['libraryTitle'];
+                    if (!empty($b['campusAddress'])) $institution['campus'] = $b['campusAddress'];
+                    if (!empty($b['establishedYear'])) $institution['established'] = (int)$b['establishedYear'];
+                    if (!empty($b['currentSession'])) $institution['currentSession'] = $b['currentSession'];
+                    if (!empty($b['currentSemester'])) $institution['currentSemester'] = $b['currentSemester'];
+                    if (!empty($b['todayHours'])) $institution['todayHours'] = $b['todayHours'];
+                    if (!empty($b['logoUrl'])) $institution['logoUrl'] = $b['logoUrl'];
+                }
+                if (isset($devConfig['institutionPermissions']) && is_array($devConfig['institutionPermissions'])) {
+                    $ip = $devConfig['institutionPermissions'];
+                    if (isset($ip['adminCanConfigureInstitution'])) {
+                        $perms['admin_allowed'] = (bool)$ip['adminCanConfigureInstitution'];
+                    }
+                    if (!empty($ip['allowedHodDepts'])) {
+                        $perms['allowed_hod_depts'] = is_array($ip['allowedHodDepts']) ? $ip['allowedHodDepts'] : explode(',', (string)$ip['allowedHodDepts']);
+                    }
+                }
+            }
+        }
 
         return response()->json([
             'success' => true,

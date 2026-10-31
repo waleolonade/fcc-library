@@ -197,6 +197,19 @@ export const libraryApi = {
       const updated = cached.filter(b => b.id !== id);
       setStored(STORAGE_KEYS.CATALOG, updated, 'CATALOG_UPDATED');
       return { success: true, id };
+    },
+
+    async bulkDeleteBooks(ids = []) {
+      if (!Array.isArray(ids) || ids.length === 0) return { success: false, count: 0 };
+      await fetchApi('/catalog/bulk-delete', {
+        method: 'POST',
+        body: JSON.stringify({ ids })
+      });
+      const cached = getStored(STORAGE_KEYS.CATALOG, []);
+      const idSet = new Set(ids);
+      const updated = cached.filter(b => !idSet.has(b.id));
+      setStored(STORAGE_KEYS.CATALOG, updated, 'CATALOG_UPDATED');
+      return { success: true, count: ids.length };
     }
   },
 
@@ -401,13 +414,17 @@ export const libraryApi = {
     },
 
     async updatePolicy(role, policyData) {
+      const apiRes = await fetchApi('/policies/tier', {
+        method: 'POST',
+        body: JSON.stringify({ role, policy: policyData, ...policyData })
+      });
       const policies = getStored(STORAGE_KEYS.POLICIES, []);
       const updated = {
         ...policies,
         [role]: { ...policies[role], ...policyData }
       };
       setStored(STORAGE_KEYS.POLICIES, updated, 'POLICIES_UPDATED');
-      return updated;
+      return apiRes || updated;
     }
   },
 
@@ -641,6 +658,22 @@ export const libraryApi = {
   // 10. ACQUISITION REQUESTS API (Direct from 'acquisitions' table)
   // -------------------------------------------------------------
   acquisitions: {
+    async getStats() {
+      const apiData = await fetchApi('/acquisitions/stats');
+      if (apiData && apiData.success) {
+        return apiData;
+      }
+      return null;
+    },
+
+    async updateBudget(amount) {
+      const res = await fetchApi('/acquisitions/budget', {
+        method: 'POST',
+        body: JSON.stringify({ allocation_budget: amount })
+      });
+      return res;
+    },
+
     async getAll() {
       const apiData = await fetchApi('/acquisitions');
       if (Array.isArray(apiData)) {
@@ -658,33 +691,146 @@ export const libraryApi = {
       return res;
     },
 
-    async updateStatus(id, newStatus) {
+    async updateStatus(id, newStatus, notes = '', autoCatalog = true) {
       const res = await fetchApi(`/acquisitions/${encodeURIComponent(id)}/status`, {
         method: 'PUT',
-        body: JSON.stringify({ status: newStatus })
+        body: JSON.stringify({ status: newStatus, notes, auto_catalog: autoCatalog })
+      });
+      if (syncChannel) syncChannel.postMessage({ type: 'ACQUISITIONS_UPDATED', timestamp: Date.now() });
+      return res;
+    },
+
+    async update(id, data) {
+      const res = await fetchApi(`/acquisitions/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+      });
+      if (syncChannel) syncChannel.postMessage({ type: 'ACQUISITIONS_UPDATED', timestamp: Date.now() });
+      return res;
+    },
+
+    async delete(id) {
+      const res = await fetchApi(`/acquisitions/${encodeURIComponent(id)}`, {
+        method: 'DELETE'
       });
       if (syncChannel) syncChannel.postMessage({ type: 'ACQUISITIONS_UPDATED', timestamp: Date.now() });
       return res;
     }
   },
 
+  serials: {
+    async getAll() {
+      const apiData = await fetchApi('/serials');
+      if (Array.isArray(apiData)) return apiData;
+      return [];
+    },
+    async create(data) {
+      const res = await fetchApi('/serials', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      return res;
+    },
+    async update(id, data) {
+      const res = await fetchApi(`/serials/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+      });
+      return res;
+    },
+    async delete(id) {
+      const res = await fetchApi(`/serials/${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+      });
+      return res;
+    }
+  },
+
+  vendors: {
+    async getAll() {
+      const apiData = await fetchApi('/vendors');
+      if (Array.isArray(apiData)) return apiData;
+      return [];
+    },
+    async create(data) {
+      const res = await fetchApi('/vendors', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      return res;
+    },
+    async update(id, data) {
+      const res = await fetchApi(`/vendors/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+      });
+      return res;
+    },
+    async delete(id) {
+      const res = await fetchApi(`/vendors/${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+      });
+      return res;
+    }
+  },
+
   // -------------------------------------------------------------
   // 11. NOTIFICATIONS, EVENTS & ANNOUNCEMENTS (Direct from DB)
-  // -------------------------------------------------------------
   notifications: {
+    async getAll(matric = null) {
+      return this.getByMatric(matric);
+    },
+
     async getByMatric(matric) {
       const apiData = await fetchApi(`/notifications?matric=${encodeURIComponent(matric || '')}`);
       if (Array.isArray(apiData)) {
+        setStored(STORAGE_KEYS.NOTIFICATIONS, apiData);
         return apiData;
       }
       return getStored(STORAGE_KEYS.NOTIFICATIONS, []);
     },
 
-    async markAsRead(id) {
+    async create(notificationData) {
+      const res = await fetchApi('/notifications', {
+        method: 'POST',
+        body: JSON.stringify(notificationData)
+      });
+      if (syncChannel) syncChannel.postMessage({ type: 'NOTIFICATIONS_UPDATED', timestamp: Date.now() });
+      return res;
+    },
+
+    async markRead(id, matric = null) {
+      return this.markAsRead(id, matric);
+    },
+
+    async markAsRead(id, matric = null) {
+      const res = await fetchApi(`/notifications/${encodeURIComponent(id)}/read`, {
+        method: 'PUT',
+        body: JSON.stringify({ matric })
+      });
       const cached = getStored(STORAGE_KEYS.NOTIFICATIONS, []);
-      const updated = cached.map(n => n.id === id ? { ...n, isRead: true } : n);
+      const updated = id === 'all'
+        ? cached.map(n => ({ ...n, read: true, isRead: true }))
+        : cached.map(n => n.id === id ? { ...n, read: true, isRead: true } : n);
       setStored(STORAGE_KEYS.NOTIFICATIONS, updated, 'NOTIFICATIONS_UPDATED');
-      return true;
+      return res || true;
+    },
+
+    async clear(idOrMatric = {}, isMatric = false) {
+      let payload;
+      if (typeof idOrMatric === 'object' && idOrMatric !== null) {
+        payload = idOrMatric;
+      } else if (isMatric) {
+        payload = { matric: idOrMatric };
+      } else {
+        payload = { id: idOrMatric };
+      }
+      const res = await fetchApi('/notifications', {
+        method: 'DELETE',
+        body: JSON.stringify(payload)
+      });
+      if (syncChannel) syncChannel.postMessage({ type: 'NOTIFICATIONS_UPDATED', timestamp: Date.now() });
+      return res;
     }
   },
 
@@ -1156,7 +1302,113 @@ export const libraryApi = {
   },
 
   // -------------------------------------------------------------
-  // 15. REAL-TIME EVENT SUBSCRIPTION
+  // 16. NOTIFICATIONS & ANNOUNCEMENTS
+  // -------------------------------------------------------------
+  notifications: {
+    async getAll(matric = '') {
+      const url = matric ? `/notifications?matric=${encodeURIComponent(matric)}` : '/notifications';
+      const res = await fetchApi(url);
+      return Array.isArray(res) ? res : [];
+    },
+
+    async create(data) {
+      return await fetchApi('/notifications', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+    },
+
+    async markRead(id, matric = '') {
+      return await fetchApi(`/notifications/${encodeURIComponent(id)}/read`, {
+        method: 'PUT',
+        body: JSON.stringify({ matric })
+      });
+    },
+
+    async clear(idOrMatric, isMatric = false) {
+      const payload = isMatric ? { matric: idOrMatric } : { id: idOrMatric };
+      return await fetchApi('/notifications', {
+        method: 'DELETE',
+        body: JSON.stringify(payload)
+      });
+    }
+  },
+
+  // -------------------------------------------------------------
+  // 17. INSTITUTIONAL CPANEL SERVER MAIL (SMTP)
+  // -------------------------------------------------------------
+  mail: {
+    async getConfig() {
+      const res = await fetchApi('/mail/config');
+      return res || { success: false, config: {} };
+    },
+
+    async updateConfig(configData) {
+      return await fetchApi('/mail/config', {
+        method: 'POST',
+        body: JSON.stringify(configData)
+      });
+    },
+
+    async testConnection(recipient = '') {
+      return await fetchApi('/mail/test', {
+        method: 'POST',
+        body: JSON.stringify({ recipient })
+      });
+    }
+  },
+
+  // -------------------------------------------------------------
+  // 18. GORA NETWORK OFF-CHAIN COMPUTATION API (gora-off-chain-computation-api-1)
+  // Docs: https://goranetwork.github.io/doc/#introduction
+  //       https://goranetwork.github.io/doc/#gora-off-chain-computation-api-1
+  // -------------------------------------------------------------
+  gora: {
+    async getStatus() {
+      return await fetchApi('/gora/status');
+    },
+    async compute(payload = {}) {
+      return await fetchApi('/gora/compute', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async verifyDocument(payload = {}) {
+      return await fetchApi('/gora/verify', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    getIntroductionUrl: () => 'https://goranetwork.github.io/doc/#introduction',
+    getOffChainDocsUrl: () => 'https://goranetwork.github.io/doc/#gora-off-chain-computation-api-1'
+  },
+
+  // -------------------------------------------------------------
+  // 19. INNEAI SCHOLARLY INTELLIGENCE API
+  // -------------------------------------------------------------
+  inneai: {
+    async getStatus() {
+      return await fetchApi('/inneai/status');
+    },
+    async chat(payload = {}) {
+      return await fetchApi('/inneai/chat', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async analyze(payload = {}) {
+      return await fetchApi('/inneai/analyze', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async search(query = 'cooperative') {
+      return await fetchApi(`/inneai/search?query=${encodeURIComponent(query)}`);
+    }
+  },
+
+  // -------------------------------------------------------------
+  // 20. REAL-TIME EVENT SUBSCRIPTION
   // -------------------------------------------------------------
   subscribe(callback) {
     if (!syncChannel) return () => {};

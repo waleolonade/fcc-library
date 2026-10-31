@@ -11,130 +11,108 @@ import {
     Shield
 } from 'lucide-react';
 import { useState } from 'react';
+import { getApiBase } from '../api/libraryApi';
 import fccLogo from '../assets/fcc-logo.png';
 import InstitutionalFooter from '../common/InstitutionalFooter';
+import TwoFactorOtpModal from '../common/TwoFactorOtpModal';
+import ForgotPasswordModal from '../common/ForgotPasswordModal';
 import { navigateTo } from '../utils/router';
 import { sounds } from '../utils/soundEffects';
+import { storeUserSession } from '../utils/authSessionManager';
 
 export default function AdminLogin({ onLogin }) {
-  const [adminEmail, setAdminEmail] = useState('admin@fccibadanlibrary.com.ng');
-  const [adminPass, setAdminPass] = useState('admin123');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPass, setAdminPass] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // 2FA OTP and Recovery modal states
+  const [showTwoFactor, setShowTwoFactor] = useState(false);
+  const [otpChallenge, setOtpChallenge] = useState(null);
+  const [showForgotModal, setShowForgotModal] = useState(false);
+
   const handleAdminAuth = async (e) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
 
-    const emailTrimmed = adminEmail.trim().toLowerCase();
+    const emailTrimmed = adminEmail.trim();
     const passTrimmed = adminPass.trim();
 
-    // List of known authorized administrative staff emails & identifiers
-    const authorizedAdminEmails = [
-      'admin@fccibadanlibrary.com.ng',
-      'admin@fccibadanlibrary.com.ng',
-      'admin@fccibadan.edu.ng',
-      'librarian@fccibadanlibrary.com.ng',
-      'library@fccibadan.edu.ng',
-      'admin',
-      'librarian',
-      'balogun',
-      'chief_librarian'
-    ];
+    if (!emailTrimmed) {
+      setError('Please enter your administrative email address or username.');
+      sounds.playErrorBuzz();
+      return;
+    }
+    if (!passTrimmed) {
+      setError('Please enter your administrative password.');
+      sounds.playErrorBuzz();
+      return;
+    }
 
-    const isRecognizedAdminEmail = authorizedAdminEmails.includes(emailTrimmed) ||
-      emailTrimmed.startsWith('admin@') ||
-      emailTrimmed.startsWith('librarian@');
-
-    const validAdminPasskeys = ['admin123', 'admin', '9999', 'admin2026', 'fcc2026', 'fccadmin', 'password'];
+    setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/login', {
+      // Enterprise 2FA Gateway: First verify primary administrative credentials and issue OTP
+      const res = await fetch(`${getApiBase()}/auth/otp/send-login-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          role: 'admin',
           identifier: emailTrimmed,
-          password: passTrimmed,
-          login_mode: 'admin'
+          password: passTrimmed
         })
       });
 
       const data = await res.json().catch(() => ({}));
 
-      if (res.ok && data.success && data.user) {
+      if (res.ok && data.success) {
         setLoading(false);
-        sounds.playSuccessChime();
-        const adminUser = {
-          ...data.user,
-          role: data.user.role || 'admin',
-          email: data.user.email || emailTrimmed,
-          name: data.user.name || 'Chief Librarian / System Administrator'
-        };
-        localStorage.setItem('fcc_admin_session', JSON.stringify(adminUser));
-        if (onLogin) onLogin(adminUser);
-        navigateTo('/admin/overview');
-        return;
-      }
-
-      // If backend returned a specific administrative denial
-      if (data.error) {
-        setLoading(false);
-        sounds.playErrorBuzz();
-        const cleanMsg = data.error.replace(/register with your department HOD\.?/gi, 'contact the Library Directorate.');
-        setError(cleanMsg);
-        return;
-      }
-
-      // High-resilience administrative fallback if credentials match official admin keys
-      if (isRecognizedAdminEmail && validAdminPasskeys.includes(passTrimmed.toLowerCase())) {
-        setLoading(false);
-        sounds.playSuccessChime();
-        const fallbackAdmin = {
-          id: 1,
-          role: 'admin',
-          email: emailTrimmed,
-          name: 'Alhaji Balogun O. (College Chief Librarian)',
-          designation: 'College Librarian & Director of Library Services',
-          title: 'Chief Librarian',
-          matric: 'FCC/STAFF/LIB/001',
-          permissions: ['ALL', 'CIRCULATION', 'MARC21', 'SYSTEM_ADMIN']
-        };
-        localStorage.setItem('fcc_admin_session', JSON.stringify(fallbackAdmin));
-        if (onLogin) onLogin(fallbackAdmin);
-        navigateTo('/admin/overview');
-        return;
+        if (data.otp_required) {
+          sounds.playClick();
+          setOtpChallenge(data);
+          setShowTwoFactor(true);
+          return;
+        } else {
+          // 2FA OTP is paused by Developer Master: Log in immediately without OTP
+          handleOtpVerified({
+            user: data.user,
+            token: data.token
+          });
+          return;
+        }
       }
 
       setLoading(false);
       sounds.playErrorBuzz();
-      setError('Access Denied: Invalid Administrative Passkey. Please verify your staff credentials or contact the College Directorate of Library Services.');
+      const errorMsg = data.error || data.message || 'Access Denied: Invalid Administrative Credentials. Please verify your email/username and password.';
+      setError(errorMsg);
     } catch (err) {
-      console.warn('API connection offline, evaluating local admin credentials:', err);
-      // Offline fallback
-      if (isRecognizedAdminEmail && validAdminPasskeys.includes(passTrimmed.toLowerCase())) {
-        setLoading(false);
-        sounds.playSuccessChime();
-        const localAdmin = {
-          id: 1,
-          role: 'admin',
-          email: emailTrimmed,
-          name: 'Alhaji Balogun O. (College Chief Librarian)',
-          designation: 'College Librarian & Director of Library Services',
-          title: 'Chief Librarian',
-          matric: 'FCC/STAFF/LIB/001'
-        };
-        localStorage.setItem('fcc_admin_session', JSON.stringify(localAdmin));
-        if (onLogin) onLogin(localAdmin);
-        navigateTo('/admin/overview');
-        return;
-      }
-
+      console.warn('Backend API connection error during admin login:', err);
       setLoading(false);
       sounds.playErrorBuzz();
-      setError('Administrative Authentication Gateway Offline. Ensure your connection to the campus server is active.');
+      setError('Connection to campus database gateway failed. Please ensure the server is running and try again.');
     }
+  };
+
+  const handleOtpVerified = (verifiedData) => {
+    setShowTwoFactor(false);
+    sounds.playSuccessChime();
+    const adminUser = {
+      ...(verifiedData?.user || {}),
+      role: verifiedData?.user?.role || 'admin',
+      email: verifiedData?.user?.email || adminEmail.trim() || 'admin@fccibadan.edu.ng',
+      name: verifiedData?.user?.name || 'Library Administrator'
+    };
+    storeUserSession(adminUser, verifiedData?.token, 'admin');
+
+    if (onLogin) {
+      onLogin(adminUser);
+    }
+
+    // Explicitly transition window hash to dashboard
+    window.location.hash = '#/admin/overview';
+    navigateTo('/admin/overview');
   };
 
   const setHelperCredentials = (email, pass) => {
@@ -296,7 +274,7 @@ export default function AdminLogin({ onLogin }) {
                       value={adminEmail}
                       onChange={(e) => setAdminEmail(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:bg-white font-mono transition shadow-inner"
-                      placeholder="admin@****** or chief_*****"
+                      placeholder="e.g. admin@fccibadan.edu.ng or chief_librarian"
                     />
                   </div>
                 </div>
@@ -327,6 +305,22 @@ export default function AdminLogin({ onLogin }) {
                   </div>
                 </div>
 
+                <div className="flex items-center justify-between text-[11px] pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sounds.playClick();
+                      setShowForgotModal(true);
+                    }}
+                    className="text-emerald-700 hover:text-emerald-950 font-semibold hover:underline cursor-pointer transition text-left"
+                  >
+                    Forgot Administrative Password?
+                  </button>
+                  <span className="text-emerald-800/60 font-mono text-[10px] uppercase font-bold tracking-wider">
+                    2FA Mandated
+                  </span>
+                </div>
+
                 <button
                   type="submit"
                   disabled={loading}
@@ -350,6 +344,33 @@ export default function AdminLogin({ onLogin }) {
           </div>
         </div>
       </main>
+
+      {/* Strict Enterprise Two-Factor OTP Modal */}
+      {showTwoFactor && otpChallenge && (
+        <TwoFactorOtpModal
+          isOpen={showTwoFactor}
+          challengeId={otpChallenge.challenge_id}
+          maskedDestination={otpChallenge.masked_destination}
+          role="admin"
+          userName={otpChallenge.user_name || 'Library Administrator'}
+          identifier={adminEmail.trim()}
+          onClose={() => setShowTwoFactor(false)}
+          onVerified={handleOtpVerified}
+          onVerifySuccess={handleOtpVerified}
+        />
+      )}
+
+      {/* Universal Institutional Password / PIN Reset Modal */}
+      {showForgotModal && (
+        <ForgotPasswordModal
+          isOpen={showForgotModal}
+          initialRole="admin"
+          onClose={() => setShowForgotModal(false)}
+          onSuccess={() => {
+            setShowForgotModal(false);
+          }}
+        />
+      )}
 
       {/* Global Institutional Copyright & Attribution Footer */}
       <InstitutionalFooter light={true} className="bg-transparent border-t-0 py-2" />

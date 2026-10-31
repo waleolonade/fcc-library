@@ -1,9 +1,13 @@
 // FCC Smart Library Service Worker - PWA Offline Shell & Fast Asset Caching
-const CACHE_NAME = 'fcc-mobile-pass-v2';
+const CACHE_NAME = 'fcc-smart-library-v5';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/assets/icon-192.png',
+  '/assets/icon-512.png',
   '/assets/fcc-logo.png',
   '/fcc-logo.png'
 ];
@@ -62,7 +66,7 @@ self.addEventListener('fetch', (event) => {
   // Cache-first for images, fonts, styles, and scripts
   event.respondWith(
     caches.match(req).then((cachedRes) => {
-      if (cachedRes) {
+      if (cachedRes && cachedRes.status === 200) {
         // Background refresh
         fetch(req)
           .then((networkRes) => {

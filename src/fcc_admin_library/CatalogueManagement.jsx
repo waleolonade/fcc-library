@@ -321,10 +321,19 @@ export default function CatalogueManagement({ books = [], setBooks }) {
     } catch (e) {}
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     const book = books.find(b => b.id === id);
-    setBooks(books.filter(b => b.id !== id));
-    setActionStatus({ type: 'success', message: `"${book?.title}" removed from catalogue.` });
+    try {
+      await fetch(`/api/catalog/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    } catch (e) {}
+    const nextBooks = books.filter(b => b.id !== id);
+    setBooks(nextBooks);
+    try {
+      localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(nextBooks));
+      localStorage.setItem('fcc_db_catalog', JSON.stringify(nextBooks));
+      window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: nextBooks }));
+    } catch (e) {}
+    setActionStatus({ type: 'success', message: `"${book?.title}" removed from catalogue and database.` });
     setConfirmDelete(null);
   };
 

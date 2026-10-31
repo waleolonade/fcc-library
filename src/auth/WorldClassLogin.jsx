@@ -9,7 +9,8 @@ import { sounds } from '../utils/soundEffects';
 import { BarcodeSvg } from '../common/BarcodeQrStudio';
 import { PATTERNS } from '../utils/backgroundPatterns';
 import { QrPhoneLogin } from './QrPhoneLogin';
-import { showPwaInstallModal } from '../common/PwaInstallPromptModal';
+import ForgotPasswordModal from '../common/ForgotPasswordModal';
+import { storeUserSession } from '../utils/authSessionManager';
 
 export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
   const [authRole, setAuthRole] = useState('student'); // 'student' | 'staff'
@@ -19,6 +20,7 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
   const [matric, setMatric] = useState('');
   const [pin, setPin] = useState('');
   const [scannedBarcode, setScannedBarcode] = useState('');
+  const [showStudentForgotModal, setShowStudentForgotModal] = useState(false);
 
   // Staff inputs
   const [staffId, setStaffId] = useState('');
@@ -115,8 +117,13 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
       }
 
       sounds.playSuccessChime();
-      localStorage.setItem('fcc_student_session', JSON.stringify(data.user));
-      onLogin(data.user);
+      const studentUser = {
+        ...data.user,
+        role: 'student',
+        matric: data.user.matric || data.user.barcode
+      };
+      storeUserSession(studentUser, data.token || null, 'student');
+      onLogin(studentUser);
     } catch (err) {
       console.error('Login request failed:', err);
       setIsSubmitting(false);
@@ -160,8 +167,12 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
       }
 
       sounds.playSuccessChime();
-      localStorage.setItem('fcc_student_session', JSON.stringify(data.user));
-      onLogin(data.user);
+      const staffUser = {
+        ...data.user,
+        role: data.user.role || 'staff'
+      };
+      storeUserSession(staffUser, data.token || null, staffUser.role);
+      onLogin(staffUser);
     } catch (err) {
       setIsSubmitting(false);
       sounds.playErrorBuzz();
@@ -346,12 +357,12 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
 
                 {studentMethod === 'qr' ? (
                   <QrPhoneLogin
-                    onLogin={(user, accessToken) => {
+                    onLogin={(user, accessToken, role) => {
                       sounds.playSuccessChime();
                       if (user) {
-                        localStorage.setItem('fcc_student_session', JSON.stringify(user));
+                        storeUserSession(user, accessToken, role || 'student');
                       }
-                      onLogin(user, accessToken);
+                      onLogin(user, accessToken, role);
                     }}
                     onBack={() => setStudentMethod('matric')}
                   />
@@ -391,36 +402,24 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
                         />
                       </div>
 
-                      <div className="flex justify-between items-center text-[11px] pt-0.5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-[11px] pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            sounds.playClick();
+                            setShowStudentForgotModal(true);
+                          }}
+                          className="text-amber-400 hover:text-amber-300 font-semibold hover:underline cursor-pointer text-left transition"
+                        >
+                          Forgot PIN? Reset via OTP →
+                        </button>
                         <button
                           type="button"
                           onClick={() => setStudentMethod('qr')}
-                          className="text-emerald-400 hover:text-emerald-200 underline font-semibold flex items-center gap-1.5 transition"
+                          className="text-emerald-400 hover:text-emerald-200 underline font-semibold flex items-center gap-1 transition"
                         >
-                          <Smartphone size={13} />
-                          <span>Forgot Password / PIN? Sign in with Mobile Pass / QR</span>
-                        </button>
-                      </div>
-
-                      {/* PWA Mobile Pass Install Trigger */}
-                      <div className="pt-2">
-                        <button
-                          type="button"
-                          onClick={() => showPwaInstallModal()}
-                          className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-950/90 via-[#032317] to-teal-950/90 border border-emerald-600/70 hover:border-emerald-400 text-emerald-300 hover:text-white text-xs font-semibold flex items-center justify-between gap-2 shadow-sm transition hover:scale-[1.01] cursor-pointer"
-                        >
-                          <span className="flex items-center gap-2">
-                            <span className="w-6 h-6 rounded-lg bg-emerald-800/80 text-emerald-200 flex items-center justify-center shrink-0">
-                              <Smartphone size={13} />
-                            </span>
-                            <span className="text-left leading-tight">
-                              <strong className="block text-white text-[11px]">Install Mobile Pass App (PWA)</strong>
-                              <span className="text-[10px] text-emerald-400">Add to phone for quick workstation sign in</span>
-                            </span>
-                          </span>
-                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-600/30 text-emerald-200 border border-emerald-500/40">
-                            INSTALL 📲
-                          </span>
+                          <Smartphone size={12} />
+                          <span>Sign in with Mobile Pass / QR</span>
                         </button>
                       </div>
                     </>
@@ -591,6 +590,18 @@ export default function WorldClassLogin({ onLogin, onOpenPublicOpac }) {
         </div>
 
       </div>
+
+      {/* Universal Institutional Password / PIN Reset Modal */}
+      {showStudentForgotModal && (
+        <ForgotPasswordModal
+          isOpen={showStudentForgotModal}
+          initialRole="student"
+          onClose={() => setShowStudentForgotModal(false)}
+          onSuccess={() => {
+            setShowStudentForgotModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }

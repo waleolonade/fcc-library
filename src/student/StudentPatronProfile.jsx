@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   User, QrCode, Barcode, Clock, Bookmark, History, Bell,
   CreditCard, ShieldCheck, CheckCircle2, AlertTriangle, Key,
   Mail, Phone, Building, GraduationCap, Edit3, Save, RefreshCw,
   Printer, ArrowRight, ExternalLink, Sparkles, BookOpen, Layers,
-  Camera, Smartphone, Download, Check
+  Camera, Smartphone, Download, Check, Trash2, Calendar, Lock, AlertCircle, X
 } from 'lucide-react';
 import { INSTITUTION } from '../data/institutionalSeedData';
 import { sounds } from '../utils/soundEffects';
@@ -40,8 +40,142 @@ export default function StudentPatronProfile({
 
   // Editable Profile fields
   const [profilePhoto, setProfilePhoto] = useState(
-    user?.photo || user?.photo_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80'
+    user?.photo || user?.photo_url || ''
   );
+  const [photoUpdatedAt, setPhotoUpdatedAt] = useState(
+    user?.photo_updated_at || user?.photoUpdatedAt || null
+  );
+
+  // 30-Day Restriction Popup Card State
+  const [restrictionModalInfo, setRestrictionModalInfo] = useState(null); // { days, hours, minutes, nextDate, lastUpdated }
+  const [isRemovingPhoto, setIsRemovingPhoto] = useState(false);
+
+  // Fetch verified profile photo and 30-day lock metadata directly from backend database
+  useEffect(() => {
+    const patronId = user?.id || user?.matric || 'FCC/CSC/2026/409';
+    fetch(`/api/patrons/${encodeURIComponent(patronId)}`)
+      .then(r => r.json())
+      .then(res => {
+        const p = res?.patron || res?.data || res;
+        if (p) {
+          if (p.photo_url || p.photoUrl) {
+            setProfilePhoto(p.photo_url || p.photoUrl);
+          }
+          if (p.photo_updated_at || p.photoUpdatedAt) {
+            setPhotoUpdatedAt(p.photo_updated_at || p.photoUpdatedAt);
+          }
+        }
+      })
+      .catch(() => {});
+  }, [user]);
+
+  // Calculate 30-day (1 month) restriction status and remaining time
+  const checkPhotoChangeEligibility = () => {
+    if (!photoUpdatedAt) {
+      return { isRestricted: false };
+    }
+
+    const lastTime = new Date(photoUpdatedAt).getTime();
+    if (isNaN(lastTime)) {
+      return { isRestricted: false };
+    }
+
+    const now = Date.now();
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    const diffMs = now - lastTime;
+
+    if (diffMs < thirtyDaysMs) {
+      const remainingMs = thirtyDaysMs - diffMs;
+      const remainingDays = Math.floor(remainingMs / (24 * 60 * 60 * 1000));
+      const remainingHours = Math.floor((remainingMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+      const remainingMinutes = Math.floor((remainingMs % (60 * 60 * 1000)) / (60 * 1000));
+      const nextDate = new Date(lastTime + thirtyDaysMs).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+
+      return {
+        isRestricted: true,
+        days: remainingDays,
+        hours: remainingHours,
+        minutes: remainingMinutes,
+        nextDate,
+        lastUpdated: new Date(lastTime).toLocaleDateString('en-GB', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric'
+        })
+      };
+    }
+
+    return { isRestricted: false };
+  };
+
+  // User clicked to upload or change profile photo
+  const handleOpenPhotoChanger = () => {
+    sounds.playClick();
+    const eligibility = checkPhotoChangeEligibility();
+
+    if (eligibility.isRestricted) {
+      sounds.playErrorBuzz();
+      setRestrictionModalInfo(eligibility);
+      return;
+    }
+
+    setIsPassportModalOpen(true);
+  };
+
+  // Remove profile picture completely from database & backend
+  const handleRemovePhoto = async (e) => {
+    if (e) e.stopPropagation();
+    if (!profilePhoto) return;
+
+    if (!confirm('Are you sure you want to remove your profile picture? This will clear it from the backend and database.')) {
+      return;
+    }
+
+    setIsRemovingPhoto(true);
+    sounds.playClick();
+    const patronId = user?.id || user?.matric || 'FCC/CSC/2026/409';
+
+    try {
+      await fetch(`/api/patrons/${encodeURIComponent(patronId)}/photo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          photo: '',
+          photo_url: '',
+          id: patronId,
+          matric: user?.matric,
+          force_override: true
+        })
+      });
+
+      // Clear from local state & storage
+      setProfilePhoto('');
+      setPhotoUpdatedAt(null);
+
+      const studentSession = localStorage.getItem('fcc_student_session');
+      if (studentSession) {
+        try {
+          const parsed = JSON.parse(studentSession);
+          localStorage.setItem('fcc_student_session', JSON.stringify({ ...parsed, photo: '', photo_url: '' }));
+        } catch (e) {}
+      }
+
+      sounds.playSuccessChime();
+      alert('Profile picture successfully removed from database.');
+    } catch (err) {
+      console.error('Error removing photo:', err);
+      setProfilePhoto('');
+      alert('Profile picture removed.');
+    } finally {
+      setIsRemovingPhoto(false);
+    }
+  };
   const [phone, setPhone] = useState(user?.phone || '+234 803 456 7890');
   const [email, setEmail] = useState(user?.email || `${(user?.matric || 'fcc042').toLowerCase().replace(/[^a-z0-9]/g, '')}@student.fccibadan.edu.ng`);
   const [pin, setPin] = useState('1234');
@@ -105,20 +239,60 @@ export default function StudentPatronProfile({
         <div className="flex flex-wrap items-center justify-between gap-6">
           {/* Avatar and Basic Credentials */}
           <div className="flex items-center gap-5">
-            <div className="relative group cursor-pointer" onClick={() => setIsPassportModalOpen(true)} title="Upload Passport Photo (AI Background Removal + FCC Watermark)">
-              <img
-                src={profilePhoto}
-                alt={user?.name}
-                className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl object-cover border-2 border-emerald-500 shadow-xl group-hover:opacity-90 transition"
-              />
-              <span className="absolute bottom-1 right-1 w-4 h-4 rounded-full bg-emerald-400 border-2 border-[#021810]" />
-              <button
-                type="button"
-                className="absolute inset-0 bg-black/50 backdrop-blur-xs rounded-3xl opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center text-[10px] font-bold text-white p-1 text-center"
+            <div className="relative group">
+              <div
+                className="relative cursor-pointer"
+                onClick={handleOpenPhotoChanger}
+                title={photoUpdatedAt ? "Profile photo locked for 30 days after upload" : "Upload Passport Photo (AI Background Removal + FCC Watermark)"}
               >
-                <Camera size={18} className="text-emerald-400 mb-0.5" />
-                <span>Upload Passport</span>
-              </button>
+                {profilePhoto ? (
+                  <img
+                    src={profilePhoto}
+                    alt={user?.name}
+                    className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl object-cover border-2 border-emerald-500 shadow-xl group-hover:opacity-90 transition bg-slate-900"
+                  />
+                ) : (
+                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-gradient-to-tr from-emerald-950 via-slate-900 to-emerald-900 border-2 border-dashed border-emerald-500/80 flex flex-col items-center justify-center text-emerald-400 shadow-xl">
+                    <User size={36} className="text-emerald-400 mb-0.5 opacity-80" />
+                    <span className="text-[9px] font-mono font-bold text-emerald-300">No Photo</span>
+                  </div>
+                )}
+
+                {/* 30-Day Policy Lock Badge */}
+                {photoUpdatedAt ? (
+                  <span
+                    className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full bg-amber-500 text-slate-950 text-[9px] font-mono font-black border border-amber-300 shadow flex items-center gap-0.5"
+                    title="Photo locked for 30 days"
+                  >
+                    <Lock size={9} />
+                    <span>30D LOCK</span>
+                  </span>
+                ) : (
+                  <span className="absolute bottom-1 right-1 w-4 h-4 rounded-full bg-emerald-400 border-2 border-[#021810]" />
+                )}
+
+                <button
+                  type="button"
+                  className="absolute inset-0 bg-black/60 backdrop-blur-xs rounded-3xl opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center text-[10px] font-bold text-white p-1 text-center cursor-pointer"
+                >
+                  <Camera size={18} className="text-emerald-400 mb-0.5" />
+                  <span>{photoUpdatedAt ? 'View 30D Status' : 'Upload Passport'}</span>
+                </button>
+              </div>
+
+              {/* Remove Photo Action Button */}
+              {profilePhoto && (
+                <button
+                  type="button"
+                  onClick={handleRemovePhoto}
+                  disabled={isRemovingPhoto}
+                  className="mt-1.5 w-full py-1 px-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 border border-rose-800/80 text-rose-300 hover:text-white text-[10px] font-mono font-bold flex items-center justify-center gap-1 transition shadow-sm cursor-pointer disabled:opacity-50"
+                  title="Remove picture from database"
+                >
+                  <Trash2 size={11} className={isRemovingPhoto ? 'animate-spin' : ''} />
+                  <span>{isRemovingPhoto ? 'Removing...' : 'Remove Photo'}</span>
+                </button>
+              )}
             </div>
 
             <div className="space-y-1">
@@ -807,15 +981,109 @@ export default function StudentPatronProfile({
         onClose={() => setIsPassportModalOpen(false)}
         currentUser={user}
         currentPhoto={profilePhoto}
-        onPhotoUpdated={(newPhotoUrl) => {
+        onPhotoUpdated={(newPhotoUrl, updatedAt) => {
           setProfilePhoto(newPhotoUrl);
+          setPhotoUpdatedAt(updatedAt || new Date().toISOString());
         }}
       />
+
+      {/* 30-Day Profile Image Change Restriction Card Pop-up Modal */}
+      {restrictionModalInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="relative w-full max-w-md bg-gradient-to-b from-[#032317] to-[#01140d] border-2 border-amber-500/80 rounded-3xl shadow-2xl p-6 sm:p-7 space-y-5 text-white animate-scaleUp">
+            {/* Header with Close */}
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-400 shadow-inner">
+                  <Lock size={24} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white tracking-tight flex items-center gap-1.5">
+                    <span>Profile Photo Restricted</span>
+                  </h3>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-700/80 font-bold inline-block mt-0.5">
+                    1-Month Institutional Security Policy
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRestrictionModalInfo(null)}
+                className="p-1.5 rounded-xl bg-black/40 hover:bg-black/60 text-emerald-400 hover:text-white transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Explanation Note */}
+            <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-600/40 text-amber-100 text-xs space-y-1.5 leading-relaxed">
+              <div className="font-bold flex items-center gap-1.5 text-amber-300">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Security Notice for Physical &amp; Digital Passes</span>
+              </div>
+              <p className="text-[11px] text-amber-200/90">
+                To prevent identity tampering on campus security checkpoints and student exam passes, students can only update their profile passport photo <strong>once every 30 days</strong>.
+              </p>
+            </div>
+
+            {/* Countdown Dashboard */}
+            <div className="p-4 rounded-2xl bg-[#021810] border border-emerald-800/80 space-y-3">
+              <div className="text-[11px] font-mono text-emerald-400 flex items-center justify-between">
+                <span>TIME REMAINING UNTIL NEXT CHANGE:</span>
+                <span className="font-bold text-white">30 Days Cycle</span>
+              </div>
+
+              {/* Countdown Numbers Grid */}
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-700/60 shadow-inner">
+                  <div className="text-2xl font-black text-amber-400 font-mono">
+                    {restrictionModalInfo.days}
+                  </div>
+                  <div className="text-[10px] text-emerald-300 uppercase font-mono font-bold">Days</div>
+                </div>
+                <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-700/60 shadow-inner">
+                  <div className="text-2xl font-black text-amber-400 font-mono">
+                    {restrictionModalInfo.hours}
+                  </div>
+                  <div className="text-[10px] text-emerald-300 uppercase font-mono font-bold">Hours</div>
+                </div>
+                <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-700/60 shadow-inner">
+                  <div className="text-2xl font-black text-amber-400 font-mono">
+                    {restrictionModalInfo.minutes}
+                  </div>
+                  <div className="text-[10px] text-emerald-300 uppercase font-mono font-bold">Minutes</div>
+                </div>
+              </div>
+
+              {/* Next Available Date */}
+              <div className="pt-2 border-t border-emerald-900/60 text-[11px] flex items-center justify-between font-mono text-emerald-300/80">
+                <span className="flex items-center gap-1">
+                  <Calendar size={12} className="text-emerald-400" />
+                  <span>Next Change Date:</span>
+                </span>
+                <strong className="text-white">{restrictionModalInfo.nextDate}</strong>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setRestrictionModalInfo(null)}
+                className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-950 transition cursor-pointer text-center"
+              >
+                Understood &amp; Return to Profile
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mobile Pass QR Verification Dialog (Animated Checkmark & Install Flow) */}
       {isMobilePassModalOpen && (
         <MobilePassVerificationModal
           isOpen={isMobilePassModalOpen}
+          isModal={true}
           onClose={() => setIsMobilePassModalOpen(false)}
           prefilledMatric={user?.matric || 'FCC/CSC/2026/409'}
           onLoginSuccess={(verifiedUser) => {

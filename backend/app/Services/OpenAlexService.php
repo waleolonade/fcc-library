@@ -716,6 +716,27 @@ class OpenAlexService
         $attempt = 0;
         $isPost = strtoupper($method) === 'POST';
 
+        $apiKey = env('OPENALEX_API_KEY') ?: $this->resolveStoredApiKey();
+        $mailto = env('OPENALEX_MAILTO', self::DEFAULT_MAILTO);
+
+        if ($apiKey) {
+            if (!isset($headers['Authorization'])) {
+                $headers['Authorization'] = 'Bearer ' . $apiKey;
+            }
+            if (!isset($headers['api_key'])) {
+                $headers['api_key'] = $apiKey;
+            }
+            if (!$isPost && !isset($params['api_key'])) {
+                $params['api_key'] = $apiKey;
+            }
+        }
+        if (!$isPost && !isset($params['mailto'])) {
+            $params['mailto'] = $mailto;
+        }
+        if (!isset($headers['User-Agent'])) {
+            $headers['User-Agent'] = "FCC-E-Library/5.0 (mailto:{$mailto})";
+        }
+
         while ($attempt <= $maxRetries) {
             try {
                 $req = Http::withHeaders($headers)

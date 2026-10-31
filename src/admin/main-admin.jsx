@@ -6,38 +6,31 @@ import FccAdminLibrary from '../fcc_admin_library/FccAdminLibrary.jsx';
 import AdminLogin from '../auth/AdminLogin.jsx';
 import '../index.css';
 
+import { storeUserSession, clearAllAuthStores, getActiveUserSession } from '../utils/authSessionManager';
+
 function AdminStandaloneApp() {
   const [adminUser, setAdminUser] = useState(() => {
     try {
+      const active = getActiveUserSession();
+      if (active && active.role === 'admin') {
+        return active;
+      }
       const saved = localStorage.getItem('fcc_admin_session');
-      return saved ? JSON.parse(saved) : {
-        role: 'admin',
-        matric: 'FCC/STAFF/001',
-        name: 'Dr. Mrs. A. Balogun',
-        dept: 'Chief College Librarian'
-      };
+      return saved ? JSON.parse(saved) : null;
     } catch {
-      return {
-        role: 'admin',
-        matric: 'FCC/STAFF/001',
-        name: 'Dr. Mrs. A. Balogun',
-        dept: 'Chief College Librarian'
-      };
+      return null;
     }
   });
 
   const handleLogin = (user) => {
+    storeUserSession(user, user.token || 'jwt_admin_session_token', 'admin');
     setAdminUser(user);
-    try {
-      localStorage.setItem('fcc_admin_session', JSON.stringify(user));
-    } catch {}
   };
 
   const handleLogout = () => {
+    clearAllAuthStores();
     setAdminUser(null);
-    try {
-      localStorage.removeItem('fcc_admin_session');
-    } catch {}
+    window.location.href = '/#/login';
   };
 
   if (!adminUser) {

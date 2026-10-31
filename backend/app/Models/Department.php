@@ -11,7 +11,7 @@ class Department extends Model
 
     protected $fillable = [
         'id', 'name', 'code', 'faculty', 'hod_name', 'hod_email', 'hod_phone', 'hod_pin',
-        'student_count', 'faculty_count', 'description', 'established'
+        'hod_photo', 'student_count', 'faculty_count', 'description', 'established', 'color'
     ];
 
     public function uploads()

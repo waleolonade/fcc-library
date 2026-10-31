@@ -114,7 +114,7 @@ const SCHOLARLY_JOURNALS = [
   {
     id: 'JRN-01',
     title: 'Nigerian Journal of Co-operative Economics & Rural Development (NJCERD)',
-    issn: '0794-8212',
+    issn: '',
     frequency: 'Quarterly',
     publisher: 'FCC Academic Press & Research Directorate',
     latestIssue: 'Vol. 18, No. 2 (June 2026)',
@@ -426,11 +426,11 @@ export default function StudentResearchHub({
         id: j.id || `HOD-JRN-${i + 1}`,
         title: j.title,
         journalName: j.journal_name || j.journalName || parsedNotes.journalName || j.publisher || 'FCC Academic Journal',
-        issn: j.issn || parsedNotes.issn || '0794-5590',
-        volume: j.volume || parsedNotes.volume || 'Vol. 18',
-        issue: j.issue || parsedNotes.issue || 'No. 2',
-        year: j.year || parsedNotes.publicationYear || 2026,
-        latestIssue: `${j.volume || parsedNotes.volume || 'Vol. 18'}, ${j.issue || parsedNotes.issue || 'Issue 2'} (${j.year || parsedNotes.publicationYear || 2026})`,
+        issn: j.issn || parsedNotes.issn || '',
+        volume: j.volume || parsedNotes.volume || parsedNotes.volume_issue || '',
+        issue: j.issue || parsedNotes.issue || '',
+        year: j.year || parsedNotes.publication_year || parsedNotes.publicationYear || new Date().getFullYear(),
+        latestIssue: parsedNotes.volume_issue || [j.volume || parsedNotes.volume, j.issue || parsedNotes.issue].filter(Boolean).join(', ') || '',
         publisher: j.publisher || parsedNotes.publisher || `FCC Department of ${j.department_name || 'Academic Studies'} Press`,
         indexedIn: 'FCC Institutional Repository, Open Access',
         scope: j.abstract || 'Peer-reviewed academic research published through departmental board approval.',
@@ -861,10 +861,12 @@ export default function StudentResearchHub({
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-teal-950 text-teal-300 border border-teal-800">
-                      ISSN: {j.issn}
-                    </span>
-                    <span className="text-[11px] font-mono text-emerald-400 font-bold">{j.latestIssue}</span>
+                    {j.issn ? (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-teal-950 text-teal-300 border border-teal-800">
+                        ISSN: {j.issn}
+                      </span>
+                    ) : <span />}
+                    {j.latestIssue && <span className="text-[11px] font-mono text-emerald-400 font-bold">{j.latestIssue}</span>}
                   </div>
 
                   <h4 className="text-base font-bold text-white leading-snug">

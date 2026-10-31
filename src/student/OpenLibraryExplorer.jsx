@@ -1016,6 +1016,51 @@ export default function OpenLibraryExplorer() {
     }
   };
 
+  // Immediate client-side sorter for instant feedback
+  const sortBooksArray = (items, sortMode) => {
+    if (!Array.isArray(items)) return [];
+    const list = [...items];
+    if (!sortMode) return list; // relevance
+
+    if (sortMode === 'old') {
+      return list.sort((a, b) => {
+        const yearA = parseInt(a.first_publish_year || a.publish_year?.[0] || 9999);
+        const yearB = parseInt(b.first_publish_year || b.publish_year?.[0] || 9999);
+        return yearA - yearB;
+      });
+    }
+
+    if (sortMode === 'new') {
+      return list.sort((a, b) => {
+        const yearA = parseInt(a.first_publish_year || a.publish_year?.[0] || 0);
+        const yearB = parseInt(b.first_publish_year || b.publish_year?.[0] || 0);
+        return yearB - yearA;
+      });
+    }
+
+    if (sortMode === 'rating') {
+      return list.sort((a, b) => {
+        const rateA = parseFloat(a.ratings_average || a.rating || 0);
+        const rateB = parseFloat(b.ratings_average || b.rating || 0);
+        if (rateB !== rateA) return rateB - rateA;
+        const countA = parseInt(a.ratings_count || 0);
+        const countB = parseInt(b.ratings_count || 0);
+        return countB - countA;
+      });
+    }
+
+    if (sortMode === 'random') {
+      // Fisher-Yates shuffle
+      for (let i = list.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [list[i], list[j]] = [list[j], list[i]];
+      }
+      return list;
+    }
+
+    return list;
+  };
+
   useEffect(() => {
     fetchBooks(query, sort, 1, searchMode, listType);
   }, []);
@@ -1226,8 +1271,16 @@ export default function OpenLibraryExplorer() {
           <div className="w-48 relative">
             <select 
               value={sort}
-              onChange={(e) => setSort(e.target.value)}
-              className="w-full bg-[#032316] border border-emerald-700/50 rounded-lg px-4 py-2.5 text-emerald-100 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all appearance-none"
+              onChange={(e) => {
+                const newSort = e.target.value;
+                setSort(newSort);
+                setPage(1);
+                // Immediately sort the currently loaded books on screen
+                setBooks(prev => sortBooksArray(prev, newSort));
+                // Immediately re-fetch with new sort from Open Library API
+                fetchBooks(query, newSort, 1, searchMode, listType, drillDown);
+              }}
+              className="w-full bg-[#032316] border border-emerald-700/50 rounded-lg px-4 py-2.5 text-emerald-100 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all appearance-none cursor-pointer"
             >
               <option value="">Relevance</option>
               <option value="new">Newest First</option>

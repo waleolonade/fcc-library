@@ -64,15 +64,16 @@ export const departmentService = {
   },
 
   addDepartment: async (dept) => {
-    const code = (dept.code || 'NEW').trim().toUpperCase();
+    const code = (dept.code || '').trim().toUpperCase();
     const payload = {
-      name: dept.name?.trim() || 'New Academic Department',
+      name: dept.name?.trim() || '',
       code: code,
-      hod_name: dept.hod?.trim() || dept.hod_name?.trim() || 'Department Head',
-      hod_email: dept.hodEmail?.trim() || dept.hod_email?.trim() || `hod.${code.toLowerCase()}@fccibadan.edu.ng`,
-      hod_pin: dept.pin?.trim() || dept.hod_pin?.trim() || '1234',
+      hod_name: dept.hod?.trim() || dept.hod_name?.trim() || '',
+      hod_email: dept.hodEmail?.trim() || dept.hod_email?.trim() || '',
+      hod_pin: dept.pin?.trim() || dept.hod_pin?.trim() || '',
       student_count: parseInt(dept.student_count || dept.studentCount) || 0,
-      faculty_count: parseInt(dept.faculty_count) || 8
+      faculty_count: parseInt(dept.faculty_count) || 0,
+      color: dept.color?.trim() || ''
     };
 
     try {

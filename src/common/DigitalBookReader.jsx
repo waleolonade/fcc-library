@@ -5,11 +5,12 @@ import {
   Link2, UserCheck, Download, Sparkles, BookOpen, Layers, Eye,
   BookCheck, RefreshCw, ChevronDown, CheckCircle2, ShieldCheck,
   Building2, GraduationCap, Copy, Maximize2, Minimize2, Trash2,
-  FileDown, BookMarked, Tag, Info, AlertCircle, PanelLeftClose, PanelLeftOpen
+  FileDown, BookMarked, Tag, Info, AlertCircle, AlertTriangle, PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 import TraceBadge from './TraceBadge';
 import { sounds } from '../utils/soundEffects';
 import { libraryApi } from '../api/libraryApi';
+import PdfCanvasViewer from './PdfCanvasViewer';
 
 export default function DigitalBookReader({ book: initialBook, onClose, user, onSelectBook }) {
   const [currentBook, setCurrentBook] = useState(initialBook || null);
@@ -27,10 +28,9 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
   const [copiedCitation, setCopiedCitation] = useState(false);
   const [citationFormat, setCitationFormat] = useState('APA'); // 'APA' | 'MLA' | 'Harvard'
   const [chapterSearch, setChapterSearch] = useState('');
-  const [readerMode, setReaderMode] = useState('interactive'); // 'interactive' | 'pdf'
+  const [readerMode, setReaderMode] = useState('pdf'); // 'pdf' | 'interactive'
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-
   // Sync initialBook prop changes
   useEffect(() => {
     if (initialBook && (!currentBook || currentBook.id !== initialBook.id)) {
@@ -61,8 +61,8 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
             fileName: b.file_name || b.fileName || `${b.title || 'handout'}.pdf`,
             fileSize: b.file_size || b.fileSize || '7.4 MB',
             fileDataUrl: b.file_data_url || b.fileDataUrl || '',
-            hasBinaryPdf: Boolean(b.hasBinaryPdf || b.file_data_url || b.fileDataUrl || (b.id && b.id === 'FCC-HOD-8201')),
-            pdfUrl: `/api/catalog/${b.id}/file`,
+            hasBinaryPdf: Boolean(b.hasBinaryPdf || b.has_file || b.hasPdf || b.file_name || b.fileName || b.file_data_url || b.fileDataUrl || (b.id && (b.id.startsWith('FCC-HOD') || b.id.startsWith('HOD-UP') || b.id.startsWith('FCC-PRJ') || b.id.startsWith('FCC-JRN')))),
+            pdfUrl: b.pdfUrl || `/api/books/${encodeURIComponent(b.id)}/pdf`,
             isDigital: true,
             abstract: b.abstract || ''
           }));
@@ -112,9 +112,10 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
           uploadedBy: full.uploaded_by || full.uploadedBy || candidate.uploadedBy,
           fileDataUrl: full.file_data_url || full.fileDataUrl || candidate.fileDataUrl || '',
           fileName: full.file_name || full.fileName || candidate.fileName,
-          cover_image: full.cover_image || full.coverImage || candidate.cover_image || candidate.coverImage || '',
-          coverImage: full.cover_image || full.coverImage || candidate.cover_image || candidate.coverImage || '',
-          hasBinaryPdf: Boolean(full.file_data_url || full.fileDataUrl || (full.id && full.id === 'FCC-HOD-8201') || candidate.hasBinaryPdf),
+          cover_image: full.cover_image || full.coverImage || candidate.cover_image || candidate.coverImage || candidate.cover || '',
+          coverImage: full.cover_image || full.coverImage || candidate.cover_image || candidate.coverImage || candidate.cover || '',
+          hasBinaryPdf: Boolean(full.hasBinaryPdf || full.has_file || full.hasPdf || full.file_name || full.fileName || full.file_data_url || full.fileDataUrl || candidate.hasBinaryPdf || (candidate.id && (candidate.id.startsWith('FCC-HOD') || candidate.id.startsWith('HOD-UP')))),
+          pdfUrl: full.pdfUrl || candidate.pdfUrl || `/api/books/${encodeURIComponent(candidate.id)}/pdf`,
           isDigital: true,
           pdfPages: full.pdf_pages || full.pdfPages || candidate.pdfPages || 120
         };
@@ -122,17 +123,15 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
         setCurrentPage(1);
         if (onSelectBook) onSelectBook(merged);
 
-        // If it has raw binary PDF, default to PDF stream mode; otherwise interactive reader
-        if (merged.hasBinaryPdf) {
-          setReaderMode('pdf');
-        } else {
-          setReaderMode('interactive');
-        }
+        // Always default to official PDF manuscript reader for authenticated uploaded books
+        setReaderMode('pdf');
       } else {
         setCurrentBook(candidate);
+        setReaderMode('pdf');
       }
     } catch (e) {
       setCurrentBook(candidate);
+      setReaderMode('pdf');
     } finally {
       setIsLoadingBook(false);
     }
@@ -163,9 +162,6 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
     }));
   };
 
-  const pdfStreamSrc = currentBook?.id
-    ? `/api/catalog/${encodeURIComponent(currentBook.id)}/file#page=${currentPage}`
-    : '';
 
   // Dynamic Syllabus Chapter Generator based on course topic
   const chapters = useMemo(() => {
@@ -293,9 +289,13 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
           {(currentBook.cover_image || currentBook.coverImage) ? (
             <div className="w-8 h-11 rounded-lg overflow-hidden shrink-0 border border-emerald-500/40 shadow bg-slate-950 hidden sm:block">
               <img
-                src={currentBook.cover_image || currentBook.coverImage}
+                src={currentBook.cover_image || currentBook.coverImage || currentBook.cover || '/assets/fcc-logo.png'}
                 alt="Book Cover"
                 className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = '/assets/fcc-logo.png';
+                }}
               />
             </div>
           ) : (
@@ -402,7 +402,7 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
 
           {/* Download Button */}
           <a
-            href={`/api/catalog/${encodeURIComponent(currentBook.id)}/file?download=1`}
+            href={`/api/books/${encodeURIComponent(currentBook.id)}/pdf/download`}
             download={currentBook.fileName || `${currentBook.title}.pdf`}
             className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-bold flex items-center gap-1 border border-slate-700 transition"
             title="Download PDF Document"
@@ -413,7 +413,7 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
 
           {/* New Tab External Link */}
           <a
-            href={`/api/catalog/${encodeURIComponent(currentBook.id)}/file`}
+            href={`/api/books/${encodeURIComponent(currentBook.id)}/pdf`}
             target="_blank"
             rel="noreferrer"
             className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1 border border-slate-700 transition"
@@ -863,40 +863,22 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
             </div>
           </div>
 
-          {/* MODE 1: PDF MANUSCRIPT STREAM (NATIVE IFRAME) */}
+          {/* MODE 1: PDF MANUSCRIPT STREAM (HIGH-PERFORMANCE CANVAS PDF VIEWER) */}
           {readerMode === 'pdf' ? (
-            <div className="w-full flex-1 min-h-[660px] rounded-xl overflow-hidden bg-slate-950 border border-slate-800 flex flex-col justify-between">
-              <div className="p-2.5 bg-slate-900 border-b border-slate-800 flex flex-wrap justify-between items-center text-xs font-mono gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <span className="text-emerald-400 font-bold">📄 Official Document Stream:</span>
-                  <span className="text-slate-300 truncate max-w-xs">{currentBook.fileName || currentBook.title}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setReaderMode('interactive')}
-                    className="px-2.5 py-1 rounded bg-slate-800 text-slate-300 hover:text-white text-[11px] font-sans transition"
-                  >
-                    Switch to Text View
-                  </button>
-                  <a
-                    href={`/api/catalog/${encodeURIComponent(currentBook.id)}/file`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-2.5 py-1 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[11px] font-sans flex items-center gap-1 transition"
-                  >
-                    <ExternalLink size={11} /> Open Separate Window
-                  </a>
-                </div>
-              </div>
-
-              {/* Native PDF Stream Frame (Handles both raw binary and generated syllabus PDFs) */}
-              <iframe
-                src={pdfStreamSrc}
-                className="w-full flex-1 min-h-[640px] border-none bg-slate-950"
-                title={currentBook.title}
-              />
-            </div>
+            <PdfCanvasViewer
+              pdfUrl={currentBook.pdfUrl || `/api/books/${encodeURIComponent(currentBook.id)}/pdf`}
+              currentPage={currentPage}
+              onPageChange={setCurrentPage}
+              onTotalPages={(total) => {
+                if (currentBook) {
+                  currentBook.pdfPages = total;
+                }
+              }}
+              title={currentBook.title}
+              fileName={currentBook.fileName || `${currentBook.title}.pdf`}
+              theme={theme}
+              onSwitchToInteractive={() => setReaderMode('interactive')}
+            />
           ) : (
             /* MODE 2: INTERACTIVE E-BOOK TEXT READER (ORIGINAL FEATURES & RICH CONTENT) */
             <div className={`max-w-2xl mx-auto space-y-6 leading-relaxed font-serif flex-1 ${fontSize}`}>

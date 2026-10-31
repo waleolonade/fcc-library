@@ -4,13 +4,16 @@
 // Synchronized with Laravel API (/api/institution/config) & SQLite/MySQL
 // =========================================================================
 
+import { developerConfigService } from './developerConfigService';
+import { developerApiCall, DEV_DEFAULT_PASSKEY } from './developerApi';
+
 export const DEFAULT_INSTITUTION = {
   name: "Federal Co-operative College, Ibadan",
   shortName: "FCC Ibadan",
   motto: "Pioneering Co-operative Excellence & Technological Advancement",
   established: 1943,
   campus: "Eleyele, Ibadan, Oyo State, Nigeria",
-  systemVersion: "v4.8-LSP Enterprise (Localhost Edition)",
+  systemVersion: "v4.8-LSP Enterprise (Production Edition)",
   currentSession: "2026/2027 Academic Session",
   currentSemester: "Second Semester",
   todayHours: "08:00 AM – 08:00 PM (Extended Exam Hours: 24/7 Virtual Hub)"
@@ -20,14 +23,28 @@ class InstitutionalConfigService {
   constructor() {
     this.storageKey = 'fcc_institution_config_v2';
     this.permsKey = 'fcc_institution_permissions_v2';
+    this.listeners = [];
     this.current = this.loadFromStorage();
     this.permissions = this.loadPermissionsFromStorage();
 
     // Fetch initial config from backend API
     this.fetchFromApi().catch(() => {});
 
-    // Listen for cross-tab storage changes
+    // Listen for developer config updates to keep institutional state in sync
     if (typeof window !== 'undefined') {
+      window.addEventListener('fcc-config-updated', (e) => {
+        if (e.detail?.branding) {
+          this.current = {
+            ...this.current,
+            name: e.detail.branding.institutionName || this.current.name,
+            shortName: e.detail.branding.shortName || this.current.shortName,
+            motto: e.detail.branding.slogan || this.current.motto
+          };
+          this.notifyListeners();
+        }
+      });
+
+      // Listen for cross-tab storage changes
       window.addEventListener('storage', (e) => {
         if (e.key === this.storageKey && e.newValue) {
           try {
@@ -38,6 +55,7 @@ class InstitutionalConfigService {
         if (e.key === this.permsKey && e.newValue) {
           try {
             this.permissions = JSON.parse(e.newValue);
+            this.notifyListeners();
           } catch (err) {}
         }
       });
@@ -66,8 +84,24 @@ class InstitutionalConfigService {
     return { admin_allowed: true, allowed_hod_depts: ['CSC', 'CEM'] };
   }
 
+  /**
+   * Returns live institutional configuration.
+   * Lead Developer modifications on Developer Master Portal take HIGHEST PRIORITY.
+   */
   getInstitution() {
-    return { ...this.current };
+    let devBranding = {};
+    try {
+      devBranding = developerConfigService.getConfig()?.branding || {};
+    } catch (e) {}
+
+    return {
+      ...this.current,
+      ...(devBranding.institutionName ? { name: devBranding.institutionName } : {}),
+      ...(devBranding.shortName ? { shortName: devBranding.shortName } : {}),
+      ...(devBranding.slogan ? { motto: devBranding.slogan } : {}),
+      ...(devBranding.libraryTitle ? { libraryTitle: devBranding.libraryTitle } : {}),
+      ...(devBranding.logoUrl ? { logoUrl: devBranding.logoUrl } : {})
+    };
   }
 
   getPermissions() {
@@ -76,8 +110,8 @@ class InstitutionalConfigService {
 
   async fetchFromApi() {
     try {
-      const res = await fetch('/api/institution/config');
-      if (res.ok) {
+      const res = await developerApiCall('/api/institution/config');
+      if (res && res.ok) {
         const data = await res.json();
         if (data.institution) {
           this.current = { ...DEFAULT_INSTITUTION, ...data.institution };
@@ -88,10 +122,10 @@ class InstitutionalConfigService {
           localStorage.setItem(this.permsKey, JSON.stringify(this.permissions));
         }
         this.notifyListeners();
-        return { institution: this.current, permissions: this.permissions };
+        return { institution: this.getInstitution(), permissions: this.permissions };
       }
     } catch (e) {}
-    return { institution: this.current, permissions: this.permissions };
+    return { institution: this.getInstitution(), permissions: this.permissions };
   }
 
   async saveInstitution(newValues, actor = 'Chief Librarian', role = 'admin', department = '') {
@@ -100,18 +134,35 @@ class InstitutionalConfigService {
     localStorage.setItem(this.storageKey, JSON.stringify(updated));
     this.notifyListeners();
 
+    // If role is developer, immediately sync with developer master config
+    if (role === 'developer') {
+      try {
+        const curDev = developerConfigService.getConfig();
+        const updatedDev = {
+          ...curDev,
+          branding: {
+            ...curDev.branding,
+            institutionName: updated.name || curDev.branding.institutionName,
+            shortName: updated.shortName || curDev.branding.shortName,
+            slogan: updated.motto || curDev.branding.slogan
+          }
+        };
+        developerConfigService.saveConfig(updatedDev);
+      } catch (e) {}
+    }
+
     try {
-      const res = await fetch('/api/institution/config', {
+      const res = await developerApiCall('/api/institution/config', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           role,
           department,
           actor,
           institution: updated
-        })
+        }
       });
-      const data = await res.json();
+
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data.error || 'Failed to save institutional settings');
       }
@@ -124,24 +175,21 @@ class InstitutionalConfigService {
         localStorage.setItem(this.permsKey, JSON.stringify(this.permissions));
       }
       this.notifyListeners();
-      return { success: true, institution: this.current };
+      return { success: true, institution: this.getInstitution() };
     } catch (err) {
       console.warn('Backend sync failed, stored locally:', err);
-      return { success: true, localOnly: true, institution: updated };
+      return { success: true, localOnly: true, institution: this.getInstitution() };
     }
   }
 
-  async updatePermissions(permissionsPayload, devPasskey = 'FCC@DevMaster2026!#') {
+  async updatePermissions(permissionsPayload, devPasskey = DEV_DEFAULT_PASSKEY) {
     try {
-      const res = await fetch('/api/developer/institution/permissions', {
+      const res = await developerApiCall('/api/developer/institution/permissions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Developer-Passkey': devPasskey
-        },
-        body: JSON.stringify(permissionsPayload)
+        passkey: devPasskey,
+        body: permissionsPayload
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
         this.permissions = data.permissions || permissionsPayload;
         localStorage.setItem(this.permsKey, JSON.stringify(this.permissions));
@@ -158,17 +206,34 @@ class InstitutionalConfigService {
     }
   }
 
+  subscribe(listener) {
+    if (typeof listener === 'function') {
+      this.listeners.push(listener);
+    }
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
+  }
+
   notifyListeners() {
+    const inst = this.getInstitution();
+    const perms = this.getPermissions();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('fcc-institution-updated', {
         detail: {
-          institution: this.current,
-          permissions: this.permissions
+          institution: inst,
+          permissions: perms
         }
       }));
     }
+    this.listeners.forEach(cb => {
+      try {
+        cb(inst, perms);
+      } catch (e) {}
+    });
   }
 }
 
 export const institutionalConfigService = new InstitutionalConfigService();
 export default institutionalConfigService;
+

@@ -35,21 +35,21 @@ export default function StudentResearchCenter({
   const normalizedTheses = (theses || []).map((t, idx) => ({
     id: t.id || idx + 1,
     title: t.title || 'Untitled Dissertation',
-    author: t.studentName || t.author || user?.name || 'FCC Scholar Researcher',
-    matric: t.matric || user?.matric || 'FCC/CSC/2026/409',
-    advisor: t.supervisor || t.advisor || 'Prof. A. O. Adebayo',
+    author: t.studentName || t.author || user?.name || '',
+    matric: t.matric || user?.matric || '',
+    advisor: t.supervisor || t.advisor || '',
     degree: t.degree || 'Higher National Diploma Dissertation',
-    department: t.department || 'Co-operative Economics & Management',
-    faculty: t.faculty || 'Faculty of Management Sciences',
-    year: t.year || 2024,
-    abstract: t.abstract || t.topic || 'Empirical institutional research archived in the Federal Cooperative College repository.',
-    doi: t.doi || `10.5897/FCC.ETD.${t.year || 2024}.${t.id || idx + 1}`,
-    downloads: t.downloads || 142 + (idx * 17),
-    citations: t.citations || 12 + (idx * 3),
+    department: t.department || user?.dept || 'Institutional Research',
+    faculty: t.faculty || 'Faculty of Academic Studies',
+    year: t.year || new Date().getFullYear(),
+    abstract: t.abstract || t.topic || '',
+    doi: t.doi || (t.id ? `10.5897/FCC.ETD.${t.year || new Date().getFullYear()}.${t.id}` : ''),
+    downloads: t.downloads || 0,
+    citations: t.citations || 0,
     access: 'Open Access Repository',
     status: t.status || 'Published',
-    fileUrl: t.fileUrl || '/demo-theses.pdf',
-    fileName: t.fileName || `${(t.title || 'thesis').slice(0, 25).replace(/\s+/g, '_')}.pdf`
+    fileUrl: t.fileUrl || t.pdfUrl || '',
+    fileName: t.fileName || `${(t.title || 'dissertation').slice(0, 25).replace(/\s+/g, '_')}.pdf`
   }));
 
   const filteredTheses = normalizedTheses.filter(t => {

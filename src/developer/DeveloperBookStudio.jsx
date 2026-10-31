@@ -8,23 +8,33 @@ import {
 } from 'lucide-react';
 import { INSTITUTION } from '../data/institutionalSeedData';
 import { sounds } from '../utils/soundEffects';
+import { developerApiCall } from '../services/developerApi';
 
-const DEPARTMENTS = [
-  { code: 'CSC', name: 'Computer Science & Information Technology' },
-  { code: 'CEM', name: 'Co-operative Economics & Management' },
-  { code: 'BNF', name: 'Banking & Finance' },
-  { code: 'AGR', name: 'Agricultural Extension & Rural Dev' },
-  { code: 'PAD', name: 'Public Administration' },
-  { code: 'ACC', name: 'Accountancy & Financial Studies' },
-  { code: 'MKT', name: 'Marketing & Consumer Studies' }
-];
-
-export default function DeveloperBookStudio({ passkey, showToast }) {
+export default function DeveloperBookStudio({ passkey, showToast, departments: propDepts = [] }) {
   // Mode: 'ingest' (Catalog New Book) vs 'catalog' (Manage Existing Books) vs 'hod_pipeline' (HOD Review Queue)
   const [activeSubTab, setActiveSubTab] = useState('ingest');
   
   // Category Mode (inspired by HOD Upload Studio): 'book' | 'journal' | 'project' | 'acquisition'
   const [uploadCategory, setUploadCategory] = useState('book');
+
+  // Academic Departments Live State
+  const [departments, setDepartments] = useState(propDepts || []);
+
+  useEffect(() => {
+    if (propDepts && propDepts.length > 0) {
+      setDepartments(propDepts);
+    } else {
+      developerApiCall('/api/departments')
+        .then(r => r.ok ? r.json() : [])
+        .then(data => {
+          if (Array.isArray(data) && data.length > 0) {
+            setDepartments(data);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [propDepts]);
+
 
   // Books List State
   const [booksList, setBooksList] = useState([]);
@@ -36,41 +46,49 @@ export default function DeveloperBookStudio({ passkey, showToast }) {
   // HOD Submissions State
   const [hodUploads, setHodUploads] = useState([]);
   const [hodLoading, setHodLoading] = useState(false);
+  const [hodFilterStatus, setHodFilterStatus] = useState('ALL');
 
   // Edit Book Modal State
   const [editingBook, setEditingBook] = useState(null);
   const [isUpdatingBook, setIsUpdatingBook] = useState(false);
 
-  // Ingestion Form State
+  // Ingestion Form State (Cleaned of all dummy, demo, and mock values)
   const [formData, setFormData] = useState({
     title: '',
     subtitle: '',
-    author: 'FCC Academic Faculty Board',
-    author_credentials: 'Ph.D., Department Research Chair',
-    department: 'Computer Science & Information Technology',
-    course_code: 'CSC 101',
+    author: '',
+    author_credentials: '',
+    department: '',
+    course_code: '',
     target_level: 'ND I',
     semester: 'First Semester',
-    isbn: '978-978-49021-9-4',
-    call_number: 'QA76.73 .F33 2026',
+    isbn: '',
+    call_number: '',
     publisher: 'Federal Co-operative College Press',
-    year: '2026',
+    year: new Date().getFullYear().toString(),
     edition: '1st Edition',
-    shelf_location: 'Main Stacks, Aisle 2, Bay B',
-    copies_total: 5,
-    abstract: 'Official academic textbook catalogued for institutional research and curriculum advancement at Federal Co-operative College, Ibadan.',
-    cover_image: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&q=80',
+    shelf_location: '',
+    copies_total: 1,
+    abstract: '',
+    cover_image: '',
     file_name: '',
     file_data_url: '',
     // Capstone Project specifics
     student_matric: '',
     supervisor_name: '',
-    academic_session: '2025/2026',
+    academic_session: '',
     // Journal specifics
-    journal_name: 'Nigerian Journal of Co-operative Studies',
-    volume_issue: 'Vol. 12, Issue 1',
-    doi: '10.1016/j.fcc.2026.04.01'
+    journal_name: '',
+    volume_issue: '',
+    doi: ''
   });
+
+  // Keep department synced with available departments
+  useEffect(() => {
+    if (!formData.department && departments.length > 0) {
+      setFormData(prev => ({ ...prev, department: departments[0].name }));
+    }
+  }, [departments]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -86,14 +104,22 @@ export default function DeveloperBookStudio({ passkey, showToast }) {
       if (selectedDeptFilter !== 'ALL') params.append('department', selectedDeptFilter);
       params.append('limit', '100');
 
-      const res = await fetch(`/api/developer/books?${params.toString()}`, {
-        headers: { 'X-Developer-Passkey': passkey }
+      const res = await developerApiCall(`/api/developer/books?${params.toString()}`, {
+        passkey
       });
-      if (res.ok) {
+      if (res && res.ok) {
         const data = await res.json();
         if (data.books) {
           setBooksList(data.books);
           setTotalBooks(data.total || data.books.length);
+          // Sync to localStorage
+          try {
+            if (!bookSearch && selectedDeptFilter === 'ALL') {
+              localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(data.books));
+              localStorage.setItem('fcc_db_catalog', JSON.stringify(data.books));
+              window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: data.books }));
+            }
+          } catch (e) {}
         }
       }
     } catch (e) {
@@ -103,16 +129,15 @@ export default function DeveloperBookStudio({ passkey, showToast }) {
     }
   };
 
-  // Fetch Pending HOD Uploads
+  // Fetch Pending HOD Uploads (including records preserved in Developer Master Vault)
   const fetchHodUploads = async () => {
     setHodLoading(true);
     try {
-      const res = await fetch('/api/department-uploads');
-      if (res.ok) {
+      const res = await developerApiCall('/api/department-uploads?include_deleted=1', { passkey });
+      if (res && res.ok) {
         const data = await res.json();
-        if (data.uploads) {
-          setHodUploads(data.uploads);
-        }
+        const list = Array.isArray(data) ? data : (data.uploads || []);
+        setHodUploads(list);
       }
     } catch (e) {
       console.warn('Failed to fetch HOD uploads:', e);
@@ -120,6 +145,43 @@ export default function DeveloperBookStudio({ passkey, showToast }) {
       setHodLoading(false);
     }
   };
+
+
+  // Developer action: Restore deleted HOD upload back to review queue
+  const handleRestoreHodUpload = async (up) => {
+    if (!window.confirm(`Restore "${up.title}" back to active pending review queue?`)) return;
+    try {
+      const res = await developerApiCall(`/api/department-uploads/${up.id}/restore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        passkey
+      });
+      if (res && res.ok) {
+        alert(`✓ "${up.title}" restored to active review queue!`);
+        fetchHodUploads();
+      }
+    } catch (e) {
+      alert('Restore failed: ' + e.message);
+    }
+  };
+
+  // Developer action: Permanently purge HOD upload from database
+  const handlePurgeHodUpload = async (up) => {
+    if (!window.confirm(`PERMANENT PURGE: This will irrevocably delete "${up.title}" from the Developer Master Vault. Are you sure?`)) return;
+    try {
+      const res = await developerApiCall(`/api/department-uploads/${up.id}?purge=1`, {
+        method: 'DELETE',
+        passkey
+      });
+      if (res && res.ok) {
+        alert(`✓ "${up.title}" permanently purged from database.`);
+        fetchHodUploads();
+      }
+    } catch (e) {
+      alert('Purge failed: ' + e.message);
+    }
+  };
+
 
   useEffect(() => {
     fetchBooks();
@@ -177,41 +239,56 @@ export default function DeveloperBookStudio({ passkey, showToast }) {
     sounds.playClick();
 
     try {
-      const res = await fetch('/api/developer/books', {
+      const res = await developerApiCall('/api/developer/books', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Developer-Passkey': passkey
-        },
-        body: JSON.stringify(formData)
+        passkey,
+        body: formData
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
-      if (res.ok && data.success) {
+      if (res && res.ok && data.success) {
         sounds.playSuccessChime();
         showToast?.(`Book "${formData.title}" catalogued directly into SQLite database!`);
+        
+        // Broadcast across all portals & sync localStorage
+        if (data.book) {
+          try {
+            const currentCached = JSON.parse(localStorage.getItem('fcc_catalog_v48_gov') || '[]');
+            const updatedList = [data.book, ...currentCached.filter(b => b.id !== data.book.id)];
+            localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(updatedList));
+            localStorage.setItem('fcc_db_catalog', JSON.stringify(updatedList));
+            window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: data.book }));
+          } catch (e) {}
+        }
+
         setFormData({
           title: '',
           subtitle: '',
-          author: 'FCC Academic Faculty Board',
-          author_credentials: 'Ph.D., Department Research Chair',
-          department: 'Computer Science & Information Technology',
-          course_code: 'CSC 101',
+          author: '',
+          author_credentials: '',
+          department: departments[0]?.name || '',
+          course_code: '',
           target_level: 'ND I',
           semester: 'First Semester',
-          isbn: '978-978-49021-9-4',
-          call_number: 'QA76.73 .F33 2026',
+          isbn: '',
+          call_number: '',
           publisher: 'Federal Co-operative College Press',
-          year: '2026',
+          year: new Date().getFullYear().toString(),
           edition: '1st Edition',
-          shelf_location: 'Main Stacks, Aisle 2, Bay B',
-          copies_total: 5,
-          abstract: 'Official academic monograph preserved at Federal Co-operative College Ibadan Library.',
-          cover_image: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&q=80',
+          shelf_location: '',
+          copies_total: 1,
+          abstract: '',
+          cover_image: '',
           file_name: '',
-          file_data_url: ''
+          file_data_url: '',
+          student_matric: '',
+          supervisor_name: '',
+          academic_session: '',
+          journal_name: '',
+          volume_issue: '',
+          doi: ''
         });
-        fetchBooks();
+        await fetchBooks();
         setActiveSubTab('catalog');
       } else {
         sounds.playErrorBuzz();
@@ -225,6 +302,64 @@ export default function DeveloperBookStudio({ passkey, showToast }) {
     }
   };
 
+  // Selection & Bulk Delete State
+  const [selectedBookIds, setSelectedBookIds] = useState([]);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  const toggleSelectBook = (id) => {
+    setSelectedBookIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (booksList.length > 0 && selectedBookIds.length === booksList.length) {
+      setSelectedBookIds([]);
+    } else {
+      setSelectedBookIds(booksList.map(b => b.id));
+    }
+  };
+
+  // Bulk Delete Books from SQLite and Live MySQL
+  const handleBulkDeleteBooks = async () => {
+    if (selectedBookIds.length === 0) return;
+    if (!window.confirm(`DANGER: Are you sure you want to permanently delete ${selectedBookIds.length} books from the database and live catalog? This action cannot be undone.`)) {
+      return;
+    }
+    sounds.playClick();
+    setIsBulkDeleting(true);
+    try {
+      const res = await developerApiCall('/api/developer/books/bulk-delete', {
+        method: 'POST',
+        passkey,
+        body: { ids: selectedBookIds }
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res && res.ok && data.success) {
+        sounds.playSuccessChime();
+        showToast?.(`Successfully deleted ${data.deleted_count || selectedBookIds.length} books from database.`);
+        try {
+          const currentCached = JSON.parse(localStorage.getItem('fcc_catalog_v48_gov') || '[]');
+          const idSet = new Set(selectedBookIds);
+          const filtered = currentCached.filter(b => !idSet.has(b.id));
+          localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(filtered));
+          localStorage.setItem('fcc_db_catalog', JSON.stringify(filtered));
+          window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: filtered }));
+        } catch (e) {}
+        setSelectedBookIds([]);
+        await fetchBooks();
+      } else {
+        sounds.playErrorBuzz();
+        showToast?.(data.error || 'Failed to bulk delete books.');
+      }
+    } catch (err) {
+      sounds.playErrorBuzz();
+      showToast?.('Network error occurred during bulk deletion.');
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
   // Delete Book
   const handleDeleteBook = async (id, title) => {
     if (!window.confirm(`Are you sure you want to permanently delete "${title}" (${id}) from the database?`)) {
@@ -232,15 +367,23 @@ export default function DeveloperBookStudio({ passkey, showToast }) {
     }
     sounds.playClick();
     try {
-      const res = await fetch(`/api/developer/books/${id}`, {
+      const res = await developerApiCall(`/api/developer/books/${encodeURIComponent(id)}`, {
         method: 'DELETE',
-        headers: { 'X-Developer-Passkey': passkey }
+        passkey
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const data = await res.json().catch(() => ({}));
+      if (res && res.ok && data.success) {
         sounds.playSuccessChime();
         showToast?.(`Book "${title}" deleted from catalog.`);
-        fetchBooks();
+        try {
+          const currentCached = JSON.parse(localStorage.getItem('fcc_catalog_v48_gov') || '[]');
+          const filtered = currentCached.filter(b => b.id !== id);
+          localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(filtered));
+          localStorage.setItem('fcc_db_catalog', JSON.stringify(filtered));
+          window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: filtered }));
+        } catch (e) {}
+        setSelectedBookIds(prev => prev.filter(x => x !== id));
+        await fetchBooks();
       }
     } catch (err) {
       sounds.playErrorBuzz();
@@ -254,20 +397,24 @@ export default function DeveloperBookStudio({ passkey, showToast }) {
     if (!editingBook) return;
     setIsUpdatingBook(true);
     try {
-      const res = await fetch(`/api/developer/books/${editingBook.id}`, {
+      const res = await developerApiCall(`/api/developer/books/${encodeURIComponent(editingBook.id)}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Developer-Passkey': passkey
-        },
-        body: JSON.stringify(editingBook)
+        passkey,
+        body: editingBook
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const data = await res.json().catch(() => ({}));
+      if (res && res.ok && data.success) {
         sounds.playSuccessChime();
         showToast?.(`Book "${editingBook.title}" updated in database.`);
+        try {
+          const currentCached = JSON.parse(localStorage.getItem('fcc_catalog_v48_gov') || '[]');
+          const updatedList = currentCached.map(b => b.id === editingBook.id ? { ...b, ...editingBook } : b);
+          localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(updatedList));
+          localStorage.setItem('fcc_db_catalog', JSON.stringify(updatedList));
+          window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: editingBook }));
+        } catch (e) {}
         setEditingBook(null);
-        fetchBooks();
+        await fetchBooks();
       }
     } catch (err) {
       sounds.playErrorBuzz();
@@ -282,13 +429,10 @@ export default function DeveloperBookStudio({ passkey, showToast }) {
     sounds.playClick();
     try {
       // Create book in books table
-      const res = await fetch('/api/developer/books', {
+      const res = await developerApiCall('/api/developer/books', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Developer-Passkey': passkey
-        },
-        body: JSON.stringify({
+        passkey,
+        body: {
           title: upload.title,
           author: upload.author || upload.hod_name || 'HOD Faculty',
           department: upload.department_name || 'Co-operative Economics & Management',
@@ -299,19 +443,20 @@ export default function DeveloperBookStudio({ passkey, showToast }) {
           cover_image: upload.cover_image || upload.cover_path || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&q=80',
           file_data_url: upload.file_data_url || upload.file_path || '',
           abstract: upload.abstract || `Official course material submitted by HOD ${upload.hod_name || ''}.`
-        })
+        }
       });
-      if (res.ok) {
+      if (res && res.ok) {
         sounds.playSuccessChime();
         showToast?.(`Submission "${upload.title}" approved and indexed into Central OPAC catalog!`);
-        fetchBooks();
-        fetchHodUploads();
+        await fetchBooks();
+        await fetchHodUploads();
       }
     } catch (e) {
       sounds.playErrorBuzz();
       showToast?.('Failed to approve submission.');
     }
   };
+
 
   return (
     <div className="space-y-6 animate-fadeIn font-mono">
@@ -511,7 +656,7 @@ export default function DeveloperBookStudio({ passkey, showToast }) {
                   onChange={e => setFormData({ ...formData, department: e.target.value })}
                   className="w-full bg-[#02050b] border border-cyan-800/80 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-cyan-400"
                 >
-                  {DEPARTMENTS.map(d => (
+                  {departments.map(d => (
                     <option key={d.code} value={d.name}>{d.name} ({d.code})</option>
                   ))}
                 </select>
@@ -626,7 +771,15 @@ export default function DeveloperBookStudio({ passkey, showToast }) {
                 <div className="flex gap-4 items-start bg-[#02050b] border border-cyan-800/80 rounded-2xl p-4">
                   <div className="w-20 h-28 rounded-xl bg-slate-900 border border-slate-700 overflow-hidden shrink-0 flex items-center justify-center shadow-lg">
                     {formData.cover_image ? (
-                      <img src={formData.cover_image} alt="Book Cover" className="w-full h-full object-cover" />
+                      <img
+                        src={formData.cover_image}
+                        alt="Book Cover"
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&q=80';
+                        }}
+                      />
                     ) : (
                       <ImageIcon size={24} className="text-slate-600" />
                     )}
@@ -722,7 +875,7 @@ export default function DeveloperBookStudio({ passkey, showToast }) {
                 className="bg-[#02050b] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400"
               >
                 <option value="ALL">All Departments</option>
-                {DEPARTMENTS.map(d => (
+                {departments.map(d => (
                   <option key={d.code} value={d.name}>{d.name} ({d.code})</option>
                 ))}
               </select>
@@ -737,10 +890,48 @@ export default function DeveloperBookStudio({ passkey, showToast }) {
             </div>
           </div>
 
+          {/* Bulk Selection Bar */}
+          {selectedBookIds.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-2xl bg-rose-950/40 border border-rose-800/80 animate-fade-in">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                <span className="text-xs font-bold text-rose-200">
+                  {selectedBookIds.length} of {booksList.length} monographs selected for deletion
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBookIds([])}
+                  className="ml-2 text-[11px] text-slate-400 hover:text-white underline cursor-pointer"
+                >
+                  Deselect All
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleBulkDeleteBooks}
+                disabled={isBulkDeleting}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-rose-950 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+              >
+                <Trash2 size={14} className={isBulkDeleting ? 'animate-spin' : ''} />
+                <span>{isBulkDeleting ? 'Deleting from Database...' : `Delete Selected (${selectedBookIds.length})`}</span>
+              </button>
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-slate-800 text-[10px] text-cyan-400 uppercase tracking-wider font-mono">
+                  <th className="py-2.5 px-3 w-8">
+                    <input
+                      type="checkbox"
+                      checked={booksList.length > 0 && selectedBookIds.length === booksList.length}
+                      onChange={toggleSelectAll}
+                      className="w-3.5 h-3.5 rounded border-slate-700 bg-slate-900 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                      title={selectedBookIds.length === booksList.length ? 'Deselect All' : 'Select All'}
+                    />
+                  </th>
                   <th className="py-2.5 px-3">Cover &amp; Title</th>
                   <th className="py-2.5 px-3">Author &amp; Dept</th>
                   <th className="py-2.5 px-3">LoC Call No</th>
@@ -752,19 +943,37 @@ export default function DeveloperBookStudio({ passkey, showToast }) {
               <tbody className="divide-y divide-slate-800/80 font-mono">
                 {booksList.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-slate-500 font-sans">
+                    <td colSpan={7} className="py-12 text-center text-slate-500 font-sans">
                       {booksLoading ? 'Querying database catalog...' : 'No books found matching the search criteria.'}
                     </td>
                   </tr>
                 ) : (
                   booksList.map((b) => (
-                    <tr key={b.id} className="hover:bg-slate-900/60 transition">
+                    <tr
+                      key={b.id}
+                      className={`hover:bg-slate-900/60 transition ${
+                        selectedBookIds.includes(b.id) ? 'bg-rose-950/20' : ''
+                      }`}
+                    >
+                      <td className="py-3 px-3 w-8">
+                        <input
+                          type="checkbox"
+                          checked={selectedBookIds.includes(b.id)}
+                          onChange={() => toggleSelectBook(b.id)}
+                          className="w-3.5 h-3.5 rounded border-slate-700 bg-slate-900 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                          title="Select monograph"
+                        />
+                      </td>
                       <td className="py-3 px-3">
                         <div className="flex items-center gap-3">
                           <img
                             src={b.cover_image || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=100'}
                             alt={b.title}
                             className="w-10 h-14 object-cover rounded-lg border border-slate-700 shrink-0"
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=100';
+                            }}
                           />
                           <div>
                             <div className="font-bold text-white font-sans text-xs line-clamp-1">{b.title}</div>
@@ -829,65 +1038,165 @@ export default function DeveloperBookStudio({ passkey, showToast }) {
       ========================================================================= */}
       {activeSubTab === 'hod_pipeline' && (
         <div className="bg-[#07101f] border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
             <div>
               <h3 className="text-xs font-black uppercase text-white tracking-wider flex items-center gap-2">
                 <Building2 size={15} className="text-teal-400" />
-                <span>Departmental Curriculum Uploads Waiting for Approval</span>
+                <span>Departmental Curriculum Uploads & Developer Master Vault</span>
               </h3>
               <p className="text-[11px] text-slate-400 font-sans">
-                Curriculum submissions uploaded by Academic Department HODs at #/hod/upload
+                Full historical ingestion archive: Preserves all submissions including items deleted or withdrawn by HODs & Admins.
               </p>
             </div>
-            <button
-              onClick={fetchHodUploads}
-              className="p-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-white"
-            >
-              <RefreshCw size={14} className={hodLoading ? 'animate-spin' : ''} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={fetchHodUploads}
+                className="p-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-white"
+                title="Refresh from database"
+              >
+                <RefreshCw size={14} className={hodLoading ? 'animate-spin' : ''} />
+              </button>
+            </div>
+          </div>
+
+          {/* Developer Vault Filter Tabs */}
+          <div className="flex flex-wrap items-center gap-2 pt-1 font-sans text-xs">
+            <span className="text-[11px] text-slate-400 font-semibold">Filter Vault:</span>
+            {[
+              { id: 'ALL', label: 'All Records', count: hodUploads.length, color: 'text-slate-300' },
+              { id: 'PENDING', label: 'Pending Review', count: hodUploads.filter(u => u.status === 'pending' || !u.status).length, color: 'text-amber-400' },
+              { id: 'APPROVED', label: 'Approved & Published', count: hodUploads.filter(u => u.status === 'approved').length, color: 'text-emerald-400' },
+              { id: 'DELETED', label: 'Preserved in Vault (Deleted by HOD/Admin)', count: hodUploads.filter(u => u.status === 'deleted' || u.status === 'withdrawn').length, color: 'text-rose-400' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setHodFilterStatus(tab.id)}
+                className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  hodFilterStatus === tab.id
+                    ? 'bg-teal-600 text-white shadow-md shadow-teal-950 ring-1 ring-teal-400'
+                    : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span className={`px-1.5 py-0.2 rounded-full bg-slate-950 font-mono text-[10px] ${tab.color}`}>
+                  {tab.count}
+                </span>
+              </button>
+            ))}
           </div>
 
           <div className="space-y-3 font-sans">
-            {hodUploads.length === 0 ? (
+            {hodUploads.filter(u => {
+              const s = String(u.status || '').toLowerCase();
+              if (hodFilterStatus === 'PENDING') return s === 'pending' || (s !== 'approved' && s !== 'rejected' && s !== 'deleted' && s !== 'withdrawn');
+              if (hodFilterStatus === 'APPROVED') return s === 'approved';
+              if (hodFilterStatus === 'DELETED') return s === 'deleted' || s === 'withdrawn';
+              return true;
+            }).length === 0 ? (
               <div className="py-12 text-center text-slate-500 text-xs">
-                No submissions currently waiting in the HOD departmental pipeline.
+                No submissions matching "{hodFilterStatus}" in the Developer Master Vault.
               </div>
             ) : (
-              hodUploads.map((up) => (
-                <div key={up.id} className="p-4 rounded-2xl bg-[#02050b] border border-slate-800 hover:border-teal-500/40 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-start gap-3.5">
-                    <div className="w-12 h-16 rounded-xl bg-slate-900 border border-slate-700 overflow-hidden shrink-0">
-                      <img
-                        src={up.cover_image || up.cover_path || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=100'}
-                        alt={up.title}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <div>
-                      <div className="font-bold text-white text-sm">{up.title}</div>
-                      <div className="text-xs text-slate-400 mt-0.5">
-                        By {up.author || up.hod_name || 'HOD Faculty'} &bull; Department: <strong className="text-teal-300">{up.department_name}</strong>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1.5 font-mono text-[10px]">
-                        <span className="px-2 py-0.5 rounded bg-teal-950 text-teal-300 border border-teal-800">{up.course_code || 'GEN 101'}</span>
-                        <span className="text-slate-500">{up.target_level || 'HND II'}</span>
-                        <span className="text-slate-500">{up.created_at || 'Recent'}</span>
-                      </div>
-                    </div>
-                  </div>
+              hodUploads.filter(u => {
+                const s = String(u.status || '').toLowerCase();
+                if (hodFilterStatus === 'PENDING') return s === 'pending' || (s !== 'approved' && s !== 'rejected' && s !== 'deleted' && s !== 'withdrawn');
+                if (hodFilterStatus === 'APPROVED') return s === 'approved';
+                if (hodFilterStatus === 'DELETED') return s === 'deleted' || s === 'withdrawn';
+                return true;
+              }).map((up) => {
+                const isDeleted = up.status === 'deleted' || up.status === 'withdrawn';
+                const isApproved = up.status === 'approved';
+                const isPending = !isDeleted && !isApproved;
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => handleApproveHodUpload(up)}
-                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs shadow-lg transition flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <CheckCircle size={14} />
-                      <span>Approve to Central Catalog</span>
-                    </button>
+                return (
+                  <div
+                    key={up.id}
+                    className={`p-4 rounded-2xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl ${
+                      isDeleted
+                        ? 'bg-[#060309] border-rose-900/60 hover:border-rose-700/80'
+                        : isApproved
+                        ? 'bg-[#02050b] border-emerald-950 hover:border-emerald-700/50'
+                        : 'bg-[#02050b] border-slate-800 hover:border-teal-500/40'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-12 h-16 rounded-xl bg-slate-900 border border-slate-700 overflow-hidden shrink-0">
+                        <img
+                          src={up.cover_image || up.cover_path || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=100'}
+                          alt={up.title}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=100';
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          {isDeleted ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-800 flex items-center gap-1">
+                              <span>🗑️ Withdrawn / Deleted by HOD/Admin</span>
+                              <span className="text-rose-400 font-mono">(Preserved in Developer Vault)</span>
+                            </span>
+                          ) : isApproved ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                              ✓ Approved & Published
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-800">
+                              ● Pending Review
+                            </span>
+                          )}
+                          <span className="text-[10px] font-mono text-slate-500">ID: {up.id}</span>
+                        </div>
+                        <div className="font-bold text-white text-sm">{up.title}</div>
+                        <div className="text-xs text-slate-400 mt-0.5">
+                          By {up.author || up.hod_name || 'HOD Faculty'} &bull; Department: <strong className="text-teal-300">{up.department_name}</strong>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1.5 font-mono text-[10px]">
+                          <span className="px-2 py-0.5 rounded bg-teal-950 text-teal-300 border border-teal-800">{up.course_code || 'GEN 101'}</span>
+                          <span className="text-slate-500">{up.target_level || 'HND II'}</span>
+                          <span className="text-slate-500">{up.created_at || 'Recent'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isDeleted ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleRestoreHodUpload(up)}
+                            className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow transition flex items-center gap-1.5 cursor-pointer"
+                            title="Restore back to active review queue"
+                          >
+                            <RefreshCw size={13} />
+                            <span>Restore to Queue</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handlePurgeHodUpload(up)}
+                            className="px-3 py-1.5 rounded-xl bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 hover:text-white font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
+                            title="Permanently remove from Developer Vault"
+                          >
+                            <Trash2 size={13} />
+                            <span>Purge</span>
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleApproveHodUpload(up)}
+                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs shadow-lg transition flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <CheckCircle size={14} />
+                          <span>Approve to Central Catalog</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

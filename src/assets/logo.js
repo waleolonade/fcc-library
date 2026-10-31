@@ -1,8 +1,14 @@
 // Centralized FCC Ibadan School Logo Asset
 import fccLogoImg from './fcc-logo.png';
+import { developerConfigService } from '../services/developerConfigService';
 
 export function getInstitutionalLogo() {
   if (typeof window !== 'undefined') {
+    try {
+      const devLogo = developerConfigService.getConfig()?.branding?.logoUrl;
+      if (devLogo) return devLogo;
+    } catch (e) {}
+
     const custom = localStorage.getItem('fcc_custom_logo');
     if (custom) return custom;
   }
@@ -14,3 +20,4 @@ export const FCC_LOGO = typeof window !== 'undefined' && localStorage.getItem('f
   : fccLogoImg;
 
 export default fccLogoImg;
+

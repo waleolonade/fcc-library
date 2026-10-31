@@ -188,22 +188,54 @@ export default function PdfAnalysisInspector({
         </div>
       </div>
 
-      {/* Auto-extracted summary highlight */}
-      <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 text-xs space-y-1">
-        <div className="text-[10px] font-mono text-slate-400 flex items-center justify-between">
-          <span>EXTRACTED DOCUMENT TITLE</span>
-          <span className="text-emerald-400 font-semibold">✓ Auto-Inserted into Form</span>
-        </div>
-        <div className="text-sm font-semibold text-white">
-          {extracted.title}
-        </div>
-        <div className="text-[11px] text-slate-400">
-          Identified Author(s): <strong className="text-teal-300">{extracted.author}</strong>
-          {extracted.supervisor && (
-            <span> • Supervisor: <strong className="text-slate-300">{extracted.supervisor}</strong></span>
-          )}
-          {extracted.matric && (
-            <span> • Matric: <strong className="text-amber-300 font-mono">{extracted.matric}</strong></span>
+      {/* Auto-extracted summary highlight with Extracted Cover Preview */}
+      <div className="p-3.5 rounded-2xl bg-slate-950/90 border border-slate-800 text-xs flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        {extracted.coverImage && (
+          <div className="relative shrink-0 group">
+            <img
+              src={extracted.coverImage}
+              alt="Auto-Extracted Book Cover"
+              className="w-16 h-24 rounded-xl object-cover border-2 border-emerald-500/60 shadow-lg bg-slate-900"
+            />
+            <span className="absolute -bottom-1.5 -right-1.5 px-1.5 py-0.5 rounded bg-emerald-600 text-[9px] font-bold text-white shadow">
+              Cover
+            </span>
+          </div>
+        )}
+        <div className="flex-1 min-w-0 space-y-1.5">
+          <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center justify-between gap-2">
+            <span>AUTO-EXTRACTED BOOK METADATA & COVER</span>
+            <span className="text-emerald-400 font-semibold">
+              ✓ Auto-Inserted Title, Author & {extracted.hasExtractedCover ? 'PDF Cover Picture' : 'Cover'}
+            </span>
+          </div>
+          <div className="text-sm font-bold text-white truncate" title={extracted.title}>
+            {extracted.title}
+          </div>
+          <div className="text-[11px] text-slate-300 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>
+              Author / Faculty Unit: <strong className="text-teal-300">{extracted.author}</strong>
+            </span>
+            {extracted.titleSource && (
+              <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-[10px] font-mono text-slate-400">
+                Source: {extracted.titleSource}
+              </span>
+            )}
+            {extracted.coverSourceLabel && (
+              <span className="px-2 py-0.5 rounded-md bg-emerald-950/60 border border-emerald-800/60 text-[10px] font-mono text-emerald-300">
+                🖼️ {extracted.coverSourceLabel}
+              </span>
+            )}
+          </div>
+          {(extracted.supervisor || extracted.matric) && (
+            <div className="text-[11px] text-slate-400">
+              {extracted.supervisor && (
+                <span>Supervisor: <strong className="text-slate-300">{extracted.supervisor}</strong></span>
+              )}
+              {extracted.matric && (
+                <span> • Matric: <strong className="text-amber-300 font-mono">{extracted.matric}</strong></span>
+              )}
+            </div>
           )}
         </div>
       </div>

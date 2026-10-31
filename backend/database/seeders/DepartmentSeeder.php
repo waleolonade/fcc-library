@@ -74,7 +74,7 @@ class DepartmentSeeder extends Seeder
         ];
 
         foreach ($departments as $dept) {
-            Department::updateOrCreate(['id' => $dept['id']], $dept);
+            Department::firstOrCreate(['id' => $dept['id']], $dept);
         }
 
     }

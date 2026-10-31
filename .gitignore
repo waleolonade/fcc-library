@@ -25,6 +25,7 @@ scratch/
 *.sqlite
 *.sqlite3
 backend/database/*.sqlite
+/gsashtub_brainfeels_library.sql
 
 # Archives & Staging
 *.zip

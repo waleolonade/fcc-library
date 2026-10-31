@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import { Award, CheckCircle2, AlertTriangle, Printer, ShieldCheck, Sparkles, FileText, Download } from 'lucide-react';
 import { INSTITUTION } from '../data/institutionalSeedData';
 
-export default function GraduationClearance({ user, loans }) {
+export default function GraduationClearance({ user = {}, loans = [] }) {
   const [clearanceGenerated, setClearanceGenerated] = useState(false);
 
-  const userLoans = loans.filter(l => l.matric === user.matric && l.status !== 'Returned');
-  const userFines = loans.filter(l => l.matric === user.matric).reduce((acc, l) => acc + (l.fine || 0), 0);
+  const safeLoans = Array.isArray(loans) ? loans : [];
+  const userLoans = safeLoans.filter(l => l.matric === user?.matric && l.status !== 'Returned');
+  const userFines = safeLoans.filter(l => l.matric === user?.matric).reduce((acc, l) => acc + (l.fine || 0), 0);
   const hasZeroLoans = userLoans.length === 0;
   const hasZeroFines = userFines === 0;
   const thesisDeposited = true; // Simulated institutional deposit verified

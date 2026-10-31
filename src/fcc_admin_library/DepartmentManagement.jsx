@@ -7,11 +7,18 @@ import {
 } from 'lucide-react';
 import { departmentService } from '../services/departmentService';
 import { sounds } from '../utils/soundEffects';
+import {
+  SOLID_COLOR_PALETTES,
+  getUsedDepartmentColors,
+  getAvailableDepartmentColor,
+  normalizeColorKey,
+  getDynamicDeptTheme
+} from '../hod/hodThemeConfig';
 
 export default function DepartmentManagement({ onSwitchToHodPortal }) {
   const [departments, setDepartments] = useState([]);
-  const [patrons, setPatrons] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFaculty, setSelectedFaculty] = useState('All');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -23,41 +30,32 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
   const [formData, setFormData] = useState({
     code: '',
     name: '',
-    faculty: 'School of Cooperative & Management Studies',
+    faculty: '',
     hod: '',
     hodEmail: '',
     hodPhone: '',
-    pin: '1234',
-    established: '2026',
+    pin: '',
+    established: '',
     color: 'emerald',
     studentCount: 0,
     description: ''
   });
 
-  // Fetch exclusively from backend database
+  // Fetch exclusively from backend database (MySQL `departments` table)
   const fetchDepartmentsFromBackend = async () => {
     setIsLoading(true);
+    setLoadError('');
     try {
-      const [resDepts, resPatrons] = await Promise.all([
-        fetch('/api/departments', { headers: { 'Accept': 'application/json' } }),
-        fetch('/api/patrons', { headers: { 'Accept': 'application/json' } })
-      ]);
-
-      if (resDepts.ok) {
-        const data = await resDepts.json();
-        if (Array.isArray(data)) {
-          setDepartments(data);
-        }
+      const resDepts = await fetch('/api/departments', { headers: { 'Accept': 'application/json' } });
+      if (!resDepts.ok) {
+        throw new Error(`Server responded with ${resDepts.status}`);
       }
-
-      if (resPatrons.ok) {
-        const pData = await resPatrons.json();
-        if (Array.isArray(pData)) {
-          setPatrons(pData);
-        }
-      }
+      const data = await resDepts.json();
+      setDepartments(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error('Error fetching departments and patrons from backend:', err);
+      console.error('Error fetching departments from backend:', err);
+      setDepartments([]);
+      setLoadError('Could not load departments from the database. Please refresh or check the server.');
     } finally {
       setIsLoading(false);
     }
@@ -68,7 +66,7 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
   }, []);
 
   const faculties = useMemo(() => {
-    const list = departments.map(d => d.faculty);
+    const list = departments.map(d => (d.faculty || '').trim()).filter(Boolean);
     return ['All', ...Array.from(new Set(list))];
   }, [departments]);
 
@@ -76,10 +74,10 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
     return departments.filter(d => {
       const q = searchQuery.toLowerCase().trim();
       const matchQ = !q ||
-        d.name.toLowerCase().includes(q) ||
-        d.code.toLowerCase().includes(q) ||
-        d.hod.toLowerCase().includes(q) ||
-        d.faculty.toLowerCase().includes(q);
+        (d.name || '').toLowerCase().includes(q) ||
+        (d.code || '').toLowerCase().includes(q) ||
+        (d.hod || d.hod_name || '').toLowerCase().includes(q) ||
+        (d.faculty || '').toLowerCase().includes(q);
       const matchF = selectedFaculty === 'All' || d.faculty === selectedFaculty;
       return matchQ && matchF;
     });
@@ -87,16 +85,17 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
 
   const handleOpenAddModal = () => {
     sounds.playClick();
+    const nextFreeColor = getAvailableDepartmentColor(departments);
     setFormData({
       code: '',
       name: '',
-      faculty: faculties[1] || 'School of Cooperative & Management Studies',
+      faculty: faculties[1] || '',
       hod: '',
       hodEmail: '',
       hodPhone: '',
-      pin: '1234',
+      pin: '',
       established: new Date().getFullYear().toString(),
-      color: 'emerald',
+      color: nextFreeColor,
       studentCount: 0,
       description: ''
     });
@@ -108,14 +107,14 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
     sounds.playClick();
     setEditingDept(dept);
     setFormData({
-      code: dept.code,
-      name: dept.name,
-      faculty: dept.faculty,
-      hod: dept.hod,
-      hodEmail: dept.hodEmail,
-      hodPhone: dept.hodPhone,
-      pin: dept.pin || '1234',
-      established: dept.established?.toString() || '1990',
+      code: dept.code || '',
+      name: dept.name || '',
+      faculty: dept.faculty || '',
+      hod: dept.hod || dept.hod_name || '',
+      hodEmail: dept.hodEmail || dept.hod_email || '',
+      hodPhone: dept.hodPhone || dept.hod_phone || '',
+      pin: dept.pin || dept.hod_pin || '',
+      established: dept.established?.toString() || '',
       color: dept.color || 'emerald',
       studentCount: dept.student_count ?? dept.studentCount ?? 0,
       description: dept.description || ''
@@ -125,9 +124,19 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
 
   const handleSaveDepartment = async (e) => {
     e.preventDefault();
-    if (!formData.code || !formData.name || !formData.hod) {
+    if (!formData.code || !formData.name || !formData.hod || (!editingDept && !formData.pin?.trim())) {
       setFeedbackType('error');
-      setFeedbackMsg('Department Code, Name, and Head of Department (HOD) are required.');
+      setFeedbackMsg('Department Code, Name, HOD Name, and HOD Security PIN are required.');
+      sounds.playErrorBuzz();
+      return;
+    }
+
+    const chosenColor = normalizeColorKey(formData.color);
+    const usedColors = getUsedDepartmentColors(departments, editingDept?.id || editingDept?.code);
+    if (usedColors[chosenColor]) {
+      const conflictDept = usedColors[chosenColor];
+      setFeedbackType('error');
+      setFeedbackMsg(`Color "${chosenColor}" is already assigned to Department ${conflictDept}. Each academic department must have a distinct solid color!`);
       sounds.playErrorBuzz();
       return;
     }
@@ -137,15 +146,15 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
       const payload = {
         name: formData.name.trim(),
         code: formData.code.toUpperCase().trim(),
-        faculty: formData.faculty?.trim() || 'School of Cooperative & Management Studies',
+        faculty: formData.faculty?.trim() || '',
         hod_name: formData.hod.trim(),
-        hod_email: formData.hodEmail?.trim() || `${formData.code.toLowerCase().trim()}.hod@fccibadan.edu.ng`,
-        hod_phone: formData.hodPhone?.trim() || '+234 800 000 0000',
-        hod_pin: formData.pin?.trim() || '1234',
+        hod_email: formData.hodEmail?.trim() || '',
+        hod_phone: formData.hodPhone?.trim() || '',
+        hod_pin: formData.pin?.trim() || (editingDept?.hod_pin || editingDept?.pin || ''),
         student_count: !isNaN(parsedStudents) && parsedStudents >= 0 ? parsedStudents : 0,
-        faculty_count: 8,
-        description: formData.description?.trim() || `Department offering accredited programmes in ${formData.name.trim()}.`,
-        established: formData.established?.toString().trim() || new Date().getFullYear().toString()
+        description: formData.description?.trim() || '',
+        established: formData.established?.toString().trim() || '',
+        color: chosenColor
       };
 
       let res;
@@ -210,104 +219,31 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
     }
   };
 
-  // Solid color themes per academic department (Pure vibrant solids)
-  const DEPARTMENT_THEMES = {
-    PAD: {
-      colorName: 'Ocean Teal',
-      solidHex: '#0d9488',
-      topBanner: 'bg-teal-500',
-      borderSolid: 'border-teal-500',
-      cardGlow: 'hover:shadow-teal-950/60 hover:shadow-2xl',
-      badge: 'bg-teal-950 text-teal-200 border-teal-500',
-      accentText: 'text-teal-400',
-      codeBadge: 'bg-teal-600 text-white border-teal-400 shadow-md shadow-teal-950',
-      btnSolid: 'bg-teal-600 hover:bg-teal-500 text-white shadow-lg shadow-teal-950',
-      avatarBg: 'bg-teal-600 text-white ring-teal-400',
-      statAccent: 'text-teal-400',
-      indicator: 'bg-teal-400',
-      cardBg: 'bg-slate-900'
-    },
-    CSC: {
-      colorName: 'Royal Blue',
-      solidHex: '#2563eb',
-      topBanner: 'bg-blue-600',
-      borderSolid: 'border-blue-500',
-      cardGlow: 'hover:shadow-blue-950/60 hover:shadow-2xl',
-      badge: 'bg-blue-950 text-blue-200 border-blue-500',
-      accentText: 'text-blue-400',
-      codeBadge: 'bg-blue-600 text-white border-blue-400 shadow-md shadow-blue-950',
-      btnSolid: 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-950',
-      avatarBg: 'bg-blue-600 text-white ring-blue-400',
-      statAccent: 'text-blue-400',
-      indicator: 'bg-blue-400',
-      cardBg: 'bg-slate-900'
-    },
-    CEM: {
-      colorName: 'Forest Emerald',
-      solidHex: '#059669',
-      topBanner: 'bg-emerald-600',
-      borderSolid: 'border-emerald-500',
-      cardGlow: 'hover:shadow-emerald-950/60 hover:shadow-2xl',
-      badge: 'bg-emerald-950 text-emerald-200 border-emerald-500',
-      accentText: 'text-emerald-400',
-      codeBadge: 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-950',
-      btnSolid: 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950',
-      avatarBg: 'bg-emerald-600 text-white ring-emerald-400',
-      statAccent: 'text-emerald-400',
-      indicator: 'bg-emerald-400',
-      cardBg: 'bg-slate-900'
-    },
-    BNF: {
-      colorName: 'Amber Gold',
-      solidHex: '#d97706',
-      topBanner: 'bg-amber-600',
-      borderSolid: 'border-amber-500',
-      cardGlow: 'hover:shadow-amber-950/60 hover:shadow-2xl',
-      badge: 'bg-amber-950 text-amber-200 border-amber-500',
-      accentText: 'text-amber-400',
-      codeBadge: 'bg-amber-600 text-white border-amber-400 shadow-md shadow-amber-950',
-      btnSolid: 'bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-950',
-      avatarBg: 'bg-amber-600 text-white ring-amber-400',
-      statAccent: 'text-amber-400',
-      indicator: 'bg-amber-400',
-      cardBg: 'bg-slate-900'
-    },
-    AGR: {
-      colorName: 'Violet Purple',
-      solidHex: '#7c3aed',
-      topBanner: 'bg-purple-600',
-      borderSolid: 'border-purple-500',
-      cardGlow: 'hover:shadow-purple-950/60 hover:shadow-2xl',
-      badge: 'bg-purple-950 text-purple-200 border-purple-500',
-      accentText: 'text-purple-400',
-      codeBadge: 'bg-purple-600 text-white border-purple-400 shadow-md shadow-purple-950',
-      btnSolid: 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-950',
-      avatarBg: 'bg-purple-600 text-white ring-purple-400',
-      statAccent: 'text-purple-400',
-      indicator: 'bg-purple-400',
-      cardBg: 'bg-slate-900'
-    },
-    BAM: {
-      colorName: 'Crimson Rose',
-      solidHex: '#e11d48',
-      topBanner: 'bg-rose-600',
-      borderSolid: 'border-rose-500',
-      cardGlow: 'hover:shadow-rose-950/60 hover:shadow-2xl',
-      badge: 'bg-rose-950 text-rose-200 border-rose-500',
-      accentText: 'text-rose-400',
-      codeBadge: 'bg-rose-600 text-white border-rose-400 shadow-md shadow-rose-950',
-      btnSolid: 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-950',
-      avatarBg: 'bg-rose-600 text-white ring-rose-400',
-      statAccent: 'text-rose-400',
-      indicator: 'bg-rose-400',
-      cardBg: 'bg-slate-900'
-    }
-  };
+  // Solid color themes per academic department (Dynamic pure vibrant solids)
+  const getDepartmentTheme = (deptOrCode) => {
+    const dept = typeof deptOrCode === 'object' && deptOrCode !== null ? deptOrCode : departments.find(d => d.code === deptOrCode);
+    const code = (dept?.code || (typeof deptOrCode === 'string' ? deptOrCode : '') || 'GEN').toUpperCase();
+    
+    // Resolve dynamic theme using database color or exclusive palette
+    const dyn = getDynamicDeptTheme(code, dept?.name, dept?.color, departments);
+    const palKey = dyn.colorKey || normalizeColorKey(dept?.color);
+    const pal = SOLID_COLOR_PALETTES[palKey] || SOLID_COLOR_PALETTES.emerald;
 
-  const getDepartmentTheme = (code) => {
-    const upper = (code || '').toUpperCase();
-    if (DEPARTMENT_THEMES[upper]) return DEPARTMENT_THEMES[upper];
-    return DEPARTMENT_THEMES.CEM;
+    return {
+      colorName: dyn.colorName || pal.name,
+      solidHex: dyn.solidPrimary || pal.solid,
+      topBanner: dyn.borderSolid ? dyn.borderSolid.replace('border-', 'bg-') : 'bg-emerald-600',
+      borderSolid: dyn.borderSolid || pal.border || 'border-emerald-500',
+      cardGlow: 'hover:shadow-2xl',
+      badge: dyn.badgeClass || pal.badge,
+      accentText: dyn.textAccent || pal.txt,
+      codeBadge: `${dyn.btnPrimary || pal.btn} border shadow-md`,
+      btnSolid: dyn.btnPrimary || pal.btn,
+      avatarBg: `${dyn.btnPrimary || pal.btn} ring-2 ring-white/20`,
+      statAccent: dyn.textAccent || pal.txt,
+      indicator: dyn.textAccent ? dyn.textAccent.replace('text-', 'bg-') : 'bg-emerald-400',
+      cardBg: 'bg-slate-900'
+    };
   };
 
   const getInitials = (name) => {
@@ -319,26 +255,13 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
-  const getDeptStudentCount = (dept) => {
-    if (patrons && patrons.length > 0) {
-      const dName = (dept.name || '').toLowerCase();
-      const dCode = (dept.code || '').toLowerCase();
-      const matched = patrons.filter(p => {
-        const pDept = (p.department || '').toLowerCase();
-        const pMat = (p.matric || '').toLowerCase();
-        return pDept.includes(dName) || dName.includes(pDept) || pDept.includes(dCode) || pMat.includes(`/${dCode}/`) || pMat.includes(dCode);
-      });
-      return matched.length;
-    }
-    return dept.student_count ?? dept.studentCount ?? 0;
-  };
+  // Student count is computed server-side from the live patrons table
+  const getDeptStudentCount = (dept) => Number(dept.student_count ?? dept.studentCount ?? 0) || 0;
 
-  const totalStudents = useMemo(() => {
-    if (patrons && patrons.length > 0) {
-      return patrons.length;
-    }
-    return departments.reduce((acc, d) => acc + (d.student_count ?? d.studentCount ?? 0), 0);
-  }, [patrons, departments]);
+  const totalStudents = useMemo(
+    () => departments.reduce((acc, d) => acc + getDeptStudentCount(d), 0),
+    [departments]
+  );
   const totalCourses = useMemo(() => departments.reduce((acc, d) => acc + (d.courses_count ?? d.coursesCount ?? 0), 0), [departments]);
   const totalTheses = useMemo(() => departments.reduce((acc, d) => acc + (d.theses_count ?? d.hndProjectsCount ?? 0), 0), [departments]);
 
@@ -467,25 +390,42 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
           <h4 className="text-base font-bold text-white">Fetching Registered Departments from Database...</h4>
           <p className="text-xs text-slate-400">Loading live academic units from backend database.</p>
         </div>
+      ) : loadError ? (
+        <div className="p-16 text-center rounded-3xl bg-slate-900 border border-rose-900/60 space-y-3">
+          <AlertCircle size={36} className="mx-auto text-rose-400" />
+          <h4 className="text-base font-bold text-white">Unable to Load Departments</h4>
+          <p className="text-xs text-slate-400 max-w-md mx-auto">{loadError}</p>
+          <button
+            onClick={fetchDepartmentsFromBackend}
+            className="mt-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold inline-flex items-center gap-1.5"
+          >
+            <RefreshCw size={13} /> Retry
+          </button>
+        </div>
       ) : filteredDepts.length === 0 ? (
         <div className="p-16 text-center rounded-3xl bg-slate-900 border border-slate-800 space-y-3">
           <Building2 size={36} className="mx-auto text-slate-600" />
-          <h4 className="text-base font-bold text-white">No Registered Departments Found in Database</h4>
+          <h4 className="text-base font-bold text-white">
+            {departments.length === 0 ? 'No Departments Registered Yet' : 'No Departments Match Your Search'}
+          </h4>
           <p className="text-xs text-slate-400 max-w-md mx-auto">
-            Only departments registered in the backend database will appear here. Click "Add New Department" above to register an academic department.
+            {departments.length === 0
+              ? 'Departments created by the Admin or Developer portal will appear here. Click "Add New Department" above to register one.'
+              : 'Try a different search term or faculty filter.'}
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredDepts.map(dept => {
-            const theme = getDepartmentTheme(dept.code);
+            const theme = getDepartmentTheme(dept);
             return (
               <div
                 key={dept.code}
-                className={`relative rounded-3xl bg-slate-900 border-2 ${theme.borderSolid} transition-all duration-300 shadow-2xl ${theme.cardGlow} hover:-translate-y-1.5 flex flex-col justify-between group overflow-hidden`}
+                style={{ borderColor: theme.solidHex }}
+                className={`relative rounded-3xl bg-slate-900 border-2 transition-all duration-300 shadow-2xl ${theme.cardGlow} hover:-translate-y-1.5 flex flex-col justify-between group overflow-hidden`}
               >
                 {/* Top Solid Color Header Bar */}
-                <div className={`h-2.5 w-full ${theme.topBanner}`} />
+                <div className="h-2.5 w-full" style={{ backgroundColor: theme.solidHex }} />
 
                 <div className="p-5 sm:p-6 space-y-4">
                   {/* Top Header: Code, Accreditation Badge, Established */}
@@ -498,13 +438,14 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
                       <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border flex items-center gap-1.5 ${theme.badge}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${theme.indicator} animate-pulse`} />
                         <span>{dept.status || 'Active'}</span>
-                        <span className="text-[9px] opacity-75">• NBTE</span>
                       </span>
                     </div>
-                    <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-[10px] font-mono text-slate-400">
-                      <Calendar size={11} className="text-slate-500" />
-                      <span>EST. {dept.established || '1990'}</span>
-                    </div>
+                    {dept.established && (
+                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-[10px] font-mono text-slate-400">
+                        <Calendar size={11} className="text-slate-500" />
+                        <span>EST. {dept.established}</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Title & School / Faculty */}
@@ -512,16 +453,20 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
                     <h3 className={`text-lg font-black text-white group-hover:${theme.accentText} transition-colors tracking-tight leading-snug`}>
                       {dept.name}
                     </h3>
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
-                      <Building2 size={13} className={`${theme.accentText} shrink-0`} />
-                      <span className="truncate">{dept.faculty}</span>
-                    </div>
+                    {dept.faculty && (
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
+                        <Building2 size={13} className={`${theme.accentText} shrink-0`} />
+                        <span className="truncate">{dept.faculty}</span>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Department Description Box */}
-                  <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/80 p-3 rounded-2xl border border-slate-800 line-clamp-2">
-                    {dept.description || `Accredited academic unit offering National Diploma (ND) and Higher National Diploma (HND) curricula in ${dept.name}.`}
-                  </p>
+                  {/* Department Description Box (only when stored in database) */}
+                  {dept.description && (
+                    <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/80 p-3 rounded-2xl border border-slate-800 line-clamp-2">
+                      {dept.description}
+                    </p>
+                  )}
 
                   {/* 3 Live Metrics: Students, Courses, Dissertations */}
                   <div className="grid grid-cols-3 gap-2.5 pt-1">
@@ -609,14 +554,16 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-bold text-white truncate">
-                          {dept.hod || dept.hod_name}
+                          {dept.hod || dept.hod_name || <span className="text-slate-500 italic font-medium">HOD not assigned</span>}
                         </div>
-                        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400 truncate">
-                          <span className="flex items-center gap-1 truncate" title={dept.hodEmail || dept.hod_email}>
-                            <Mail size={11} className="shrink-0 text-slate-500" />
-                            <span className="truncate">{dept.hodEmail || dept.hod_email}</span>
-                          </span>
-                        </div>
+                        {(dept.hodEmail || dept.hod_email) && (
+                          <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400 truncate">
+                            <span className="flex items-center gap-1 truncate" title={dept.hodEmail || dept.hod_email}>
+                              <Mail size={11} className="shrink-0 text-slate-500" />
+                              <span className="truncate">{dept.hodEmail || dept.hod_email}</span>
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -766,8 +713,8 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
                   <label className="text-slate-300 font-semibold block mb-1">HOD Portal PIN</label>
                   <input
                     type="text"
-                    maxLength={6}
-                    placeholder="1234"
+                    maxLength={10}
+                    placeholder="Set Security PIN"
                     value={formData.pin}
                     onChange={(e) => setFormData({ ...formData, pin: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
@@ -782,6 +729,72 @@ export default function DepartmentManagement({ onSwitchToHodPortal }) {
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1.5 flex items-center justify-between">
+                  <span>Department Solid Brand Color & Theme (Must Be Unique)</span>
+                  <span className="text-[10px] text-emerald-400 font-mono">1 Exclusive Color Per Dept</span>
+                </label>
+
+                {(() => {
+                  const usedColors = getUsedDepartmentColors(departments, editingDept?.id || editingDept?.code);
+                  const selectedColorKey = normalizeColorKey(formData.color);
+                  const isCurrentChosenUsed = usedColors[selectedColorKey];
+                  const paletteList = Object.values(SOLID_COLOR_PALETTES).filter(c => c.key && !['purple', 'red', 'mint', 'gold'].includes(c.key));
+
+                  return (
+                    <div className="space-y-2">
+                      {isCurrentChosenUsed && (
+                        <div className="p-2.5 rounded-xl bg-rose-950/70 border border-rose-700/80 text-rose-200 text-xs flex items-center gap-2">
+                          <AlertCircle size={15} className="text-rose-400 shrink-0" />
+                          <span>This solid color is already assigned to <strong>Department {isCurrentChosenUsed}</strong>. Each department must have a distinct color.</span>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-56 overflow-y-auto pr-1">
+                        {paletteList.map(c => {
+                          const isSelected = selectedColorKey === c.key;
+                          const occupiedBy = usedColors[c.key];
+
+                          return (
+                            <button
+                              key={c.key}
+                              type="button"
+                              onClick={() => {
+                                setFormData({ ...formData, color: c.key });
+                                if (occupiedBy) {
+                                  sounds.playErrorBuzz();
+                                } else {
+                                  sounds.playClick();
+                                }
+                              }}
+                              className={`flex items-center justify-between p-2 rounded-xl border text-xs font-semibold transition text-left cursor-pointer ${
+                                isSelected
+                                  ? 'border-emerald-400 bg-emerald-950/70 text-white shadow-md ring-1 ring-emerald-400'
+                                  : occupiedBy
+                                  ? 'border-slate-800/80 bg-slate-950/60 text-slate-500 hover:border-slate-700'
+                                  : 'border-slate-800 bg-slate-950 text-slate-300 hover:text-white hover:border-slate-600'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="w-3.5 h-3.5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: c.solid }} />
+                                <span className="truncate text-[11px]">{c.name}</span>
+                              </div>
+                              {occupiedBy ? (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 font-mono shrink-0 ml-1">
+                                  {occupiedBy}
+                                </span>
+                              ) : isSelected ? (
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div>

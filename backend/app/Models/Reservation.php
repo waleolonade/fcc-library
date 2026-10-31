@@ -7,16 +7,22 @@ use Illuminate\Database\Eloquent\Model;
 class Reservation extends Model
 {
     protected $table = 'reservations';
+    public $timestamps = false;
+    public $incrementing = false;
+    protected $keyType = 'string';
 
     protected $fillable = [
-        'user_identifier',
-        'user_name',
+        'id',
+        'matric',
+        'patron_name',
         'book_id',
         'book_title',
-        'reserved_from',
-        'reserved_to',
+        'call_number',
+        'reserved_date',
+        'expiry_date',
         'status',
-        'notes'
+        'pickup_branch',
+        'queue_position'
     ];
 
     public function book()

@@ -5,6 +5,7 @@ import {
   AlertTriangle, User, Database, Plus, Sparkles
 } from 'lucide-react';
 import { sounds } from '../utils/soundEffects';
+import { developerApiCall } from '../services/developerApi';
 
 export default function DeveloperAuditTrail({ passkey, showToast }) {
   const [logs, setLogs] = useState([]);
@@ -31,10 +32,10 @@ export default function DeveloperAuditTrail({ passkey, showToast }) {
       if (selectedRole !== 'all') params.append('role', selectedRole);
       params.append('limit', '100');
 
-      const res = await fetch(`/api/developer/audit-logs?${params.toString()}`, {
-        headers: { 'X-Developer-Passkey': passkey }
+      const res = await developerApiCall(`/api/developer/audit-logs?${params.toString()}`, {
+        passkey
       });
-      if (res.ok) {
+      if (res && res.ok) {
         const data = await res.json();
         if (data.logs) {
           setLogs(data.logs);
@@ -69,15 +70,13 @@ export default function DeveloperAuditTrail({ passkey, showToast }) {
   const handleCreateLog = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/developer/audit-logs', {
+      const res = await developerApiCall('/api/developer/audit-logs', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Developer-Passkey': passkey
-        },
-        body: JSON.stringify(newLogData)
+        passkey,
+        body: newLogData
       });
-      if (res.ok) {
+      if (res && res.ok) {
+
         sounds.playSuccessChime();
         showToast?.('Audit entry recorded into cryptographic security ledger.');
         setShowAddModal(false);

@@ -12,7 +12,10 @@ use App\Models\ExternalLink;
 use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Carbon\Carbon;
+use App\Services\MailNotificationService;
 
 class LibrarySystemController extends Controller
 {
@@ -124,35 +127,169 @@ class LibrarySystemController extends Controller
         }
     }
 
-    public function getAcquisitions()
+    public function getAcquisitions(Request $request)
     {
         try {
-            $acqs = DB::table('acquisitions')->orderBy('date_requested', 'desc')->get();
+            $query = DB::table('acquisitions');
+            if ($request->has('department') && $request->input('department') !== 'ALL') {
+                $query->where('department', $request->input('department'));
+            }
+            if ($request->has('status') && $request->input('status') !== 'ALL') {
+                $query->where('status', $request->input('status'));
+            }
+            $acqs = $query->orderBy('date_requested', 'desc')->get();
             return response()->json($acqs);
         } catch (\Exception $e) {
             return response()->json([]);
         }
     }
 
+    public function getAcquisitionsStats()
+    {
+        try {
+            $totalOrders = DB::table('acquisitions')->count();
+            $totalCommitted = floatval(DB::table('acquisitions')->sum('cost_estimate_ngn') ?: 0);
+            
+            $deliveredCost = floatval(DB::table('acquisitions')
+                ->where(function ($q) {
+                    $q->where('status', 'like', '%Delivered%')
+                      ->orWhere('status', 'Approved');
+                })
+                ->sum('cost_estimate_ngn') ?: 0);
+
+            $deliveredCount = DB::table('acquisitions')
+                ->where(function ($q) {
+                    $q->where('status', 'like', '%Delivered%')
+                      ->orWhere('status', 'Approved');
+                })
+                ->count();
+
+            $pendingCount = DB::table('acquisitions')
+                ->where(function ($q) {
+                    $q->where('status', 'Pending Dean Approval')
+                      ->orWhere('status', 'Under Review')
+                      ->orWhere('status', 'like', '%Review%')
+                      ->orWhere('status', 'like', '%Pending%');
+                })
+                ->count();
+
+            $highPriorityCount = DB::table('acquisitions')
+                ->where(function ($q) {
+                    $q->where('priority', 'High')
+                      ->orWhere('priority', 'Urgent')
+                      ->orWhere('priority', 'like', '%Accreditation%');
+                })
+                ->count();
+
+            $activeSerials = DB::table('serials')
+                ->where('subscription_status', 'like', '%Active%')
+                ->count();
+            $totalSerials = DB::table('serials')->count();
+
+            // Check budget allocation in library_settings
+            $budgetRow = DB::table('library_settings')
+                ->where('setting_key', 'acquisitions_budget_allocation')
+                ->first();
+            
+            if (!$budgetRow) {
+                try {
+                    DB::table('library_settings')->insert([
+                        'setting_key' => 'acquisitions_budget_allocation',
+                        'setting_value' => '15000000',
+                        'setting_group' => 'budget',
+                        'value_type' => 'number',
+                        'is_public' => 1,
+                        'description' => 'Annual Stacks Vote & Curriculum Acquisitions Allocation (NGN)',
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ]);
+                    $allocationBudget = 15000000;
+                } catch (\Exception $ex) {
+                    $allocationBudget = 15000000;
+                }
+            } else {
+                $allocationBudget = is_numeric($budgetRow->setting_value) ? floatval($budgetRow->setting_value) : 15000000;
+            }
+
+            $budgetUsedPercent = $allocationBudget > 0
+                ? min(100, round(($totalCommitted / $allocationBudget) * 100, 1))
+                : 0;
+
+            return response()->json([
+                'success' => true,
+                'stacks_vote_allocation' => $allocationBudget,
+                'budget_used_percent' => $budgetUsedPercent,
+                'committed_procurement' => $totalCommitted,
+                'total_requisitions' => $totalOrders,
+                'delivered_cataloged_cost' => $deliveredCost,
+                'delivered_cataloged_count' => $deliveredCount,
+                'pending_reviews_count' => $pendingCount,
+                'high_priority_count' => $highPriorityCount,
+                'active_serials_count' => $activeSerials,
+                'total_serials_count' => $totalSerials,
+                'updated_at' => now()->toIso8601String()
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function updateBudget(Request $request)
+    {
+        try {
+            $raw = $request->input('allocation_budget', $request->input('amount', 0));
+            $budget = is_numeric($raw) ? floatval($raw) : floatval(preg_replace('/[^0-9.]/', '', (string)$raw));
+            if ($budget <= 0) {
+                return response()->json(['error' => 'Please provide a valid budget allocation amount'], 422);
+            }
+
+            DB::table('library_settings')->updateOrInsert(
+                ['setting_key' => 'acquisitions_budget_allocation'],
+                [
+                    'setting_value' => (string)$budget,
+                    'setting_group' => 'budget',
+                    'value_type' => 'number',
+                    'is_public' => 1,
+                    'description' => 'Annual Stacks Vote & Curriculum Acquisitions Allocation (NGN)',
+                    'updated_at' => now(),
+                ]
+            );
+
+            return response()->json([
+                'success' => true,
+                'allocation_budget' => $budget,
+                'message' => 'Budget vote allocation updated successfully in database'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
     public function storeAcquisition(Request $request)
     {
         try {
-            $id = 'PO-' . date('Y') . '-' . str_pad(rand(1, 999), 3, '0', STR_PAD_LEFT);
+            $id = $request->input('id') ?: ('PO-' . date('Y') . '-' . str_pad(rand(1, 999), 3, '0', STR_PAD_LEFT));
+            $rawCost = $request->input('cost_estimate_ngn', $request->input('cost', 0));
+            // strip any currency symbols or commas if passed as string
+            $cost = is_numeric($rawCost) ? $rawCost : floatval(preg_replace('/[^0-9.]/', '', (string)$rawCost));
+
             DB::table('acquisitions')->insert([
                 'id'               => $id,
-                'title'            => $request->input('title', 'Untitled Request'),
-                'author'           => $request->input('author', 'Various'),
-                'publisher'        => $request->input('publisher', ''),
-                'isbn'             => $request->input('isbn', ''),
+                'title'            => trim((string)$request->input('title', '')),
+                'author'           => trim((string)$request->input('author', '')),
+                'publisher'        => trim((string)$request->input('publisher', '')),
+                'isbn'             => trim((string)$request->input('isbn', '')),
                 'department'       => $request->input('department', 'General'),
-                'requested_by'     => $request->input('requested_by', 'Library Admin'),
-                'requester_role'   => $request->input('requester_role', 'Admin'),
-                'cost_estimate_ngn'=> $request->input('cost', 0),
-                'copies_requested' => $request->input('copies', 1),
-                'status'           => 'Pending Dean Approval',
-                'date_requested'   => date('Y-m-d'),
-                'priority'         => $request->input('priority', 'High'),
-                'justification'    => $request->input('justification', 'Curriculum requirement'),
+                'requested_by'     => $request->input('requested_by', 'Library User'),
+                'requester_role'   => $request->input('requester_role', 'Staff'),
+                'cost_estimate_ngn'=> $cost,
+                'copies_requested' => max(1, intval($request->input('copies_requested', $request->input('copies', 1)))),
+                'status'           => $request->input('status', 'Pending Dean Approval'),
+                'date_requested'   => $request->input('date_requested', date('Y-m-d')),
+                'priority'         => $request->input('priority', 'Normal'),
+                'justification'    => trim((string)$request->input('justification', '')),
             ]);
             $acq = DB::table('acquisitions')->where('id', $id)->first();
             return response()->json(['success' => true, 'acquisition' => $acq], 201);
@@ -161,13 +298,327 @@ class LibrarySystemController extends Controller
         }
     }
 
+    public function updateAcquisitionStatus(Request $request, $id)
+    {
+        try {
+            $status = $request->input('status');
+            $notes = $request->input('notes', '');
+            
+            $acq = DB::table('acquisitions')->where('id', $id)->first();
+            if (!$acq) {
+                return response()->json(['error' => 'Acquisition order not found'], 404);
+            }
+
+            $updateData = ['status' => $status];
+            if ($notes) {
+                $updateData['justification'] = ($acq->justification ? $acq->justification . " | Note: " : "Note: ") . $notes;
+            }
+
+            DB::table('acquisitions')->where('id', $id)->update($updateData);
+
+            // If status is 'Delivered & Cataloged', check if the book already exists in books table; if not, auto-create catalog holding
+            if (($status === 'Delivered & Cataloged' || $status === 'Delivered') && $request->input('auto_catalog', true)) {
+                $copies = intval($acq->copies_requested ?: 1);
+                $existingBook = null;
+                if (!empty($acq->isbn)) {
+                    $existingBook = DB::table('books')->where('isbn', $acq->isbn)->first();
+                }
+                if (!$existingBook) {
+                    $existingBook = DB::table('books')->where('title', $acq->title)->first();
+                }
+
+                if ($existingBook) {
+                    DB::table('books')->where('id', $existingBook->id)->increment('copies_total', $copies);
+                    DB::table('books')->where('id', $existingBook->id)->increment('copies_available', $copies);
+                } else {
+                    DB::table('books')->insert([
+                        'title' => $acq->title,
+                        'author' => $acq->author ?: 'Academic Contributor',
+                        'isbn' => $acq->isbn ?: ('978-FCC-' . rand(10000, 99999)),
+                        'department' => $acq->department ?: 'General Studies & Reference',
+                        'publisher' => $acq->publisher ?: 'Federal Co-operative College Press',
+                        'year' => date('Y'),
+                        'shelf_location' => 'Main Stacks, Ingestion Bay',
+                        'copies_total' => $copies,
+                        'copies_available' => $copies,
+                        'format' => 'Physical Hardcover',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
+
+            $updated = DB::table('acquisitions')->where('id', $id)->first();
+            return response()->json(['success' => true, 'acquisition' => $updated]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function updateAcquisition(Request $request, $id)
+    {
+        try {
+            $acq = DB::table('acquisitions')->where('id', $id)->first();
+            if (!$acq) {
+                return response()->json(['error' => 'Acquisition order not found'], 404);
+            }
+
+            $data = [];
+            if ($request->has('title')) $data['title'] = $request->input('title');
+            if ($request->has('author')) $data['author'] = $request->input('author');
+            if ($request->has('publisher')) $data['publisher'] = $request->input('publisher');
+            if ($request->has('isbn')) $data['isbn'] = $request->input('isbn');
+            if ($request->has('department')) $data['department'] = $request->input('department');
+            if ($request->has('cost_estimate_ngn')) {
+                $rawCost = $request->input('cost_estimate_ngn');
+                $data['cost_estimate_ngn'] = is_numeric($rawCost) ? $rawCost : floatval(preg_replace('/[^0-9.]/', '', (string)$rawCost));
+            } elseif ($request->has('cost')) {
+                $rawCost = $request->input('cost');
+                $data['cost_estimate_ngn'] = is_numeric($rawCost) ? $rawCost : floatval(preg_replace('/[^0-9.]/', '', (string)$rawCost));
+            }
+            if ($request->has('copies_requested')) $data['copies_requested'] = intval($request->input('copies_requested'));
+            if ($request->has('copies')) $data['copies_requested'] = intval($request->input('copies'));
+            if ($request->has('priority')) $data['priority'] = $request->input('priority');
+            if ($request->has('status')) $data['status'] = $request->input('status');
+            if ($request->has('justification')) $data['justification'] = $request->input('justification');
+            if ($request->has('requested_by')) $data['requested_by'] = $request->input('requested_by');
+            if ($request->has('date_requested')) $data['date_requested'] = $request->input('date_requested');
+
+            if (!empty($data)) {
+                DB::table('acquisitions')->where('id', $id)->update($data);
+            }
+
+            $updated = DB::table('acquisitions')->where('id', $id)->first();
+            return response()->json(['success' => true, 'acquisition' => $updated]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function deleteAcquisition($id)
+    {
+        try {
+            DB::table('acquisitions')->where('id', $id)->delete();
+            return response()->json(['success' => true, 'message' => 'Acquisition order deleted successfully']);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
     public function getSerials()
     {
         try {
-            $serials = DB::table('serials')->get();
+            $serials = DB::table('serials')->orderBy('id', 'asc')->get();
             return response()->json($serials);
         } catch (\Exception $e) {
             return response()->json([]);
+        }
+    }
+
+    public function storeSerial(Request $request)
+    {
+        try {
+            $id = $request->input('id') ?: ('SER-' . str_pad(rand(10, 999), 3, '0', STR_PAD_LEFT));
+            DB::table('serials')->insert([
+                'id'                  => $id,
+                'title'               => trim((string)$request->input('title', '')),
+                'issn'                => trim((string)$request->input('issn', '')),
+                'publisher'           => trim((string)$request->input('publisher', '')),
+                'frequency'           => $request->input('frequency', 'Quarterly'),
+                'department'          => $request->input('department', 'General'),
+                'latest_volume'       => trim((string)$request->input('latest_volume', '')),
+                'latest_issue'        => trim((string)$request->input('latest_issue', '')),
+                'holding_summary'     => trim((string)$request->input('holding_summary', '')),
+                'subscription_status' => $request->input('subscription_status', 'Active Subscription'),
+            ]);
+            $serial = DB::table('serials')->where('id', $id)->first();
+            return response()->json(['success' => true, 'serial' => $serial], 201);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function updateSerial(Request $request, $id)
+    {
+        try {
+            $serial = DB::table('serials')->where('id', $id)->first();
+            if (!$serial) {
+                return response()->json(['error' => 'Serial subscription not found'], 404);
+            }
+
+            $data = [];
+            if ($request->has('title')) $data['title'] = $request->input('title');
+            if ($request->has('issn')) $data['issn'] = $request->input('issn');
+            if ($request->has('publisher')) $data['publisher'] = $request->input('publisher');
+            if ($request->has('frequency')) $data['frequency'] = $request->input('frequency');
+            if ($request->has('department')) $data['department'] = $request->input('department');
+            if ($request->has('latest_volume')) $data['latest_volume'] = $request->input('latest_volume');
+            if ($request->has('latest_issue')) $data['latest_issue'] = $request->input('latest_issue');
+            if ($request->has('holding_summary')) $data['holding_summary'] = $request->input('holding_summary');
+            if ($request->has('subscription_status')) $data['subscription_status'] = $request->input('subscription_status');
+
+            if (!empty($data)) {
+                DB::table('serials')->where('id', $id)->update($data);
+            }
+            $updated = DB::table('serials')->where('id', $id)->first();
+            return response()->json(['success' => true, 'serial' => $updated]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function deleteSerial($id)
+    {
+        try {
+            DB::table('serials')->where('id', $id)->delete();
+            return response()->json(['success' => true, 'message' => 'Serial subscription deleted successfully']);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function getVendors()
+    {
+        try {
+            if (!Schema::hasTable('library_vendors')) {
+                Schema::create('library_vendors', function ($table) {
+                    $table->increments('id');
+                    $table->string('name');
+                    $table->string('location')->nullable();
+                    $table->string('contact')->nullable();
+                    $table->string('email')->nullable();
+                    $table->string('specialty')->nullable();
+                    $table->string('rating')->default('Tier-1 Approved');
+                    $table->string('status')->default('active');
+                    $table->timestamps();
+                });
+
+                DB::table('library_vendors')->insert([
+                    [
+                        'name' => 'University Press Plc',
+                        'location' => 'Three Crowns Building, Jericho, Ibadan',
+                        'contact' => '+234 803 322 1190',
+                        'email' => 'orders@universitypressplc.com',
+                        'specialty' => 'Academic Monographs, Curriculum Textbooks',
+                        'rating' => 'Tier-1 Approved',
+                        'status' => 'active',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ],
+                    [
+                        'name' => 'CSS Bookshops Ltd',
+                        'location' => '50/52 Broad Street, Lagos Island',
+                        'contact' => '+234 802 314 5599',
+                        'email' => 'acquisitions@cssbookshops.com',
+                        'specialty' => 'Technical, Computing & Reference Libraries',
+                        'rating' => 'Tier-1 Approved',
+                        'status' => 'active',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ],
+                    [
+                        'name' => 'Spectrum Books Ltd',
+                        'location' => 'Spectrum House, Ring Road, Ibadan',
+                        'contact' => '+234 805 510 4488',
+                        'email' => 'procurement@spectrumbooksonline.com',
+                        'specialty' => 'Cooperative Studies, Banking & Management',
+                        'rating' => 'Tier-1 Approved',
+                        'status' => 'active',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ],
+                    [
+                        'name' => 'Pearson Education Africa',
+                        'location' => 'Victoria Island, Lagos / London UK',
+                        'contact' => '+44 20 7010 2000',
+                        'email' => 'highered.africa@pearson.com',
+                        'specialty' => 'International Accredited Curriculum Texts',
+                        'rating' => 'Global Consortia Partner',
+                        'status' => 'active',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ],
+                    [
+                        'name' => 'Federal Co-operative College Academic Press',
+                        'location' => 'Campus Directorate of Publications, Eleyele, Ibadan',
+                        'contact' => '+234 806 165 7738',
+                        'email' => 'press@fccibadan.edu.ng',
+                        'specialty' => 'Institutional Journals, Lecture Handouts & Research Monographs',
+                        'rating' => 'Internal Press',
+                        'status' => 'active',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ],
+                ]);
+            }
+
+            $vendors = DB::table('library_vendors')->orderBy('name', 'asc')->get();
+            return response()->json($vendors);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function storeVendor(Request $request)
+    {
+        try {
+            $name = trim((string)$request->input('name'));
+            if (!$name) {
+                return response()->json(['error' => 'Vendor name is required'], 422);
+            }
+
+            $id = DB::table('library_vendors')->insertGetId([
+                'name' => $name,
+                'location' => $request->input('location', ''),
+                'contact' => $request->input('contact', ''),
+                'email' => $request->input('email', ''),
+                'specialty' => $request->input('specialty', ''),
+                'rating' => $request->input('rating', 'Tier-1 Approved'),
+                'status' => $request->input('status', 'active'),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $vendor = DB::table('library_vendors')->where('id', $id)->first();
+            return response()->json(['success' => true, 'vendor' => $vendor], 201);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function updateVendor(Request $request, $id)
+    {
+        try {
+            $vendor = DB::table('library_vendors')->where('id', $id)->first();
+            if (!$vendor) {
+                return response()->json(['error' => 'Vendor not found'], 404);
+            }
+
+            $data = [];
+            if ($request->has('name')) $data['name'] = $request->input('name');
+            if ($request->has('location')) $data['location'] = $request->input('location');
+            if ($request->has('contact')) $data['contact'] = $request->input('contact');
+            if ($request->has('email')) $data['email'] = $request->input('email');
+            if ($request->has('specialty')) $data['specialty'] = $request->input('specialty');
+            if ($request->has('rating')) $data['rating'] = $request->input('rating');
+            if ($request->has('status')) $data['status'] = $request->input('status');
+            $data['updated_at'] = now();
+
+            DB::table('library_vendors')->where('id', $id)->update($data);
+            $updated = DB::table('library_vendors')->where('id', $id)->first();
+            return response()->json(['success' => true, 'vendor' => $updated]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function deleteVendor($id)
+    {
+        try {
+            DB::table('library_vendors')->where('id', $id)->delete();
+            return response()->json(['success' => true, 'message' => 'Vendor removed from database']);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 
@@ -348,6 +799,28 @@ class LibrarySystemController extends Controller
         );
 
         $record = DB::table('continue_reading')->where('matric', $matric)->where('book_id', $bookId)->first();
+
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("
+                    INSERT INTO continue_reading (id, matric, book_id, title, author, last_page, total_pages, progress, last_opened, updated_at)
+                    VALUES (:id, :matric, :book_id, :title, :author, :last_page, :total_pages, :progress, NOW(), NOW())
+                    ON DUPLICATE KEY UPDATE last_page = VALUES(last_page), total_pages = VALUES(total_pages), progress = VALUES(progress), last_opened = NOW(), updated_at = NOW()
+                ");
+                $st->execute([
+                    ':id' => $id,
+                    ':matric' => $matric,
+                    ':book_id' => $bookId,
+                    ':title' => $title,
+                    ':author' => $author,
+                    ':last_page' => $page,
+                    ':total_pages' => $totalPages,
+                    ':progress' => $progress
+                ]);
+            }
+        } catch (\Throwable $e) {}
+
         return response()->json(['success' => true, 'record' => $record]);
     }
 
@@ -373,21 +846,47 @@ class LibrarySystemController extends Controller
         $roomName = $request->input('roomName', $request->input('room_name', 'Research Carrel 1'));
         $date = $request->input('date', date('Y-m-d'));
         $timeSlot = $request->input('timeSlot', $request->input('time_slot', '10:00 AM - 12:00 PM'));
+        $duration = (int)$request->input('duration', 2);
+        $purpose = $request->input('purpose', 'Academic Research & Study');
+        $branch = $request->input('branch', 'Main Campus Library');
+        $checkInCode = strtoupper(Str::random(6));
 
         DB::table('room_bookings')->insert([
             'id' => $id,
             'matric' => $matric,
             'room_id' => $roomId,
             'room_name' => $roomName,
-            'branch' => $request->input('branch', 'Main Campus Library'),
+            'branch' => $branch,
             'date' => $date,
             'time_slot' => $timeSlot,
-            'duration_hours' => (int)$request->input('duration', 2),
-            'purpose' => $request->input('purpose', 'Academic Research & Study'),
+            'duration_hours' => $duration,
+            'purpose' => $purpose,
             'status' => 'Confirmed',
-            'check_in_code' => strtoupper(Str::random(6)),
+            'check_in_code' => $checkInCode,
             'created_at' => Carbon::now(),
         ]);
+
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("
+                    INSERT INTO room_bookings (id, matric, room_id, room_name, branch, date, time_slot, duration_hours, purpose, status, check_in_code, created_at)
+                    VALUES (:id, :matric, :room_id, :room_name, :branch, :date, :time_slot, :duration, :purpose, 'Confirmed', :code, NOW())
+                ");
+                $st->execute([
+                    ':id' => $id,
+                    ':matric' => $matric,
+                    ':room_id' => $roomId,
+                    ':room_name' => $roomName,
+                    ':branch' => $branch,
+                    ':date' => $date,
+                    ':time_slot' => $timeSlot,
+                    ':duration' => $duration,
+                    ':purpose' => $purpose,
+                    ':code' => $checkInCode
+                ]);
+            }
+        } catch (\Throwable $e) {}
 
         $booking = DB::table('room_bookings')->where('id', $id)->first();
         return response()->json(['success' => true, 'booking' => $booking], 201);
@@ -396,6 +895,15 @@ class LibrarySystemController extends Controller
     public function cancelRoomBooking($id)
     {
         DB::table('room_bookings')->where('id', $id)->update(['status' => 'Cancelled']);
+
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("UPDATE room_bookings SET status = 'Cancelled' WHERE id = :id");
+                $st->execute([':id' => $id]);
+            }
+        } catch (\Throwable $e) {}
+
         return response()->json(['success' => true, 'message' => "Booking {$id} cancelled."]);
     }
 
@@ -435,6 +943,26 @@ class LibrarySystemController extends Controller
             'updated_at' => Carbon::now(),
         ]);
 
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("
+                    INSERT INTO reading_lists (id, matric, title, description, is_public, item_count, items, created_at, updated_at)
+                    VALUES (:id, :matric, :title, :description, :is_public, :item_count, :items, NOW(), NOW())
+                    ON DUPLICATE KEY UPDATE title = VALUES(title), items = VALUES(items), item_count = VALUES(item_count), updated_at = NOW()
+                ");
+                $st->execute([
+                    ':id' => $id,
+                    ':matric' => $matric,
+                    ':title' => $title,
+                    ':description' => $request->input('description', ''),
+                    ':is_public' => $request->boolean('is_public') ? 1 : 0,
+                    ':item_count' => count($items),
+                    ':items' => json_encode($items)
+                ]);
+            }
+        } catch (\Throwable $e) {}
+
         $list = DB::table('reading_lists')->where('id', $id)->first();
         if ($list) {
             $list->items = json_decode($list->items, true);
@@ -446,21 +974,286 @@ class LibrarySystemController extends Controller
     {
         DB::table('reading_lists')->where('id', $id)->delete();
         DB::table('reading_list_items')->where('reading_list_id', $id)->delete();
+
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("DELETE FROM reading_lists WHERE id = :id");
+                $st->execute([':id' => $id]);
+            }
+        } catch (\Throwable $e) {}
+
         return response()->json(['success' => true, 'message' => "Reading list {$id} deleted."]);
     }
 
     // -------------------------------------------------------------
-    // Notifications & Announcements
+    // Notifications & Announcements (User-Scoped & Role-Aware)
     // -------------------------------------------------------------
     public function getNotifications(Request $request)
     {
-        $matric = $request->query('matric');
+        $matric = trim((string)$request->query('matric', ''));
+        $email = trim((string)$request->query('email', ''));
+        $userId = trim((string)$request->query('user_id', ''));
+        $role = strtolower(trim((string)$request->query('role', '')));
+        $deptCode = strtoupper(trim((string)$request->query('department_code', '')));
+
+        $identifiers = array_values(array_unique(array_filter([
+            $matric,
+            $email,
+            $userId,
+            $deptCode ? "HOD/{$deptCode}/001" : '',
+            $deptCode ? "hod_" . strtolower($deptCode) : '',
+            $role ? "role:{$role}" : ''
+        ])));
+
         $query = DB::table('notifications');
-        if (!empty($matric)) {
-            $query->where('matric', 'like', "%{$matric}%");
+
+        if (!empty($identifiers)) {
+            $query->where(function($q) use ($identifiers) {
+                foreach ($identifiers as $idVal) {
+                    $q->orWhere('matric', $idVal)
+                      ->orWhere('matric', 'like', "%{$idVal}%");
+                }
+                // Include general/global announcements, but never leak another user's login_security alert
+                $q->orWhere(function($sub) {
+                    $sub->where('type', '!=', 'login_security')
+                        ->where(function($g) {
+                            $g->where('matric', 'all')
+                              ->orWhere('matric', 'global')
+                              ->orWhereNull('matric')
+                              ->orWhere('matric', '');
+                        });
+                });
+            });
+        } else {
+            // Unauthenticated or unspecified query: only return public/global announcements
+            $query->where('type', '!=', 'login_security')
+                  ->where(function($g) {
+                      $g->where('matric', 'all')
+                        ->orWhere('matric', 'global')
+                        ->orWhereNull('matric')
+                        ->orWhere('matric', '');
+                  });
         }
-        $notifications = $query->orderBy('date', 'desc')->get();
+
+        $notifications = $query->orderBy('date', 'desc')->limit(60)->get();
         return response()->json($notifications);
+    }
+
+    public function storeNotification(Request $request)
+    {
+        $matric = trim((string)$request->input('matric', ''));
+        $title = trim((string)$request->input('title', ''));
+        $message = trim((string)$request->input('message', ''));
+        $type = trim((string)$request->input('type', 'general'));
+        $actionUrl = $request->input('action_url', null);
+        $sendEmail = $request->boolean('send_email', true);
+        $targetEmail = trim((string)$request->input('email', ''));
+        $recipientName = trim((string)$request->input('name', 'Scholar'));
+
+        if (empty($title) || empty($message)) {
+            return response()->json(['success' => false, 'error' => 'Title and message are required.'], 422);
+        }
+
+        // Find patron email if not supplied
+        if (empty($targetEmail) && !empty($matric)) {
+            $patron = Patron::where('matric', $matric)->orWhere('barcode', $matric)->first();
+            if ($patron) {
+                $targetEmail = $patron->email ?: '';
+                if ($recipientName === 'Scholar' && !empty($patron->name)) {
+                    $recipientName = $patron->name;
+                }
+            }
+        }
+
+        $id = 'NOTIF-' . strtoupper(Str::random(10));
+        $nowDate = Carbon::now('Africa/Lagos')->toIso8601String();
+
+        DB::table('notifications')->insert([
+            'id' => $id,
+            'matric' => $matric ?: null,
+            'type' => $type,
+            'title' => $title,
+            'message' => $message,
+            'date' => $nowDate,
+            'read' => 0,
+            'action_url' => $actionUrl
+        ]);
+
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $stmt = $pdo->prepare("
+                    INSERT INTO notifications (id, matric, type, title, message, date, `read`, action_url)
+                    VALUES (:id, :matric, :type, :title, :message, :date, :read, :action_url)
+                    ON DUPLICATE KEY UPDATE
+                    matric = VALUES(matric), type = VALUES(type), title = VALUES(title), message = VALUES(message), date = VALUES(date), `read` = VALUES(`read`), action_url = VALUES(action_url)
+                ");
+                $stmt->execute([
+                    ':id' => $id,
+                    ':matric' => $matric ?: null,
+                    ':type' => $type,
+                    ':title' => $title,
+                    ':message' => $message,
+                    ':date' => $nowDate,
+                    ':read' => 0,
+                    ':action_url' => $actionUrl
+                ]);
+            }
+        } catch (\Throwable $th) {}
+
+        $emailRes = null;
+        if ($sendEmail && !empty($targetEmail)) {
+            $emailRes = MailNotificationService::sendPatronNotificationEmail(
+                $targetEmail,
+                $recipientName,
+                $title,
+                $message,
+                $type,
+                $actionUrl
+            );
+        }
+
+        return response()->json([
+            'success' => true,
+            'id' => $id,
+            'notification' => [
+                'id' => $id,
+                'matric' => $matric,
+                'type' => $type,
+                'title' => $title,
+                'message' => $message,
+                'date' => $nowDate,
+                'read' => 0,
+                'action_url' => $actionUrl
+            ],
+            'email_sent' => (bool)($emailRes['sent'] ?? false),
+            'email_result' => $emailRes
+        ]);
+    }
+
+    public function markNotificationRead(Request $request, $id)
+    {
+        if ($id === 'all') {
+            $matric = $request->input('matric');
+            $query = DB::table('notifications');
+            if (!empty($matric)) {
+                $query->where('matric', $matric);
+            }
+            $query->update(['read' => 1]);
+
+            try {
+                $pdo = \App\Services\DatabaseService::getPdo();
+                if ($pdo) {
+                    if (!empty($matric)) {
+                        $stmt = $pdo->prepare("UPDATE notifications SET `read` = 1 WHERE matric = :matric OR matric LIKE :mLike");
+                        $stmt->execute([':matric' => $matric, ':mLike' => "%{$matric}%"]);
+                    } else {
+                        $pdo->exec("UPDATE notifications SET `read` = 1");
+                    }
+                }
+            } catch (\Throwable $th) {}
+
+            return response()->json(['success' => true, 'message' => 'All notifications marked as read']);
+        }
+
+        DB::table('notifications')->where('id', $id)->update(['read' => 1]);
+
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $stmt = $pdo->prepare("UPDATE notifications SET `read` = 1 WHERE id = :id");
+                $stmt->execute([':id' => $id]);
+            }
+        } catch (\Throwable $th) {}
+
+        return response()->json(['success' => true, 'message' => 'Notification marked as read']);
+    }
+
+    public function clearNotifications(Request $request)
+    {
+        $id = $request->input('id');
+        $matric = $request->input('matric');
+
+        if (!empty($id)) {
+            DB::table('notifications')->where('id', $id)->delete();
+            try {
+                $pdo = \App\Services\DatabaseService::getPdo();
+                if ($pdo) {
+                    $stmt = $pdo->prepare("DELETE FROM notifications WHERE id = :id");
+                    $stmt->execute([':id' => $id]);
+                }
+            } catch (\Throwable $th) {}
+            return response()->json(['success' => true, 'message' => 'Notification deleted']);
+        }
+
+        if (!empty($matric)) {
+            DB::table('notifications')->where('matric', $matric)->delete();
+            try {
+                $pdo = \App\Services\DatabaseService::getPdo();
+                if ($pdo) {
+                    $stmt = $pdo->prepare("DELETE FROM notifications WHERE matric = :matric OR matric LIKE :mLike");
+                    $stmt->execute([':matric' => $matric, ':mLike' => "%{$matric}%"]);
+                }
+            } catch (\Throwable $th) {}
+            return response()->json(['success' => true, 'message' => 'User notifications cleared']);
+        }
+
+        return response()->json(['success' => false, 'error' => 'Specify notification id or patron matric.'], 422);
+    }
+
+    // -------------------------------------------------------------
+    // Live Server Mail (cPanel SMTP) Configuration & Diagnostics
+    // -------------------------------------------------------------
+    public function getMailConfig()
+    {
+        $cfg = MailNotificationService::getMailConfig();
+        $hasPass = !empty($cfg['password']);
+        $cfg['password_set'] = $hasPass;
+        $cfg['password'] = $hasPass ? '••••••••••••' : '';
+
+        return response()->json([
+            'success' => true,
+            'config' => $cfg
+        ]);
+    }
+
+    public function updateMailConfig(Request $request)
+    {
+        $keys = [
+            'mail_smtp_host'       => $request->input('host'),
+            'mail_smtp_port'       => $request->input('port'),
+            'mail_smtp_username'   => $request->input('username'),
+            'mail_smtp_encryption' => $request->input('encryption'),
+            'mail_from_address'    => $request->input('from_email')
+        ];
+
+        $newPass = $request->input('password');
+        if (!empty($newPass) && !str_contains($newPass, '••••')) {
+            $keys['mail_smtp_password'] = $newPass;
+        }
+
+        foreach ($keys as $k => $v) {
+            if ($v !== null) {
+                DB::table('library_settings')->updateOrInsert(
+                    ['setting_key' => $k],
+                    ['setting_value' => (string)$v, 'updated_at' => Carbon::now()]
+                );
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Institutional cPanel server mail settings updated successfully in database.',
+            'config' => MailNotificationService::getMailConfig()
+        ]);
+    }
+
+    public function sendTestMail(Request $request)
+    {
+        $recipient = trim((string)$request->input('recipient', ''));
+        $result = MailNotificationService::testSmtpConnection($recipient ?: null);
+        return response()->json($result);
     }
 
     public function getAnnouncements()

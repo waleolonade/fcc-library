@@ -1,14 +1,54 @@
-import React, { useState, useEffect } from 'react';
 import {
-  Layers, CheckCircle, XCircle, Clock, AlertTriangle, BookOpen,
-  Send, Eye, RefreshCw, Filter, Sparkles, ShieldCheck, Tag, MapPin,
-  UserPlus, Building2, Users, GraduationCap, Mail, Key, Edit3,
-  Trash2, Plus, Search, X, ChevronRight, ChevronLeft, Award, Check, Bookmark, FileText, Download, ExternalLink,
-  Maximize2, Minimize2, Save, Undo, UploadCloud, ChevronDown, CheckCircle2, Sliders, Moon, Sun, Coffee
+  AlertTriangle,
+  Award,
+  Bookmark,
+  BookOpen,
+  Building2,
+  Check,
+  CheckCircle,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Coffee,
+  Download,
+  Edit3,
+  ExternalLink,
+  Eye,
+  FileText,
+  GraduationCap,
+  Key,
+  Layers,
+  Mail,
+  MapPin,
+  Maximize2,
+  Moon,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Sun,
+  Tag,
+  Trash2,
+  UploadCloud,
+  UserPlus,
+  X,
+  XCircle,
+  Zap
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import DigitalBookReader from '../common/DigitalBookReader';
 import { departmentService } from '../services/departmentService';
 import { sounds } from '../utils/soundEffects';
-import DigitalBookReader from '../common/DigitalBookReader';
+import { getApiBase } from '../api/libraryApi';
+import {
+  SOLID_COLOR_PALETTES,
+  getUsedDepartmentColors,
+  getAvailableDepartmentColor,
+  normalizeColorKey,
+  getDynamicDeptTheme
+} from '../hod/hodThemeConfig';
 
 export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
   // Main View: 'submissions' | 'departments'
@@ -17,11 +57,16 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
   // Submissions State
   const [uploads, setUploads] = useState([]);
   const [isLoadingUploads, setIsLoadingUploads] = useState(false);
-  const [activeTabFilter, setActiveTabFilter] = useState('pending'); // 'pending' | 'approved' | 'rejected' | 'all'
+  const [activeTabFilter, setActiveTabFilter] = useState('all'); // 'pending' | 'approved' | 'rejected' | 'all'
+  const [hasUserChangedTab, setHasUserChangedTab] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState('all'); // 'all' | 'book' | 'journal' | 'project'
   const [selectedUploadForReview, setSelectedUploadForReview] = useState(null);
   const [showDeclinePrompt, setShowDeclinePrompt] = useState(false);
   const [declineReason, setDeclineReason] = useState('');
+
+  // Institutional Publishing Workflow Mode: 'approval' (Central Library Admin Review) vs 'direct' (Direct Publish to Students)
+  const [publishingMode, setPublishingMode] = useState('approval');
+  const [isTogglingPublishingMode, setIsTogglingPublishingMode] = useState(false);
 
   // Departments & HODs State
   const [departments, setDepartments] = useState([]);
@@ -36,10 +81,11 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
     code: '',
     hod_name: '',
     hod_email: '',
-    hod_pin: '1234',
+    hod_pin: '',
     faculty: 'School of Academic & Professional Studies',
     student_count: 0,
-    faculty_count: 8
+    faculty_count: 8,
+    color: 'emerald'
   });
 
   // Review Form in Modal
@@ -57,6 +103,10 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
   const [readerTheme, setReaderTheme] = useState('dark'); // 'dark' | 'sepia' | 'light'
   const [showFullReader, setShowFullReader] = useState(false);
   const [isSavingModifications, setIsSavingModifications] = useState(false);
+  const [isSyncingFromCloud, setIsSyncingFromCloud] = useState(false);
+  const [isApprovingAll, setIsApprovingAll] = useState(false);
+  const [selectedUploadIds, setSelectedUploadIds] = useState(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [reviewChecklist, setReviewChecklist] = useState({
     authorship: true,
     syllabus: true,
@@ -103,85 +153,225 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
     setTimeout(() => setFeedbackMsg({ type: '', text: '' }), 5000);
   };
 
-  // Legacy demo IDs and titles to purge permanently
-  const DEMO_UPLOAD_IDS = [
-    'HOD-UP-001', 'HOD-UP-002', 'HOD-UP-003', 'HOD-UP-004',
-    'FCC-HOD-CSC-001', 'FCC-HOD-CSC-PRJ', 'FCC-HOD-CSC-JRN',
-    'FCC-HOD-CEM-001', 'FCC-HOD-CEM-PRJ',
-    'FCC-HOD-BNF-001', 'FCC-HOD-BNF-PRJ',
-    'FCC-HOD-AGR-001'
-  ];
-  const isDemoUpload = (u) => {
-    if (!u) return false;
-    if (DEMO_UPLOAD_IDS.includes(u.id)) return true;
-    const callNum = String(u.callNumber || u.call_number || u.assigned_call_number || '');
-    if (['QA76.9 .O46 2024', 'TH-CSC-2024-001', 'JRN-CSC-VOL14'].includes(callNum)) return true;
-    const title = (u.title || '').toLowerCase();
-    if (title.includes('cooperative econometrics past examination')) return true;
-    if (title.includes('distributed multi-cloud systems')) return true;
-    if (title.includes('autonomous multi-agent citation resolution')) return true;
-    if (title.includes('west african journal of applied computer science')) return true;
-    if (title.includes('soil nitrogen dynamics & cocoa harvest')) return true;
-    if (title.includes('modern micro-credit lending & syndicate')) return true;
-    if (title.includes('vector indexing lab handout')) return true;
-    return false;
-  };
+  // Validate valid record entity from database
+  const isGenuineUpload = (u) => Boolean(u && u.id);
 
-  // 1. Fetch Submissions Live from Backend Database
+  // 1. Fetch Submissions Live from Backend Database (MySQL & SQLite)
   const fetchUploads = async () => {
     setIsLoadingUploads(true);
-    // Purge any legacy mock submissions from local storage caches
     try {
-      ['fcc_pending_department_uploads', 'fcc_hod_submissions_v48'].forEach(k => {
-        const raw = localStorage.getItem(k);
+      const base = getApiBase();
+      let res;
+      try {
+        res = await fetch(`${base}/department-uploads`, { headers: { 'Accept': 'application/json' } });
+      } catch (err) {
+        if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+          try {
+            res = await fetch(`${window.location.protocol}//${window.location.hostname}:8000/api/department-uploads`, { headers: { 'Accept': 'application/json' } });
+          } catch (e2) {}
+        }
+      }
+
+      if (res && res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setUploads(data);
+          try {
+            localStorage.setItem('fcc_pending_department_uploads', JSON.stringify(data));
+          } catch (e) {}
+
+          if (!hasUserChangedTab) {
+            const hasPending = data.some(u => u.status === 'pending');
+            setActiveTabFilter(hasPending ? 'pending' : 'all');
+          }
+          return;
+        }
+      }
+
+      // Offline fallback only if network request failed completely
+      let localPending = [];
+      try {
+        const raw = localStorage.getItem('fcc_pending_department_uploads');
         if (raw) {
-          const arr = JSON.parse(raw);
-          if (Array.isArray(arr)) {
-            const cleaned = arr.filter(item => !isDemoUpload(item));
-            if (cleaned.length > 0) {
-              localStorage.setItem(k, JSON.stringify(cleaned));
-            } else {
-              localStorage.removeItem(k);
-            }
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            localPending = parsed;
           }
         }
-      });
-    } catch (e) {}
-
-    try {
-      const res = await fetch('/api/department-uploads');
-      if (res.ok) {
-        const data = await res.json();
-        const serverUploads = Array.isArray(data) ? data.filter(u => !isDemoUpload(u)) : [];
-        setUploads(serverUploads);
-      } else {
-        setUploads([]);
-      }
+      } catch (e) {}
+      setUploads(localPending);
     } catch (e) {
-      console.warn('API error fetching /api/department-uploads:', e);
-      setUploads([]);
+      console.warn('API error fetching department-uploads:', e);
+      let localPending = [];
+      try {
+        const raw = localStorage.getItem('fcc_pending_department_uploads');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            localPending = parsed;
+          }
+        }
+      } catch (e2) {}
+      setUploads(localPending);
     } finally {
       setIsLoadingUploads(false);
     }
   };
 
-  // 2. Fetch Departments & HODs from Backend Database
+  // 1b. Sync Live Cloud Submissions from fccibadanlibrary.com.ng
+  const handleSyncFromLiveCloud = async () => {
+    setIsSyncingFromCloud(true);
+    sounds.playClick();
+    try {
+      const liveEndpoint = window.location.hostname.includes('fccibadanlibrary.com.ng')
+        ? '/api/department-uploads'
+        : 'https://fccibadanlibrary.com.ng/api/department-uploads';
+
+      const res = await fetch(liveEndpoint, {
+        headers: { 'Accept': 'application/json' }
+      });
+
+      if (res && res.ok) {
+        const cloudUploads = await res.json();
+        if (Array.isArray(cloudUploads) && cloudUploads.length > 0) {
+          let syncedCount = 0;
+          for (const item of cloudUploads) {
+            try {
+              const saveRes = await fetch(`${getApiBase()}/department-uploads`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(item)
+              });
+              if (saveRes && saveRes.ok) syncedCount++;
+            } catch (err) {}
+          }
+          sounds.playSuccessChime();
+          showFeedback('success', `Synchronized ${syncedCount} submissions from live cloud repository!`);
+          await fetchUploads();
+          return;
+        } else {
+          showFeedback('info', 'Live cloud server returned 0 submissions.');
+        }
+      } else {
+        showFeedback('error', `Live server response: HTTP ${res ? res.status : 'error'}`);
+      }
+    } catch (e) {
+      showFeedback('error', 'Cloud sync connection error: ' + e.message);
+    } finally {
+      setIsSyncingFromCloud(false);
+    }
+  };
+
+  // 2. Fetch Institutional Publishing Workflow Mode
+  const fetchPublishingMode = async () => {
+    try {
+      const base = getApiBase();
+      let res;
+      try {
+        res = await fetch(`${base}/hod/publishing-mode`, { headers: { 'Accept': 'application/json' } });
+      } catch (e) {
+        if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+          try {
+            res = await fetch(`${window.location.protocol}//${window.location.hostname}:8000/api/hod/publishing-mode`, { headers: { 'Accept': 'application/json' } });
+          } catch (err) {}
+        }
+      }
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data?.mode) {
+          setPublishingMode(data.mode);
+          return;
+        }
+      }
+    } catch (e) {}
+
+    // Fallback to developer master config in localStorage
+    try {
+      const cfg = JSON.parse(localStorage.getItem('fcc_developer_master_config') || '{}');
+      if (cfg?.hodFeatures?.directPublishToStudents?.enabled || cfg?.hodUploadWorkflow?.mode === 'direct') {
+        setPublishingMode('direct');
+      } else {
+        setPublishingMode('approval');
+      }
+    } catch (e) {}
+  };
+
+  // 3. Toggle Publishing Mode (Turn Admin Review ON or OFF)
+  const handleTogglePublishingMode = async (targetMode) => {
+    const nextMode = targetMode || (publishingMode === 'direct' ? 'approval' : 'direct');
+    setIsTogglingPublishingMode(true);
+    setPublishingMode(nextMode);
+    sounds.playSuccessChime();
+
+    try {
+      const base = getApiBase();
+      let res;
+      try {
+        res = await fetch(`${base}/hod/publishing-mode`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: nextMode })
+        });
+      } catch (e) {
+        if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+          try {
+            res = await fetch(`${window.location.protocol}//${window.location.hostname}:8000/api/hod/publishing-mode`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ mode: nextMode })
+            });
+          } catch (err) {}
+        }
+      }
+    } catch (e) {}
+
+    // Mirror to developer config in localStorage and broadcast across browser tabs & portals
+    try {
+      const cfg = JSON.parse(localStorage.getItem('fcc_developer_master_config') || '{}');
+      cfg.hodUploadWorkflow = { mode: nextMode };
+      if (!cfg.hodFeatures) cfg.hodFeatures = {};
+      cfg.hodFeatures.directPublishToStudents = {
+        id: 'directPublishToStudents',
+        label: 'Direct Instant Publish (Skip Admin Approval)',
+        enabled: (nextMode === 'direct')
+      };
+      localStorage.setItem('fcc_developer_master_config', JSON.stringify(cfg));
+      window.dispatchEvent(new CustomEvent('fcc-hod-publishing-mode-updated', { detail: { mode: nextMode } }));
+      window.dispatchEvent(new CustomEvent('fcc-developer-config-updated', { detail: cfg }));
+    } catch (e) {}
+
+    showFeedback('success', nextMode === 'direct'
+      ? '⚡ Admin Review TURNED OFF: HOD uploads will now publish directly to students without waiting for approval!'
+      : '🛡️ Admin Review TURNED ON: HOD uploads will require approval at this review queue before students can see them.');
+    setIsTogglingPublishingMode(false);
+  };
+
+  // 4. Fetch Departments & HODs from Backend Database
   const fetchDepartments = async () => {
     setIsLoadingDepartments(true);
     try {
-      const res = await fetch('/api/departments');
-      if (res.ok) {
+      const base = getApiBase();
+      let res;
+      try {
+        res = await fetch(`${base}/departments`, { headers: { 'Accept': 'application/json' } });
+      } catch (err) {
+        if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+          try {
+            res = await fetch(`${window.location.protocol}//${window.location.hostname}:8000/api/departments`, { headers: { 'Accept': 'application/json' } });
+          } catch (e2) {}
+        }
+      }
+
+      if (res && res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           setDepartments(data);
-          // Sync with local departmentService
           try {
             localStorage.setItem('fcc_departments_v48_gov', JSON.stringify(data));
           } catch (e) {}
           return;
         }
       }
-      // Fallback to departmentService
       const localDepts = departmentService.getDepartments();
       setDepartments(localDepts);
     } catch (err) {
@@ -195,76 +385,114 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
   useEffect(() => {
     fetchUploads();
     fetchDepartments();
+    fetchPublishingMode();
 
     const handleSubmissionsUpdated = () => fetchUploads();
     const handleDepartmentsUpdated = () => fetchDepartments();
+    const handleModeSync = () => fetchPublishingMode();
 
     window.addEventListener('fcc-submissions-updated', handleSubmissionsUpdated);
     window.addEventListener('fcc-departments-updated', handleDepartmentsUpdated);
+    window.addEventListener('fcc-hod-publishing-mode-updated', handleModeSync);
+    window.addEventListener('fcc-developer-config-updated', handleModeSync);
 
     return () => {
       window.removeEventListener('fcc-submissions-updated', handleSubmissionsUpdated);
       window.removeEventListener('fcc-departments-updated', handleDepartmentsUpdated);
+      window.removeEventListener('fcc-hod-publishing-mode-updated', handleModeSync);
+      window.removeEventListener('fcc-developer-config-updated', handleModeSync);
     };
   }, []);
 
   // Open Add Department Modal
   const openAddDeptModal = () => {
     setEditingDept(null);
+    const freeColor = getAvailableDepartmentColor(departments);
     setDeptForm({
       name: '',
       code: '',
       hod_name: '',
       hod_email: '',
-      hod_pin: '1234',
+      hod_pin: '',
       faculty: 'School of Academic & Professional Studies',
       student_count: 0,
-      faculty_count: 10
+      faculty_count: 8,
+      color: freeColor
     });
     setShowAddDeptModal(true);
   };
 
   // Open Edit Department Modal
-  const openEditDeptModal = (dept) => {
+  const openEditDeptModal = async (dept) => {
     setEditingDept(dept);
+    const initialStudentCount = dept.student_count ?? dept.studentCount ?? 0;
+    const initialColor = dept.color || getAvailableDepartmentColor(departments, null, dept.id || dept.code);
     setDeptForm({
       name: dept.name || '',
       code: dept.code || '',
       hod_name: dept.hod_name || dept.hod || '',
       hod_email: dept.hod_email || dept.hodEmail || '',
-      hod_pin: dept.hod_pin || dept.pin || '1234',
+      hod_pin: dept.hod_pin || dept.pin || '',
       faculty: dept.faculty || 'School of Academic & Professional Studies',
-      student_count: dept.student_count ?? dept.studentCount ?? 0,
-      faculty_count: dept.faculty_count || dept.facultyCount || 8
+      student_count: initialStudentCount,
+      faculty_count: dept.faculty_count || dept.facultyCount || 8,
+      color: initialColor
     });
     setShowAddDeptModal(true);
+
+    // Fetch live scholar count directly from the database for this department
+    try {
+      const res = await fetch(`${getApiBase()}/patrons?department=${encodeURIComponent(dept.name || dept.code)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setDeptForm(prev => ({
+            ...prev,
+            student_count: data.length
+          }));
+        }
+      }
+    } catch (e) {}
   };
 
   // Save (Create or Update) Department & HOD
   const handleSaveDepartment = async (e) => {
     e.preventDefault();
-    if (!deptForm.name.trim() || !deptForm.code.trim() || !deptForm.hod_name.trim()) {
-      showFeedback('error', 'Please fill in Department Name, Code, and HOD Name.');
+    const isEditing = Boolean(editingDept);
+    if (!deptForm.name.trim() || !deptForm.code.trim() || !deptForm.hod_name.trim() || (!isEditing && !deptForm.hod_pin.trim())) {
+      showFeedback('error', 'Please fill in Department Name, Code, HOD Name, and HOD Security PIN.');
       return;
     }
 
     setIsSubmittingDept(true);
     const cleanCode = deptForm.code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-    const isEditing = Boolean(editingDept);
     const deptId = isEditing ? (editingDept.id || `DEP-${cleanCode}`) : `DEP-${cleanCode}`;
+
+    // Authentic scholar count from live database (scholars uploaded by HOD in their dashboard)
+    const authenticStudentCount = isEditing
+      ? (editingDept.student_count ?? editingDept.studentCount ?? (deptForm.student_count !== '' && !isNaN(deptForm.student_count) ? Number(deptForm.student_count) : 0))
+      : (deptForm.student_count !== '' && !isNaN(deptForm.student_count) ? Number(deptForm.student_count) : 0);
+
+    // Guarantee that each department has a distinct solid color that does not collide with existing departments
+    const chosenColor = normalizeColorKey(deptForm.color);
+    const usedColors = getUsedDepartmentColors(departments, isEditing ? (editingDept.id || editingDept.code) : null);
+    const finalColor = (chosenColor && !usedColors[chosenColor])
+      ? chosenColor
+      : getAvailableDepartmentColor(departments, chosenColor, isEditing ? (editingDept.id || editingDept.code) : null);
 
     const payload = {
       name: deptForm.name.trim(),
       code: cleanCode,
       hod_name: deptForm.hod_name.trim(),
       hod_email: deptForm.hod_email.trim() || `${cleanCode.toLowerCase()}.hod@fccibadan.edu.ng`,
-      hod_pin: deptForm.hod_pin.trim() || '1234',
-      student_count: Number(deptForm.student_count) || 150,
-      faculty_count: Number(deptForm.faculty_count) || 8
+      hod_pin: deptForm.hod_pin.trim() || (isEditing ? (editingDept.hod_pin || editingDept.pin || '') : ''),
+      student_count: authenticStudentCount,
+      faculty_count: Number(deptForm.faculty_count) || 8,
+      color: finalColor
     };
 
     try {
-      const url = isEditing ? `/api/departments/${deptId}` : '/api/departments';
+      const url = isEditing ? `${getApiBase()}/departments/${deptId}` : `${getApiBase()}/departments`;
       const method = isEditing ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
@@ -319,7 +547,7 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
 
     try {
       const deptId = dept.id || `DEP-${dept.code}`;
-      const res = await fetch(`/api/departments/${deptId}`, { method: 'DELETE' });
+      const res = await fetch(`${getApiBase()}/departments/${deptId}`, { method: 'DELETE' });
       if (res.ok) {
         sounds.playClick();
         showFeedback('success', `Department "${dept.name}" removed successfully.`);
@@ -368,7 +596,7 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
     setShowDeclinePrompt(false);
     setDeclineReason('');
     setModalMode('review');
-    setPreviewTab('reader');
+    setPreviewTab('pdf'); // Default directly to PDF Manuscript Stream so admin can read before approving
     setReaderPage(1);
 
     const authorCode = (up.author || 'GEN').replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'HOD';
@@ -498,7 +726,7 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
         isbn: modifyForm.isbn,
       };
 
-      const res = await fetch(`/api/department-uploads/${up.id}`, {
+      const res = await fetch(`${getApiBase()}/department-uploads/${up.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -543,7 +771,7 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
     const extra = getUploadExtra(up);
 
     try {
-      const res = await fetch(`/api/department-uploads/${id}/approve`, {
+      const res = await fetch(`${getApiBase()}/department-uploads/${id}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -573,8 +801,8 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
         targetLevel: data?.book?.target_level || up.target_level || 'HND II',
         callNumber: data?.book?.call_number || reviewForm.assigned_call_number,
         shelfLocation: data?.book?.shelf_location || reviewForm.assigned_shelf,
-        isbn: data?.book?.isbn || extra.isbn || (cat === 'journal' ? (extra.issn || '0794-8212') : `978-978-HOD-${Math.floor(100 + Math.random() * 900)}-1`),
-        publisher: data?.book?.publisher || extra.publisher || (cat === 'journal' ? (extra.journal_name || 'FCC Academic Press') : `FCC Department of ${up.department_name} Press`),
+        isbn: data?.book?.isbn || (extra.issn ? `ISSN ${extra.issn}` : (extra.isbn || '')),
+        publisher: data?.book?.publisher || extra.publisher || (cat === 'journal' ? (extra.journal_name || '') : (up.department_name ? `FCC Department of ${up.department_name} Press` : '')),
         year: data?.book?.year || extra.publication_year || new Date().getFullYear(),
         pdfPages: data?.book?.pdf_pages || (cat === 'project' ? 148 : (cat === 'journal' ? 24 : 120)),
         fileSize: data?.book?.file_size || up.file_size || '4.2 MB',
@@ -647,7 +875,7 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
     const finalReason = declineReason.trim();
 
     try {
-      const res = await fetch(`/api/department-uploads/${id}/reject`, {
+      const res = await fetch(`${getApiBase()}/department-uploads/${id}/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -679,6 +907,207 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
       setSelectedUploadForReview(null);
       setShowDeclinePrompt(false);
       setDeclineReason('');
+    }
+  };
+
+  // 3. Delete / Withdraw Submission Permanently from Database
+  const handleDeleteSubmission = async (uploadId, uploadTitle) => {
+    if (!uploadId) return;
+    const confirmDelete = window.confirm(`Permanently withdraw and delete "${uploadTitle || 'this submission'}" from the database?`);
+    if (!confirmDelete) return;
+
+    sounds.playClick();
+    try {
+      const endpoint = `${getApiBase()}/department-uploads/${uploadId}`;
+      let res;
+      try {
+        res = await fetch(endpoint, { method: 'DELETE' });
+      } catch (netErr) {
+        if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+          res = await fetch(`${window.location.protocol}//${window.location.hostname}:8000/api/department-uploads/${uploadId}`, { method: 'DELETE' });
+        }
+      }
+
+      // Update state and local storage
+      const targetUpload = uploads.find(u => u.id === uploadId);
+      const targetBookId = targetUpload?.book_id;
+      const targetTitle = targetUpload?.title || uploadTitle;
+
+      setUploads(prev => prev.filter(u => u.id !== uploadId && (!targetTitle || u.title !== targetTitle)));
+      try {
+        const local = JSON.parse(localStorage.getItem('fcc_pending_department_uploads') || '[]');
+        localStorage.setItem('fcc_pending_department_uploads', JSON.stringify(local.filter(u => u.id !== uploadId && (!targetTitle || u.title !== targetTitle))));
+      } catch (e) {}
+
+      // Also remove corresponding book from OPAC & Catalog cache
+      try {
+        const currentCatalog = JSON.parse(localStorage.getItem('fcc_catalog_v48_gov') || '[]');
+        const filteredCatalog = currentCatalog.filter(b =>
+          b.id !== uploadId &&
+          b.id !== targetBookId &&
+          b.id !== `FCC-HOD-${uploadId}` &&
+          (!targetTitle || b.title !== targetTitle)
+        );
+        localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(filteredCatalog));
+        localStorage.setItem('fcc_db_catalog', JSON.stringify(filteredCatalog));
+        window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: filteredCatalog }));
+      } catch (e) {}
+
+      // If the review modal is currently showing this item, close it
+      if (selectedUploadForReview?.id === uploadId) {
+        setSelectedUploadForReview(null);
+        setShowDeclinePrompt(false);
+      }
+
+      sounds.playSuccessChime();
+      showFeedback('success', `Submission "${uploadTitle || uploadId}" permanently removed from database.`);
+    } catch (err) {
+      console.error('Delete submission error:', err);
+      showFeedback('error', 'Error deleting submission from database.');
+    }
+  };
+
+  // Toggle single submission selection
+  const toggleSelectUpload = (id) => {
+    setSelectedUploadIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Toggle select all visible displayed submissions
+  const toggleSelectAllUploads = () => {
+    if (selectedUploadIds.size === displayedUploads.length && displayedUploads.length > 0) {
+      setSelectedUploadIds(new Set());
+    } else {
+      setSelectedUploadIds(new Set(displayedUploads.map(u => u.id)));
+    }
+  };
+
+  // Bulk Delete Submissions from Database
+  const handleBulkDeleteSubmissions = async () => {
+    const count = selectedUploadIds.size;
+    if (count === 0) return;
+
+    const confirmDelete = window.confirm(`Permanently withdraw and delete ${count} selected submission(s) from the database?`);
+    if (!confirmDelete) return;
+
+    sounds.playClick();
+    setIsBulkDeleting(true);
+    const idsArray = Array.from(selectedUploadIds);
+
+    try {
+      const endpoint = `${getApiBase()}/department-uploads/bulk-delete`;
+      let res;
+      try {
+        res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: idsArray, user_name: 'Chief College Librarian' })
+        });
+      } catch (netErr) {
+        if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+          res = await fetch(`${window.location.protocol}//${window.location.hostname}:8000/api/department-uploads/bulk-delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: idsArray, user_name: 'Chief College Librarian' })
+          });
+        }
+      }
+
+      const idSet = new Set(idsArray);
+      const deletedBookIdSet = new Set(
+        uploads.filter(u => idSet.has(u.id)).map(u => u.book_id).filter(Boolean)
+      );
+      const deletedTitleSet = new Set(
+        uploads.filter(u => idSet.has(u.id)).map(u => u.title).filter(Boolean)
+      );
+
+      setUploads(prev => prev.filter(u => !idSet.has(u.id) && !deletedTitleSet.has(u.title)));
+
+      try {
+        const local = JSON.parse(localStorage.getItem('fcc_pending_department_uploads') || '[]');
+        localStorage.setItem('fcc_pending_department_uploads', JSON.stringify(local.filter(u => !idSet.has(u.id) && !deletedTitleSet.has(u.title))));
+      } catch (e) {}
+
+      // Also purge deleted submissions from OPAC & Catalog cache
+      try {
+        const currentCatalog = JSON.parse(localStorage.getItem('fcc_catalog_v48_gov') || '[]');
+        const filteredCatalog = currentCatalog.filter(b =>
+          !idSet.has(b.id) &&
+          !deletedBookIdSet.has(b.id) &&
+          !deletedTitleSet.has(b.title)
+        );
+        localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(filteredCatalog));
+        localStorage.setItem('fcc_db_catalog', JSON.stringify(filteredCatalog));
+        window.dispatchEvent(new CustomEvent('fcc-catalog-updated', { detail: filteredCatalog }));
+      } catch (e) {}
+
+      setSelectedUploadIds(new Set());
+      sounds.playSuccessChime();
+      showFeedback('success', `✓ Successfully deleted ${count} submission(s) from the database.`);
+    } catch (err) {
+      console.error('Bulk delete submissions error:', err);
+      showFeedback('error', 'Error deleting selected submissions from database.');
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  // 4. Batch Approve All Pending Submissions in One Click
+  const handleApproveAllPending = async () => {
+    const hasLocalPending = pendingList.length > 0;
+    const confirmMsg = hasLocalPending
+      ? `Approve & Publish all ${pendingList.length} pending submissions to the master catalog?`
+      : 'Scan database and approve every pending book and submission across all departments?';
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsApprovingAll(true);
+    sounds.playClick();
+    try {
+      // Trigger batch approval on database
+      const res = await fetch(`${getApiBase()}/department-uploads/approve-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewed_by: 'Chief College Librarian (Batch Approval)' })
+      });
+
+      if (res && res.ok) {
+        const data = await res.json();
+        const count = data?.count ?? 0;
+        sounds.playSuccessChime();
+        if (count > 0) {
+          showFeedback('success', `✓ Successfully approved and published ${count} pending book(s) to master catalog!`);
+        } else {
+          showFeedback('info', 'Verified: Every book is already approved and published. 0 pending submissions found in database.');
+        }
+        await fetchUploads();
+        setActiveTabFilter('approved');
+      } else {
+        // Fallback: loop through each pending upload sequentially
+        let successCount = 0;
+        for (const up of pendingList) {
+          try {
+            await fetch(`${getApiBase()}/department-uploads/${up.id}/approve`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ review_notes: 'Approved & Published by Chief College Librarian.' })
+            });
+            successCount++;
+          } catch (e) {}
+        }
+        sounds.playSuccessChime();
+        showFeedback('success', `Approved and published ${successCount} submissions to master catalog!`);
+        await fetchUploads();
+        setActiveTabFilter('approved');
+      }
+    } catch (err) {
+      showFeedback('error', 'Error batch-approving submissions: ' + err.message);
+    } finally {
+      setIsApprovingAll(false);
     }
   };
 
@@ -877,22 +1306,31 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
             {filteredDepartments.map(dept => {
               const hodName = dept.hod_name || dept.hod || 'Unassigned';
               const hodEmail = dept.hod_email || dept.hodEmail || `${dept.code?.toLowerCase()}.hod@fccibadan.edu.ng`;
-              const hodPin = dept.hod_pin || dept.pin || '1234';
+              const hodPin = dept.hod_pin || dept.pin || 'Not Set';
               const uploadsCount = dept.uploads_count !== undefined
                 ? dept.uploads_count
                 : uploads.filter(u => u.department_id === dept.id || u.department_name === dept.name).length;
+              const theme = getDynamicDeptTheme(dept.code, dept.name, dept.color, departments);
 
               return (
                 <div
                   key={dept.id || dept.code}
                   className="p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 shadow-xl flex flex-col justify-between space-y-4 group transition"
+                  style={{ borderTop: `3px solid ${theme.solidColor || '#10b981'}` }}
                 >
                   <div className="space-y-3">
                     {/* Top Badges */}
                     <div className="flex items-center justify-between gap-2">
-                      <span className="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-300 font-mono font-black text-xs border border-emerald-800 tracking-wider">
-                        {dept.code}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`px-2.5 py-1 rounded-lg font-mono font-black text-xs border tracking-wider ${theme.badgeSolid || 'bg-emerald-950 text-emerald-300 border-emerald-800'}`}>
+                          {dept.code}
+                        </span>
+                        <span
+                          className="w-2.5 h-2.5 rounded-full inline-block border border-white/20 shadow-sm"
+                          style={{ backgroundColor: theme.solidColor || '#10b981' }}
+                          title={`Brand Color: ${theme.colorName || 'Exclusive Solid'}`}
+                        />
+                      </div>
                       <span className="text-[10px] font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
                         {dept.id || `DEP-${dept.code}`}
                       </span>
@@ -970,6 +1408,75 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
       {/* ============================================================== */}
       {mainView === 'submissions' && (
         <div className="space-y-4">
+          {/* Institutional Publishing Workflow Mode Gate Banner */}
+          <div className={`p-4 sm:p-5 rounded-2xl border transition-all duration-300 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+            publishingMode === 'direct'
+              ? 'bg-gradient-to-r from-emerald-950/80 via-slate-900 to-teal-950/70 border-emerald-500/60 text-emerald-200'
+              : 'bg-gradient-to-r from-amber-950/70 via-slate-900 to-indigo-950/70 border-amber-500/60 text-amber-200'
+          }`}>
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-lg ${
+                publishingMode === 'direct'
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 ring-2 ring-emerald-500/20'
+                  : 'bg-amber-500/20 text-amber-400 border border-amber-500/40 ring-2 ring-amber-500/20'
+              }`}>
+                {publishingMode === 'direct' ? (
+                  <Zap size={22} className="animate-pulse" />
+                ) : (
+                  <ShieldCheck size={22} />
+                )}
+              </div>
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black tracking-wide uppercase border ${
+                    publishingMode === 'direct'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  }`}>
+                    {publishingMode === 'direct' ? 'Admin Review: TURNED OFF (Direct to Students)' : 'Admin Review: TURNED ON (Approval Required)'}
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-medium">Developer Master Workflow Gate</span>
+                </div>
+                <p className="text-xs text-slate-300 font-medium leading-relaxed">
+                  {publishingMode === 'direct' ? (
+                    <>
+                      <strong className="text-emerald-400">Direct Publishing Active:</strong> HODs can upload curriculum texts, handouts, and dissertations directly without requiring any admin approval or review. Materials go live immediately in the Student Digital Library &amp; OPAC catalog.
+                    </>
+                  ) : (
+                    <>
+                      <strong className="text-amber-400">Admin Review Queue Active:</strong> All HOD submissions enter this review queue first. The Central Library Directorate must inspect the content, assign shelf/call numbers, and approve before students can view them.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
+              <button
+                type="button"
+                disabled={isTogglingPublishingMode}
+                onClick={() => handleTogglePublishingMode()}
+                className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 border shadow-lg cursor-pointer active:scale-95 ${
+                  publishingMode === 'direct'
+                    ? 'bg-amber-600 hover:bg-amber-500 text-slate-950 border-amber-400/50 shadow-amber-950/60'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/50 shadow-emerald-950/60'
+                }`}
+                title="Toggle whether HOD uploads require admin approval or publish directly"
+              >
+                {isTogglingPublishingMode ? (
+                  <RefreshCw size={14} className="animate-spin" />
+                ) : publishingMode === 'direct' ? (
+                  <ShieldCheck size={14} />
+                ) : (
+                  <Zap size={14} />
+                )}
+                <span>
+                  {publishingMode === 'direct' ? 'Turn Admin Review ON 🛡️' : 'Turn Admin Review OFF (Direct Publish) ⚡'}
+                </span>
+              </button>
+            </div>
+          </div>
+
           {/* Navigation Filter Tabs: Status + Category Dual Filter */}
           <div className="flex flex-col gap-3 bg-slate-900 p-4 rounded-2xl border border-slate-800">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -985,6 +1492,7 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
                     <button
                       key={t.id}
                       onClick={() => {
+                        setHasUserChangedTab(true);
                         setActiveTabFilter(t.id);
                         sounds.playClick();
                       }}
@@ -1003,14 +1511,50 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
                 </div>
               </div>
 
-              <button
-                onClick={fetchUploads}
-                disabled={isLoadingUploads}
-                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition flex items-center gap-1.5 self-start sm:self-auto"
-              >
-                <RefreshCw size={13} className={isLoadingUploads ? 'animate-spin text-indigo-400' : ''} />
-                <span>Refresh Queue</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={fetchUploads}
+                  disabled={isLoadingUploads}
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
+                  title="Reload submissions directly from database"
+                >
+                  <RefreshCw size={13} className={isLoadingUploads ? 'animate-spin text-indigo-400' : ''} />
+                  <span>Refresh Queue</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleApproveAllPending}
+                  disabled={isApprovingAll}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-md ${
+                    pendingList.length > 0
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-950/80 ring-2 ring-emerald-500/50 active:scale-95'
+                      : 'bg-emerald-950/70 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-600/60'
+                  }`}
+                  title="Approve every book that is on pending across the database"
+                >
+                  <CheckCircle size={14} className={isApprovingAll ? 'animate-spin text-emerald-300' : 'text-emerald-400'} />
+                  <span>
+                    {isApprovingAll
+                      ? 'Approving All...'
+                      : pendingList.length > 0
+                      ? `Approve All (${pendingList.length}) Pending Books ✓`
+                      : 'Approve All Pending Books'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSyncFromLiveCloud}
+                  disabled={isSyncingFromCloud}
+                  className="px-3.5 py-1.5 rounded-xl bg-indigo-950/60 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow"
+                  title="Sync any submissions uploaded to fccibadanlibrary.com.ng"
+                >
+                  <RefreshCw size={13} className={isSyncingFromCloud ? 'animate-spin text-indigo-400' : ''} />
+                  <span>Sync from Cloud (fccibadanlibrary.com.ng)</span>
+                </button>
+              </div>
             </div>
 
             {/* Category Filter Pills */}
@@ -1042,6 +1586,53 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
             </div>
           </div>
 
+          {/* Bulk Selection & Actions Toolbar */}
+          {displayedUploads.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900 border border-slate-800 shadow-md">
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-slate-300 hover:text-white">
+                  <input
+                    type="checkbox"
+                    checked={selectedUploadIds.size === displayedUploads.length && displayedUploads.length > 0}
+                    onChange={toggleSelectAllUploads}
+                    className="w-4 h-4 rounded text-indigo-600 bg-slate-950 border-slate-700 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <span>Select All ({displayedUploads.length})</span>
+                </label>
+                {selectedUploadIds.size > 0 && (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono bg-indigo-950 text-indigo-300 border border-indigo-800">
+                    {selectedUploadIds.size} selected
+                  </span>
+                )}
+              </div>
+
+              {selectedUploadIds.size > 0 ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleBulkDeleteSubmissions}
+                    disabled={isBulkDeleting}
+                    className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg shadow-rose-950 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Trash2 size={13} className={isBulkDeleting ? 'animate-spin' : ''} />
+                    <span>{isBulkDeleting ? 'Deleting...' : `Delete Selected (${selectedUploadIds.size}) from Database`}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedUploadIds(new Set())}
+                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer"
+                  >
+                    Clear Selection
+                  </button>
+                </div>
+              ) : (
+                <span className="text-[11px] text-slate-500 font-medium">
+                  Select submissions using checkboxes to delete one by one or in bulk from database
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Uploads List */}
           <div className="space-y-3">
             {displayedUploads.length === 0 ? (
@@ -1050,15 +1641,49 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
                   <CheckCircle size={32} />
                 </div>
                 <div className="space-y-1.5 max-w-md mx-auto">
-                  <h4 className="text-base font-bold text-white">No Submissions Found in this Queue</h4>
+                  <h4 className="text-base font-bold text-white">
+                    {activeTabFilter === 'pending'
+                      ? 'No Pending Submissions Awaiting Review'
+                      : `No ${activeTabFilter.toUpperCase()} Submissions Found`}
+                  </h4>
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    When Heads of Department upload books, academic journals, or student capstone projects via their HOD portal, they will arrive here for administrative review and document preview.
+                    {activeTabFilter === 'pending' && uploads.length > 0 ? (
+                      `All ${uploads.length} authentic HOD submissions from the database have been processed (${approvedList.length} Approved & Published to Catalog, ${rejectedList.length} Declined). New uploads submitted by HODs will appear here.`
+                    ) : (
+                      'When Heads of Department upload books, academic journals, or student capstone projects via their HOD portal, they will arrive here for administrative review and document preview.'
+                    )}
                   </p>
                 </div>
                 <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+                  {uploads.length > 0 && activeTabFilter !== 'all' && (
+                    <button
+                      onClick={() => {
+                        setHasUserChangedTab(true);
+                        setActiveTabFilter('all');
+                        sounds.playClick();
+                      }}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition flex items-center gap-1.5 shadow-md shadow-indigo-950 cursor-pointer"
+                    >
+                      <BookOpen size={14} />
+                      <span>View All {uploads.length} Database Submissions</span>
+                    </button>
+                  )}
+                  {approvedList.length > 0 && activeTabFilter !== 'approved' && (
+                    <button
+                      onClick={() => {
+                        setHasUserChangedTab(true);
+                        setActiveTabFilter('approved');
+                        sounds.playClick();
+                      }}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition flex items-center gap-1.5 shadow-md shadow-emerald-950 cursor-pointer"
+                    >
+                      <CheckCircle size={14} />
+                      <span>View {approvedList.length} Approved &amp; Published</span>
+                    </button>
+                  )}
                   <a
                     href="#/hod"
-                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition flex items-center gap-1.5 shadow-md shadow-indigo-950"
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition flex items-center gap-1.5 border border-slate-700"
                   >
                     <BookOpen size={14} />
                     <span>Open HOD Portal Upload Studio</span>
@@ -1077,25 +1702,34 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
                   <div
                     key={up.id}
                     className={`p-5 rounded-2xl border flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-xl transition ${
-                      isPending ? 'bg-slate-900 border-amber-500/30 hover:border-amber-500/60' : 'bg-slate-900/80 border-slate-800'
+                      selectedUploadIds.has(up.id)
+                        ? 'bg-gradient-to-br from-slate-900 via-slate-900 to-rose-950/30 border-rose-600/70 ring-1 ring-rose-500/30'
+                        : isPending
+                        ? 'bg-slate-900 border-amber-500/30 hover:border-amber-500/60'
+                        : 'bg-slate-900/80 border-slate-800'
                     }`}
                   >
                     <div className="flex flex-col sm:flex-row items-start gap-4 max-w-4xl">
+                      {/* Checkbox for bulk actions */}
+                      <label className="cursor-pointer p-1 rounded-lg hover:bg-slate-800 transition self-center sm:self-start mt-1 shrink-0" title="Select for bulk action">
+                        <input
+                          type="checkbox"
+                          checked={selectedUploadIds.has(up.id)}
+                          onChange={() => toggleSelectUpload(up.id)}
+                          className="w-4 h-4 rounded text-indigo-600 bg-slate-950 border-slate-700 focus:ring-indigo-500 cursor-pointer"
+                        />
+                      </label>
                       {/* FRONT COVER ARTWORK THUMBNAIL */}
                       <div className="w-16 sm:w-20 h-24 sm:h-28 rounded-xl overflow-hidden shrink-0 relative shadow-lg shadow-black/60 border border-slate-700/80 bg-slate-950 self-center sm:self-start">
-                        {up.cover_image ? (
-                          <img
-                            src={up.cover_image}
-                            alt={up.title}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full p-2 flex flex-col justify-between text-left relative overflow-hidden bg-gradient-to-br from-indigo-950 via-slate-900 to-black">
-                            <span className="text-[7px] font-mono text-indigo-400 font-bold uppercase truncate">FCC • {up.department_name}</span>
-                            <span className="text-[8.5px] font-bold text-white line-clamp-3 leading-tight font-serif">{up.title}</span>
-                            <span className="text-[7px] text-slate-400 font-mono truncate">{up.course_code || 'GEN'}</span>
-                          </div>
-                        )}
+                        <img
+                          src={up.cover_image || up.cover_path || '/assets/fcc-logo.png'}
+                          alt={up.title}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = '/assets/fcc-logo.png';
+                          }}
+                        />
                         <div className="absolute top-0 bottom-0 left-0 w-2 bg-gradient-to-r from-black/70 to-transparent pointer-events-none" />
                         <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none" />
                       </div>
@@ -1206,7 +1840,7 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
                     <div className="shrink-0 flex items-center gap-2">
                       <button
                         onClick={() => openReviewModal(up)}
-                        className={`px-4 py-2.5 rounded-xl font-bold text-xs transition shadow-lg flex items-center gap-1.5 ${
+                        className={`px-4 py-2.5 rounded-xl font-bold text-xs transition shadow-lg flex items-center gap-1.5 cursor-pointer ${
                           isPending
                             ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-950'
                             : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
@@ -1214,6 +1848,15 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
                       >
                         <Eye size={14} />
                         <span>{isPending ? 'Review & Preview Document' : 'Inspect / Re-classify'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSubmission(up.id, up.title)}
+                        title="Withdraw & Permanently Delete from Database"
+                        className="px-3 py-2.5 rounded-xl font-bold text-xs transition bg-rose-950/40 hover:bg-rose-900 border border-rose-800/80 text-rose-300 hover:text-white flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Trash2 size={14} />
+                        <span className="hidden sm:inline">Delete</span>
                       </button>
                     </div>
                   </div>
@@ -1323,7 +1966,7 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
                       required
                       value={deptForm.hod_pin}
                       onChange={e => setDeptForm({ ...deptForm, hod_pin: e.target.value })}
-                      placeholder="e.g. 1234"
+                      placeholder="Set Security PIN"
                       className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-indigo-500 font-mono text-[11px]"
                     />
                   </div>
@@ -1333,16 +1976,21 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
               {/* Faculty School & Demographics */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1">
-                    Student Quota
+                  <label className="block font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                    <span>Uploaded Scholars</span>
+                    <span className="text-[10px] text-emerald-400 font-mono">Live Database</span>
                   </label>
                   <input
                     type="number"
-                    min="1"
+                    min="0"
                     value={deptForm.student_count}
                     onChange={e => setDeptForm({ ...deptForm, student_count: e.target.value })}
                     className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono"
+                    placeholder="0"
                   />
+                  <span className="text-[10px] text-slate-500 block mt-1">
+                    Live total of scholars uploaded by HOD at their dashboard
+                  </span>
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-300 mb-1">
@@ -1356,6 +2004,76 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
                     className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono"
                   />
                 </div>
+              </div>
+
+              {/* Department Exclusive Solid Brand Color */}
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1.5 flex items-center justify-between">
+                  <span>Department Brand Color (Must Be Unique)</span>
+                  <span className="text-[10px] text-emerald-400 font-mono">1 Exclusive Color Per Dept</span>
+                </label>
+
+                {(() => {
+                  const usedColors = getUsedDepartmentColors(departments, editingDept?.id || editingDept?.code);
+                  const selectedColorKey = normalizeColorKey(deptForm.color);
+                  const isCurrentChosenUsed = usedColors[selectedColorKey];
+                  const paletteList = Object.values(SOLID_COLOR_PALETTES).filter(c => c.key && !['purple', 'red', 'mint', 'gold'].includes(c.key));
+
+                  return (
+                    <div className="space-y-2">
+                      {isCurrentChosenUsed && (
+                        <div className="p-2 rounded-xl bg-rose-950/70 border border-rose-700/80 text-rose-200 text-xs flex items-center gap-2">
+                          <AlertTriangle size={14} className="text-rose-400 shrink-0" />
+                          <span>Assigned to <strong>Dept {isCurrentChosenUsed}</strong>. Each department must have a distinct color.</span>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-40 overflow-y-auto pr-1">
+                        {paletteList.map(c => {
+                          const isSelected = selectedColorKey === c.key;
+                          const occupiedBy = usedColors[c.key];
+
+                          return (
+                            <button
+                              key={c.key}
+                              type="button"
+                              onClick={() => {
+                                setDeptForm({ ...deptForm, color: c.key });
+                                if (occupiedBy) {
+                                  sounds.playErrorBuzz();
+                                } else {
+                                  sounds.playClick();
+                                }
+                              }}
+                              className={`flex items-center justify-between p-2 rounded-xl border text-xs font-semibold transition text-left cursor-pointer ${
+                                isSelected
+                                  ? 'border-emerald-400 bg-emerald-950/70 text-white shadow-md ring-1 ring-emerald-400'
+                                  : occupiedBy
+                                  ? 'border-slate-800/80 bg-slate-950/60 text-slate-500 hover:border-slate-700'
+                                  : 'border-slate-800 bg-slate-950 text-slate-300 hover:text-white hover:border-slate-600'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span
+                                  className="w-3.5 h-3.5 rounded-full shrink-0 shadow-sm border border-white/20"
+                                  style={{ backgroundColor: c.solid }}
+                                />
+                                <span className="truncate text-[11px]">{c.name}</span>
+                              </div>
+                              {occupiedBy ? (
+                                <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-slate-800 text-slate-400 shrink-0">
+                                  {occupiedBy}
+                                </span>
+                              ) : isSelected ? (
+                                <Check size={12} className="text-emerald-400 shrink-0" />
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Submit / Cancel Buttons */}
@@ -1624,7 +2342,7 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
 
                       {/* Download PDF button */}
                       <a
-                        href={up.file_data_url || `/api/catalog/${up.id}/file?download=1`}
+                        href={up.file_data_url || `${getApiBase()}/department-uploads/${up.id}/file?download=1`}
                         download={up.file_name || `${up.title}.pdf`}
                         target="_blank"
                         rel="noreferrer"
@@ -1904,44 +2622,82 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
                   {/* ======================================================= */}
                   {/* PREVIEW CANVAS 2: PDF MANUSCRIPT STREAM (NATIVE STREAM) */}
                   {/* ======================================================= */}
-                  {previewTab === 'pdf' && (
-                    <div className="flex-1 flex flex-col justify-between space-y-2 min-h-[460px]">
-                      <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between text-xs font-mono text-slate-300">
-                        <div className="flex items-center gap-2 truncate">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                          <span className="text-teal-400 font-bold truncate">Stream: {up.file_name || 'official-manuscript.pdf'}</span>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <a
-                            href={up.file_data_url || `/api/catalog/${up.id}/file`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
-                          >
-                            <ExternalLink size={12} />
-                            <span>Open in Tab</span>
-                          </a>
-                        </div>
-                      </div>
+                  {previewTab === 'pdf' && (() => {
+                    const pdfStreamUrl = `${getApiBase()}/department-uploads/${up.id}/file#toolbar=1&navpanes=1&statusbar=1`;
+                    const downloadUrl = `${getApiBase()}/department-uploads/${up.id}/file?download=1`;
 
-                      <div className="flex-1 min-h-[420px] rounded-xl overflow-hidden border border-slate-800 bg-slate-900/60 relative">
-                        <iframe
-                          src={up.file_data_url ? up.file_data_url : `/api/catalog/${up.id}/file`}
-                          title="Document Viewer"
-                          className="w-full h-full min-h-[420px] border-0"
-                        />
+                    return (
+                      <div className="flex-1 flex flex-col justify-between space-y-2 min-h-[500px]">
+                        <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex flex-wrap items-center justify-between text-xs font-mono text-slate-300 gap-2">
+                          <div className="flex items-center gap-2 truncate">
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                            <span className="text-teal-400 font-bold truncate">Stream: {up.file_name || `${up.title}.pdf`}</span>
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-[10px]">Manuscript Ready</span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setShowFullReader(true)}
+                              className="px-2.5 py-1 rounded-lg bg-indigo-600/30 hover:bg-indigo-600 border border-indigo-500/50 text-indigo-200 hover:text-white transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
+                              title="Read full book in Digital Book Reader"
+                            >
+                              <BookOpen size={12} />
+                              <span>Full Reader</span>
+                            </button>
+                            <a
+                              href={downloadUrl}
+                              download={up.file_name || `${up.title}.pdf`}
+                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition flex items-center gap-1.5 text-xs"
+                              title="Download Manuscript PDF"
+                            >
+                              <Download size={12} />
+                              <span>Download PDF</span>
+                            </a>
+                            <a
+                              href={`${getApiBase()}/department-uploads/${up.id}/file`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition flex items-center gap-1.5 text-xs"
+                              title="Open PDF Manuscript in a dedicated browser tab"
+                            >
+                              <ExternalLink size={12} />
+                              <span>Open in Tab</span>
+                            </a>
+                          </div>
+                        </div>
+
+                        <div className="flex-1 min-h-[480px] rounded-xl overflow-hidden border border-slate-800 bg-slate-950 relative shadow-inner">
+                          <object
+                            data={pdfStreamUrl}
+                            type="application/pdf"
+                            className="w-full h-full min-h-[480px] border-0"
+                          >
+                            <iframe
+                              src={pdfStreamUrl}
+                              title="PDF Manuscript Viewer"
+                              className="w-full h-full min-h-[480px] border-0"
+                            />
+                          </object>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* ======================================================= */}
                   {/* PREVIEW CANVAS 3: BOOK COVER & CATALOG DOSSIER          */}
-                  {/* ======================================================= */}
                   {previewTab === 'cover' && (
                     <div className="flex-1 flex flex-col items-center justify-center p-6 rounded-2xl bg-slate-900/40 border border-slate-800 text-center space-y-4">
                       {up.cover_image ? (
                         <div className="w-36 h-48 rounded-xl overflow-hidden border-2 border-indigo-500/40 shadow-2xl mx-auto">
-                          <img src={up.cover_image} alt={up.title} className="w-full h-full object-cover" />
+                          <img
+                            src={up.cover_image || up.cover_path || '/assets/fcc-logo.png'}
+                            alt={up.title}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src = '/assets/fcc-logo.png';
+                            }}
+                          />
                         </div>
                       ) : (
                         <div className="w-36 h-48 rounded-xl bg-gradient-to-br from-indigo-950 via-slate-900 to-teal-950 border-2 border-indigo-500/40 shadow-2xl p-3 flex flex-col justify-between text-left mx-auto">
@@ -2266,10 +3022,19 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
                               sounds.playClick();
                               setModalMode('modify');
                             }}
-                            className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 hover:text-white font-semibold text-xs transition flex items-center justify-center gap-1.5"
+                            className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 hover:text-white font-semibold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
                           >
                             <Edit3 size={14} className="text-amber-400" />
                             <span>Modify Metadata, Syllabus Mapping or Replace File</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSubmission(up.id, up.title)}
+                            className="w-full py-2 px-4 rounded-xl bg-rose-950/40 hover:bg-rose-900/80 border border-rose-800/80 text-rose-300 hover:text-white font-semibold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Trash2 size={14} />
+                            <span>Withdraw &amp; Delete Submission from Database</span>
                           </button>
                         </div>
                       )}
@@ -2579,8 +3344,8 @@ export default function HodSubmissionsReviewQueue({ onPublishSuccess }) {
           fileName: up.file_name || `${up.title}.pdf`,
           fileSize: up.file_size || '4.5 MB',
           fileDataUrl: up.file_data_url || '',
-          hasBinaryPdf: Boolean(up.file_data_url || true),
-          pdfUrl: `/api/catalog/${up.id}/file`,
+          hasBinaryPdf: true,
+          pdfUrl: `${getApiBase()}/department-uploads/${up.id}/file`,
           isDigital: true,
           abstract: extra.abstract || up.abstract || '',
           coverImage: up.cover_image || null

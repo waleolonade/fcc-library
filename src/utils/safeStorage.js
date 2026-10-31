@@ -69,20 +69,22 @@ export function installStorageGuard() {
     }
   };
 
-  // One-time cleanup: slim down any oversized cached entries already stored
+  // One-time cleanup: instantly wipe any oversized cached entries (>250KB) to prevent UI freeze
   try {
+    const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       const raw = key ? localStorage.getItem(key) : null;
-      if (raw && raw.length > 500000) {
-        try {
-          const slim = JSON.stringify(stripHeavyPayloads(JSON.parse(raw)));
-          originalSetItem.call(localStorage, key, slim);
-        } catch {
-          localStorage.removeItem(key);
-        }
+      if (raw && raw.length > 250000) {
+        keysToRemove.push(key);
       }
     }
+    keysToRemove.forEach(k => {
+      try {
+        localStorage.removeItem(k);
+        console.info(`[storage] Purged bloated cache key "${k}" to keep main thread responsive.`);
+      } catch { /* ignore */ }
+    });
   } catch { /* ignore */ }
 }
 

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Sparkles, Bot, Send, User, BookOpen, Quote, X, ArrowRight, Shield } from 'lucide-react';
+import { getApiBase } from '../api/libraryApi';
 
 export default function AiLibrarianModal({ books = [], user = { name: 'Scholar', dept: 'Academic Patron' }, initialPrompt = '', onClose, onSelectBook }) {
   const [messages, setMessages] = useState([
@@ -22,11 +23,28 @@ export default function AiLibrarianModal({ books = [], user = { name: 'Scholar',
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
 
-  const processQuery = (userText) => {
+  const processQuery = async (userText) => {
     setIsTyping(true);
-    setTimeout(() => {
-      const q = userText.toLowerCase();
-      let replyText = "";
+    let backendReply = null;
+    try {
+      const base = getApiBase();
+      const res = await fetch(`${base}/ai/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ prompt: userText })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.reply) {
+          backendReply = data.reply;
+        }
+      }
+    } catch (e) {
+      // Graceful fallback to client-side catalog search
+    }
+
+    const q = userText.toLowerCase();
+    let replyText = backendReply || "";
       
       // Dynamic semantic search against real database catalog
       let foundBooks = books.filter(b => {
@@ -61,9 +79,9 @@ export default function AiLibrarianModal({ books = [], user = { name: 'Scholar',
           replyText = `Please specify which textbook or research thesis you would like me to format into APA, Harvard, or BibTeX format.`;
         }
       } else if (foundBooks.length > 0) {
-        replyText = `I searched the FCC library database holdings for "${userText}". Here are ${foundBooks.length} verified catalog matches currently indexed in the system:`;
+        replyText = backendReply || `I searched the FCC library database holdings for "${userText}". Here are ${foundBooks.length} verified catalog matches currently indexed in the system:`;
       } else {
-        replyText = `I queried the database catalog for "${userText}", but no exact shelf records matched. You can submit an Acquisition Request to the College Librarian or search related department holdings.`;
+        replyText = backendReply || `I queried the database catalog for "${userText}", but no exact shelf records matched. You can submit an Acquisition Request to the College Librarian or search related department holdings.`;
       }
 
       setMessages(prev => [
@@ -76,7 +94,6 @@ export default function AiLibrarianModal({ books = [], user = { name: 'Scholar',
         }
       ]);
       setIsTyping(false);
-    }, 600);
   };
 
   const handleSend = (e) => {

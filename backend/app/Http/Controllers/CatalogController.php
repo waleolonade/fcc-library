@@ -12,6 +12,10 @@ class CatalogController extends Controller
 {
     public function index(Request $request)
     {
+        // 1. Synchronize local SQLite books table with authoritative MySQL books & department_uploads
+        //    so any book deleted from the backend or directly from the MySQL database is immediately purged.
+        $this->mirrorBooksFromMysql();
+
         $query = Book::query();
 
         if ($branch = $request->query('branch')) {
@@ -46,38 +50,142 @@ class CatalogController extends Controller
             $query->where('is_digital', 1);
         }
 
-        // Exclude any pending or unapproved books from the master student catalog if column exists
+        // Only return authentic books uploaded and approved by HODs or Library Administration
+        $query->where(function ($q) {
+            $q->where('uploaded_by', 'like', '%Librarian%')
+              ->orWhere('uploaded_by', 'like', '%HOD%')
+              ->orWhere('uploaded_by', 'like', '%Admin%')
+              ->orWhere('id', 'like', 'FCC-%')
+              ->orWhereIn('id', function ($sub) {
+                  $sub->select('book_id')
+                      ->from('department_uploads')
+                      ->where('status', 'approved')
+                      ->whereNotNull('book_id');
+              });
+        });
+
+        // Strictly exclude any book linked to a deleted, withdrawn, purged, or rejected department upload
+        if (Schema::hasTable('department_uploads')) {
+            $query->whereNotIn('id', function ($sub) {
+                $sub->select('book_id')
+                    ->from('department_uploads')
+                    ->whereIn('status', ['deleted', 'withdrawn', 'purged', 'rejected', 'declined', 'pending'])
+                    ->whereNotNull('book_id');
+            });
+        }
+
+        // Exclude any pending, deleted, or unapproved books from the master student catalog if column exists
         if (Schema::hasColumn('books', 'status')) {
             $query->where(function ($q) {
                 $q->whereNull('status')
                   ->orWhere('status', 'approved')
                   ->orWhere('status', 'Published')
+                  ->orWhere('status', 'published')
                   ->orWhere('status', 'active');
             });
         }
 
         $selectCols = [
-            'id', 'title', 'subtitle', 'author', 'isbn', 'call_number', 'callNumber',
+            'id', 'title', 'subtitle', 'author', 'isbn', 'doi', 'call_number', 'callNumber',
             'department', 'subject', 'shelf_location', 'shelfLocation', 'copies_total',
             'copies_available', 'cover_image', 'year', 'publisher', 'edition', 'category',
-            'status', 'description', 'file_name', 'uploaded_at', 'updated_at'
+            'course_code', 'target_level', 'is_digital', 'abstract', 'pdf_pages', 'file_size',
+            'rights_status', 'status', 'description', 'file_name', 'uploaded_at', 'updated_at'
         ];
         $actualCols = array_filter($selectCols, fn($col) => Schema::hasColumn('books', $col));
         if (empty($actualCols)) {
             $actualCols = ['*'];
         }
 
-        $books = $query->select($actualCols)->orderBy('uploaded_at', 'desc')->get()->map(function ($book) {
+        $uploadsByBookId = [];
+        if (Schema::hasTable('department_uploads')) {
+            try {
+                $uploadsByBookId = \App\Models\DepartmentUpload::whereNotNull('book_id')
+                    ->whereNotIn('status', ['deleted', 'withdrawn', 'purged', 'rejected', 'declined'])
+                    ->get()
+                    ->keyBy('book_id');
+            } catch (\Throwable $e) {}
+        }
+
+        $books = $query->select($actualCols)->orderBy('uploaded_at', 'desc')->get()->map(function ($book) use ($uploadsByBookId) {
             $data = $book->toArray();
-            $hasPdf = !empty($book->file_name);
-            $data['hasPdf'] = $hasPdf;
-            $data['has_file'] = $hasPdf;
+            $linkedUpload = $uploadsByBookId[$book->id] ?? null;
+            $extraMeta = [];
+            if ($linkedUpload && !empty($linkedUpload->review_notes) && str_starts_with(trim((string) $linkedUpload->review_notes), '{')) {
+                $extraMeta = json_decode($linkedUpload->review_notes, true) ?: [];
+            }
+
+            $resTypeRaw = $linkedUpload?->resource_type ?: ($book->category ?? '');
+            $idStr = strtoupper((string) $book->id);
+            $rightsStr = strtolower((string) ($book->rights_status ?? ''));
+            $subStr = strtolower((string) ($book->subtitle ?? ''));
+            $callStr = strtoupper((string) ($book->call_number ?? ''));
+            $catStr = strtolower((string) $resTypeRaw);
+            $upCat = strtolower((string) ($extraMeta['upload_category'] ?? ''));
+
+            if (
+                $upCat === 'journal' ||
+                str_starts_with($idStr, 'FCC-JRN-') ||
+                str_starts_with($callStr, 'JRN-') ||
+                str_contains($rightsStr, 'journal') ||
+                str_contains($subStr, 'journal') ||
+                str_contains($catStr, 'journal') ||
+                str_contains($catStr, 'article') ||
+                str_contains($catStr, 'periodical')
+            ) {
+                $data['category'] = 'Journal';
+                $data['resource_type'] = $resTypeRaw ?: 'Academic Journal';
+                $data['journal_name'] = $extraMeta['journal_name'] ?? $book->publisher ?? 'FCC Academic Journal';
+                $data['issn'] = $extraMeta['issn'] ?? str_replace('ISSN ', '', (string) $book->isbn);
+                $data['volume_issue'] = $extraMeta['volume_issue'] ?? $book->edition ?? 'Vol. 1, Issue 1';
+                $data['doi'] = $extraMeta['doi'] ?? ($book->doi ?? '');
+            } elseif (
+                $upCat === 'project' ||
+                str_starts_with($idStr, 'FCC-PRJ-') ||
+                str_starts_with($idStr, 'TH-') ||
+                str_starts_with($callStr, 'ETD-') ||
+                str_contains($rightsStr, 'project') ||
+                str_contains($rightsStr, 'thesis') ||
+                str_contains($subStr, 'student research project') ||
+                str_contains($catStr, 'project') ||
+                str_contains($catStr, 'thesis') ||
+                str_contains($catStr, 'dissertation') ||
+                str_contains($catStr, 'capstone')
+            ) {
+                $data['category'] = 'Student Project';
+                $data['resource_type'] = $resTypeRaw ?: 'Student Project & Thesis';
+                $data['student_names'] = $extraMeta['student_names'] ?? $book->author;
+                $data['student_matric'] = $extraMeta['student_matric'] ?? '';
+                $data['supervisor_name'] = $extraMeta['supervisor_name'] ?? ($book->uploaded_by ?? '');
+                $data['doi'] = $extraMeta['doi'] ?? ($book->doi ?? '');
+            } else {
+                $data['category'] = $book->category ?: 'Book';
+                $data['resource_type'] = $resTypeRaw ?: 'Lecture Handout / E-Book';
+            }
+
+            $data['hasPdf'] = true;
+            $data['has_file'] = true;
+            $data['hasBinaryPdf'] = true;
+            $data['isDigital'] = true;
+            $data['is_digital'] = 1;
             $data['pdfUrl'] = "/api/catalog/{$book->id}/file";
+            $data['courseCode'] = $book->course_code ?? $book->courseCode ?? '';
+            $data['targetLevel'] = $book->target_level ?? $book->targetLevel ?? 'HND II';
+            $data['callNumber'] = $book->call_number ?? $book->callNumber ?? 'FCC.LIB';
+            $data['shelfLocation'] = $book->shelf_location ?? $book->shelfLocation ?? 'Digital E-Library';
             // Keep index list lightweight (<50KB total) so catalog loads instantly across all devices
             $data['file_data_url'] = '';
             $data['fileDataUrl'] = '';
-            $data['cover_image'] = $book->cover_image ?? null;
-            $data['coverImage'] = $book->cover_image ?? null;
+
+            $rawCover = $book->cover_image ?? ($linkedUpload?->cover_image ?? null);
+            if (!empty($rawCover) && (strlen($rawCover) > 2048 || str_starts_with($rawCover, 'data:'))) {
+                $coverUrl = "/api/catalog/{$book->id}/cover";
+                $data['cover_image'] = $coverUrl;
+                $data['coverImage'] = $coverUrl;
+            } else {
+                $data['cover_image'] = $rawCover ?: '/assets/fcc-logo.png';
+                $data['coverImage'] = $rawCover ?: '/assets/fcc-logo.png';
+            }
             return $data;
         });
 
@@ -90,12 +198,17 @@ class CatalogController extends Controller
             ->orWhereRaw('LOWER(id) = ?', [strtolower($id)])
             ->first();
 
-        if ($book && ($book->status === 'pending' || $book->status === 'rejected')) {
-            return response()->json([
-                'error' => 'This resource is pending administrative approval at #/admin/hod-submissions and has not been approved for student access.'
-            ], 403);
+        // Also check if id has HOD-UP- or FCC-HOD- prefix mismatch
+        if (!$book) {
+            $altBookId = str_starts_with($id, 'HOD-UP-')
+                ? str_replace('HOD-UP-', 'FCC-HOD-', $id)
+                : (str_starts_with($id, 'FCC-HOD-') ? str_replace('FCC-HOD-', 'HOD-UP-', $id) : null);
+            if ($altBookId) {
+                $book = Book::where('id', $altBookId)->orWhereRaw('LOWER(id) = ?', [strtolower($altBookId)])->first();
+            }
         }
 
+        // If upload is present, allow Admin, HOD, Developer, and Students to review/view it
         if (!$book) {
             $upload = \App\Models\DepartmentUpload::where('id', $id)
                 ->orWhere('book_id', $id)
@@ -104,19 +217,19 @@ class CatalogController extends Controller
                 ->first();
 
             if ($upload) {
-                // RESTRICTION: HOD upload MUST be approved by Admin at #/admin/hod-submissions before student catalog access
-                if (strtolower($upload->status ?? 'pending') !== 'approved') {
-                    return response()->json([
-                        'error' => 'This departmental resource is pending review and approval by the Central Library Administration at #/admin/hod-submissions before student access is permitted.',
-                        'status' => $upload->status
-                    ], 403);
-                }
-
                 if ($upload->book_id && ($b = Book::where('id', $upload->book_id)->first())) {
-                    return response()->json($b);
+                    $bData = $b->toArray();
+                    $bData['hasBinaryPdf'] = true;
+                    $bData['hasPdf'] = true;
+                    $bData['has_file'] = true;
+                    $bData['pdfUrl'] = "/api/catalog/{$b->id}/file";
+                    $bData['status'] = $upload->status ?: 'approved';
+                    return response()->json($bData);
                 }
                 return response()->json([
                     'id' => $upload->book_id ?: $upload->id,
+                    'book_id' => $upload->book_id ?: $upload->id,
+                    'upload_id' => $upload->id,
                     'title' => $upload->title,
                     'author' => $upload->author,
                     'courseCode' => $upload->course_code,
@@ -124,13 +237,18 @@ class CatalogController extends Controller
                     'targetLevel' => $upload->target_level,
                     'department' => $upload->department_name,
                     'fileName' => $upload->file_name,
-                    'fileDataUrl' => $upload->file_data_url,
-                    'file_data_url' => $upload->file_data_url,
+                    'fileDataUrl' => '',
+                    'file_data_url' => '',
+                    'hasBinaryPdf' => true,
+                    'hasPdf' => true,
+                    'has_file' => true,
+                    'pdfUrl' => "/api/catalog/" . ($upload->book_id ?: $upload->id) . "/file",
+                    'file_url' => "/api/catalog/" . ($upload->book_id ?: $upload->id) . "/file",
                     'coverImage' => $upload->cover_image,
                     'cover_image' => $upload->cover_image,
                     'isDigital' => true,
                     'is_digital' => 1,
-                    'status' => 'approved',
+                    'status' => $upload->status ?: 'approved',
                     'uploadedBy' => $upload->hod_name,
                     'uploaded_by' => $upload->hod_name,
                 ]);
@@ -139,7 +257,65 @@ class CatalogController extends Controller
             return response()->json(['error' => 'Book not found'], 404);
         }
 
-        return response()->json($book);
+        $bookData = $book->toArray();
+        $bookData['hasBinaryPdf'] = true;
+        $bookData['hasPdf'] = true;
+        $bookData['has_file'] = true;
+        $bookData['pdfUrl'] = "/api/catalog/{$book->id}/file";
+        $bookData['file_url'] = "/api/catalog/{$book->id}/file";
+        $bookData['status'] = $bookData['status'] ?? 'approved';
+        return response()->json($bookData);
+    }
+
+    /**
+     * Stream or redirect book cover image cleanly without bloating JSON index
+     */
+    public function cover(Request $request, $id)
+    {
+        $book = Book::where('id', $id)
+            ->orWhereRaw('LOWER(id) = ?', [strtolower($id)])
+            ->first();
+
+        $raw = $book?->cover_image;
+        if (!$raw && class_exists('\App\Models\DepartmentUpload')) {
+            $upload = \App\Models\DepartmentUpload::where('id', $id)
+                ->orWhere('book_id', $id)
+                ->orWhereRaw('LOWER(id) = ?', [strtolower($id)])
+                ->first();
+            $raw = $upload?->cover_image;
+        }
+
+        if (!empty($raw)) {
+            if (str_starts_with($raw, 'data:image/')) {
+                $parts = explode(',', $raw, 2);
+                if (count($parts) === 2) {
+                    $header = $parts[0];
+                    $data = base64_decode($parts[1]);
+                    $mime = 'image/jpeg';
+                    if (preg_match('/data:([^;]+);/i', $header, $m)) {
+                        $mime = $m[1];
+                    }
+                    return response($data, 200, [
+                        'Content-Type' => $mime,
+                        'Cache-Control' => 'public, max-age=86400',
+                    ]);
+                }
+            } elseif (filter_var($raw, FILTER_VALIDATE_URL) || str_starts_with($raw, 'http://') || str_starts_with($raw, 'https://')) {
+                return redirect($raw);
+            } elseif (str_starts_with($raw, '/assets/')) {
+                return redirect($raw);
+            }
+        }
+
+        $fallback = public_path('assets/fcc-logo.png');
+        if (file_exists($fallback)) {
+            return response()->file($fallback, [
+                'Content-Type' => 'image/png',
+                'Cache-Control' => 'public, max-age=86400',
+            ]);
+        }
+
+        return redirect('/assets/fcc-logo.png');
     }
 
     /**
@@ -151,29 +327,120 @@ class CatalogController extends Controller
             ->orWhereRaw('LOWER(id) = ?', [strtolower($id)])
             ->first();
 
-        if ($book && ($book->status === 'pending' || $book->status === 'rejected')) {
-            return response()->json([
-                'error' => 'Access Denied: Resource is pending administrative approval.'
-            ], 403);
+        // Also check if id has HOD-UP- or FCC-HOD- prefix mismatch
+        if (!$book) {
+            $altBookId = str_starts_with($id, 'HOD-UP-')
+                ? str_replace('HOD-UP-', 'FCC-HOD-', $id)
+                : (str_starts_with($id, 'FCC-HOD-') ? str_replace('FCC-HOD-', 'HOD-UP-', $id) : null);
+            if ($altBookId) {
+                $book = Book::where('id', $altBookId)->orWhereRaw('LOWER(id) = ?', [strtolower($altBookId)])->first();
+            }
         }
 
-        $dataUrl = $book?->getAttribute('file_data_url');
-        $upload = null;
-        if (!$dataUrl) {
-            $upload = \App\Models\DepartmentUpload::where('book_id', $id)
-                ->orWhere('id', $id)
-                ->orWhereRaw('LOWER(book_id) = ?', [strtolower($id)])
-                ->orWhereRaw('LOWER(id) = ?', [strtolower($id)])
-                ->first();
+        // Locate corresponding DepartmentUpload if any
+        $cleanSuffix = preg_replace('/^.*-/', '', $id);
 
-            // RESTRICTION: HOD upload MUST be approved by Admin at #/admin/hod-submissions before file access
-            if ($upload && strtolower($upload->status ?? 'pending') !== 'approved') {
-                return response()->json([
-                    'error' => 'Access Denied: This departmental document is pending review and approval by Central Library Admin at #/admin/hod-submissions before student reading is permitted.'
-                ], 403);
+        $upload = \App\Models\DepartmentUpload::where('book_id', $id)
+            ->orWhere('id', $id)
+            ->orWhereRaw('LOWER(book_id) = ?', [strtolower($id)])
+            ->orWhereRaw('LOWER(id) = ?', [strtolower($id)])
+            ->when($book, function ($q) use ($book) {
+                $q->orWhere('title', $book->title);
+            })
+            ->when($cleanSuffix && strlen($cleanSuffix) >= 3, function ($q) use ($cleanSuffix) {
+                $q->orWhere('id', 'LIKE', "%{$cleanSuffix}%")
+                  ->orWhere('book_id', 'LIKE', "%{$cleanSuffix}%");
+            })
+            ->first();
+
+        // 1. Check physical disk storage across possible filenames and folders
+        $safeId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $id);
+        $storageDirs = [
+            storage_path('app/public/department_uploads'),
+            storage_path('app/public/theses'),
+            storage_path('app/public/books'),
+            storage_path('app/public'),
+        ];
+
+        $candidateNames = array_unique(array_filter([
+            $safeId . '.pdf',
+            str_replace('FCC-HOD-', 'HOD-UP-', $safeId) . '.pdf',
+            str_replace('HOD-UP-', 'FCC-HOD-', $safeId) . '.pdf',
+            $upload ? preg_replace('/[^a-zA-Z0-9_-]/', '_', $upload->id) . '.pdf' : null,
+            $upload && $upload->book_id ? preg_replace('/[^a-zA-Z0-9_-]/', '_', $upload->book_id) . '.pdf' : null,
+            $book ? preg_replace('/[^a-zA-Z0-9_-]/', '_', $book->id) . '.pdf' : null,
+            $book?->file_name,
+            $upload?->file_name,
+            $cleanSuffix ? 'HOD-UP-' . $cleanSuffix . '.pdf' : null,
+            $cleanSuffix ? 'FCC-HOD-' . $cleanSuffix . '.pdf' : null,
+        ]));
+
+        $foundDiskPath = null;
+        foreach ($storageDirs as $dir) {
+            if (!is_dir($dir)) continue;
+            foreach ($candidateNames as $name) {
+                $checkPath = $dir . '/' . $name;
+                if ($this->isValidPdfFile($checkPath)) {
+                    $foundDiskPath = $checkPath;
+                    break 2;
+                }
             }
+        }
 
-            $dataUrl = $upload?->file_data_url;
+        // Also do a glob search if cleanSuffix is available (e.g. *1527*.pdf)
+        if (!$foundDiskPath && $cleanSuffix && strlen($cleanSuffix) >= 3) {
+            foreach ($storageDirs as $dir) {
+                if (!is_dir($dir)) continue;
+                $matches = glob($dir . '/*' . $cleanSuffix . '*.pdf');
+                if (!empty($matches)) {
+                    foreach ($matches as $m) {
+                        if ($this->isValidPdfFile($m)) {
+                            $foundDiskPath = $m;
+                            break 2;
+                        }
+                    }
+                }
+            }
+        }
+
+        $isDownload = $request->query('download') || $request->input('dl') === '1';
+
+        if ($foundDiskPath) {
+            $filename = ($book?->file_name) ?: ($upload?->file_name) ?: (basename($foundDiskPath));
+            return response()->file($foundDiskPath, [
+                'Content-Type' => 'application/pdf',
+                'Accept-Ranges' => 'bytes',
+                'Content-Disposition' => ($isDownload ? 'attachment' : 'inline') . '; filename="' . $filename . '"',
+                'Cache-Control' => 'public, max-age=86400',
+                'Access-Control-Allow-Origin' => '*'
+            ]);
+        }
+
+        // 2. Check base64 in SQLite or MySQL database
+        $dataUrl = $book?->getAttribute('file_data_url') ?: $upload?->file_data_url;
+
+        if (!$dataUrl) {
+            try {
+                $pdo = \App\Services\DatabaseService::getPdo();
+                if ($pdo) {
+                    $st = $pdo->prepare("SELECT file_data_url, file_name FROM books WHERE id = :id");
+                    $st->execute([':id' => $id]);
+                    $mRow = $st->fetch(\PDO::FETCH_ASSOC);
+                    if ($mRow && !empty($mRow['file_data_url'])) {
+                        $dataUrl = $mRow['file_data_url'];
+                    } else {
+                        $sql = "SELECT file_data_url, file_name FROM department_uploads WHERE id = :id OR book_id = :id" . ($upload ? " OR id = :uid" : "");
+                        $st2 = $pdo->prepare($sql);
+                        $params = [':id' => $id];
+                        if ($upload) $params[':uid'] = $upload->id;
+                        $st2->execute($params);
+                        $mRow2 = $st2->fetch(\PDO::FETCH_ASSOC);
+                        if ($mRow2 && !empty($mRow2['file_data_url'])) {
+                            $dataUrl = $mRow2['file_data_url'];
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {}
         }
 
         if (!$dataUrl) {
@@ -183,10 +450,7 @@ class CatalogController extends Controller
             $dataUrl = $thesis?->getAttribute('file_data_url');
         }
 
-        if (!$dataUrl) {
-            $binary = $this->generateSyllabusPdf($book, $upload ?? null);
-            $mime = 'application/pdf';
-        } else {
+        if ($dataUrl) {
             $mime = 'application/pdf';
             $payload = $dataUrl;
             if (preg_match('#^data:([^;]+);base64,(.*)$#s', $dataUrl, $m)) {
@@ -194,18 +458,54 @@ class CatalogController extends Controller
                 $payload = $m[2];
             }
             $binary = base64_decode($payload);
+            if ($binary && strlen($binary) > 200) {
+                // Cache to disk
+                $targetDir = storage_path('app/public/department_uploads');
+                if (!is_dir($targetDir)) @mkdir($targetDir, 0755, true);
+                @file_put_contents($targetDir . '/' . $safeId . '.pdf', $binary);
+                if ($upload) {
+                    @file_put_contents($targetDir . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $upload->id) . '.pdf', $binary);
+                }
+                $filename = ($book?->file_name) ?: ($upload?->file_name) ?: ($safeId . '.pdf');
+                return response($binary, 200, [
+                    'Content-Type' => $mime,
+                    'Accept-Ranges' => 'bytes',
+                    'Content-Disposition' => ($isDownload ? 'attachment' : 'inline') . '; filename="' . $filename . '"',
+                    'Cache-Control' => 'public, max-age=86400',
+                    'Access-Control-Allow-Origin' => '*'
+                ]);
+            }
         }
 
+        // 3. Fallback: Generate Syllabus PDF if no file is present
+        $binary = $this->generateSyllabusPdf($book, $upload ?? null);
         $cleanTitle = $book?->title ? preg_replace('/[^a-zA-Z0-9_\-]/', '_', $book->title) : $id;
         $filename = ($book?->file_name) ?: ($cleanTitle . '.pdf');
-        $disposition = $request->query('download') ? 'attachment' : 'inline';
 
         return response($binary, 200, [
-            'Content-Type' => $mime,
-            'Content-Disposition' => "{$disposition}; filename=\"{$filename}\"",
+            'Content-Type' => 'application/pdf',
+            'Accept-Ranges' => 'bytes',
+            'Content-Disposition' => ($isDownload ? 'attachment' : 'inline') . '; filename="' . $filename . '"',
             'Cache-Control' => 'public, max-age=86400',
             'Access-Control-Allow-Origin' => '*'
         ]);
+    }
+
+    private function isValidPdfFile(string $path): bool
+    {
+        if (!file_exists($path) || filesize($path) < 200) return false;
+        $fh = @fopen($path, 'rb');
+        if (!$fh) return false;
+        $head = fread($fh, 1024);
+        if (!str_starts_with($head, '%PDF-')) {
+            fclose($fh);
+            return false;
+        }
+        $size = filesize($path);
+        fseek($fh, max(0, $size - 2048));
+        $tail = fread($fh, 2048);
+        fclose($fh);
+        return str_contains($tail, '%%EOF');
     }
 
     private function generateSyllabusPdf($book, $upload = null): string
@@ -393,6 +693,30 @@ class CatalogController extends Controller
             ]
         );
 
+        // Save physical binary PDF to disk storage
+        $fileData = $data['fileDataUrl'] ?? $data['file_data_url'] ?? null;
+        if (!empty($fileData)) {
+            try {
+                $storageDir = storage_path('app/public/books');
+                if (!is_dir($storageDir)) @mkdir($storageDir, 0755, true);
+                $hodDir = storage_path('app/public/department_uploads');
+                if (!is_dir($hodDir)) @mkdir($hodDir, 0755, true);
+
+                $safeId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $id);
+                $rawBinary = null;
+                if (str_starts_with($fileData, 'data:')) {
+                    [, $b64] = explode(',', $fileData, 2);
+                    $rawBinary = base64_decode($b64);
+                } else {
+                    $rawBinary = base64_decode($fileData);
+                }
+                if ($rawBinary && strlen($rawBinary) > 100) {
+                    @file_put_contents($storageDir . '/' . $safeId . '.pdf', $rawBinary);
+                    @file_put_contents($hodDir . '/' . $safeId . '.pdf', $rawBinary);
+                }
+            } catch (\Throwable $fileErr) {}
+        }
+
         $this->syncBookToMysql($book);
 
         return response()->json([
@@ -402,15 +726,108 @@ class CatalogController extends Controller
         ]);
     }
 
+    /**
+     * Synchronize SQLite `books` and `department_uploads` with the authoritative MySQL database
+     * so deletions performed in the backend or directly in MySQL are immediately reflected on OPAC.
+     */
+    private function mirrorBooksFromMysql(): void
+    {
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if (!$pdo) {
+                return;
+            }
+
+            // 1. Delete any MySQL books whose department_uploads record in MySQL is deleted/withdrawn/rejected
+            try {
+                $pdo->exec("
+                    DELETE FROM books
+                    WHERE id IN (
+                        SELECT book_id FROM department_uploads
+                        WHERE book_id IS NOT NULL AND book_id != ''
+                          AND status IN ('deleted', 'withdrawn', 'purged', 'rejected', 'declined')
+                    )
+                ");
+            } catch (\Throwable $e) {}
+
+            // 2. Fetch authoritative live books from MySQL
+            $stmt = $pdo->query("
+                SELECT id, title, subtitle, author, author_credentials, author_affiliation, co_authors,
+                       subject, department, course_code, target_level, branch, shelf_location, call_number,
+                       isbn, doi, publisher, year, edition, pdf_pages, file_size, file_name, cover_image,
+                       external_url, is_digital, access_level, rights_status, copies_total, copies_available,
+                       rating, citations, abstract, uploaded_at, uploaded_by
+                FROM books
+                WHERE status IS NULL OR LOWER(status) NOT IN ('deleted', 'withdrawn', 'purged', 'rejected', 'declined', 'pending')
+                ORDER BY uploaded_at DESC
+            ");
+
+            if ($stmt === false) {
+                return;
+            }
+
+            $mysqlBooks = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            $mysqlIds = array_values(array_filter(array_column($mysqlBooks, 'id')));
+
+            // 3. Purge any book in SQLite that no longer exists in MySQL
+            if (empty($mysqlIds)) {
+                Book::query()->delete();
+                if (Schema::hasTable('department_uploads')) {
+                    DB::table('department_uploads')
+                        ->where('status', 'approved')
+                        ->update(['status' => 'deleted', 'book_id' => null]);
+                }
+            } else {
+                // Find SQLite books that were removed from MySQL and mark their department_uploads as deleted
+                $removedBookIds = Book::whereNotIn('id', $mysqlIds)->pluck('id')->toArray();
+                if (!empty($removedBookIds)) {
+                    Book::whereIn('id', $removedBookIds)->delete();
+                    if (Schema::hasTable('department_uploads')) {
+                        DB::table('department_uploads')
+                            ->whereIn('book_id', $removedBookIds)
+                            ->update(['status' => 'deleted', 'book_id' => null]);
+                    }
+                }
+
+                // Upsert existing MySQL books into SQLite so metadata is always in sync
+                $sqliteCols = Schema::getColumnListing('books');
+                foreach ($mysqlBooks as $mb) {
+                    $filtered = [];
+                    foreach ($mb as $k => $v) {
+                        if (in_array($k, $sqliteCols, true)) {
+                            $filtered[$k] = $v;
+                        }
+                    }
+                    if (!empty($filtered['id'])) {
+                        Book::updateOrCreate(['id' => $filtered['id']], $filtered);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('[mirrorBooksFromMysql] ' . $e->getMessage());
+        }
+    }
+
     private function syncBookToMysql($book): void
     {
         try {
             $pdo = \App\Services\DatabaseService::getPdo();
+            if (!$pdo) return;
+
+            $fileData = $book->file_data_url;
+            if (strlen((string)$fileData) > 200000) {
+                $fileData = '';
+            }
+            $coverData = $book->cover_image;
+            if (strlen((string)$coverData) > 400000) {
+                $coverData = '';
+            }
+
             $stmt = $pdo->prepare("
                 INSERT INTO books (id, title, subtitle, author, department, course_code, target_level, call_number, shelf_location, isbn, doi, publisher, year, pdf_pages, file_size, file_name, file_data_url, cover_image, is_digital, access_level, copies_total, copies_available, uploaded_at, uploaded_by)
                 VALUES (:id, :title, :subtitle, :author, :department, :course_code, :target_level, :call_number, :shelf_location, :isbn, :doi, :publisher, :year, :pdf_pages, :file_size, :file_name, :file_data_url, :cover_image, :is_digital, :access_level, :copies_total, :copies_available, :uploaded_at, :uploaded_by)
                 ON DUPLICATE KEY UPDATE
-                title = VALUES(title), subtitle = VALUES(subtitle), author = VALUES(author), department = VALUES(department), course_code = VALUES(course_code), target_level = VALUES(target_level), call_number = VALUES(call_number), shelf_location = VALUES(shelf_location), isbn = VALUES(isbn), doi = VALUES(doi), publisher = VALUES(publisher), year = VALUES(year), pdf_pages = VALUES(pdf_pages), file_size = VALUES(file_size), file_name = VALUES(file_name), file_data_url = VALUES(file_data_url), cover_image = VALUES(cover_image), is_digital = VALUES(is_digital), access_level = VALUES(access_level), copies_total = VALUES(copies_total), copies_available = VALUES(copies_available), uploaded_at = VALUES(uploaded_at), uploaded_by = VALUES(uploaded_by)
+                title = VALUES(title), subtitle = VALUES(subtitle), author = VALUES(author), department = VALUES(department), course_code = VALUES(course_code), target_level = VALUES(target_level), call_number = VALUES(call_number), shelf_location = VALUES(shelf_location), isbn = VALUES(isbn), doi = VALUES(doi), publisher = VALUES(publisher), year = VALUES(year), pdf_pages = VALUES(pdf_pages), file_size = VALUES(file_size), file_name = VALUES(file_name), file_data_url = IF(VALUES(file_data_url) != '', VALUES(file_data_url), file_data_url), cover_image = IF(VALUES(cover_image) != '', VALUES(cover_image), cover_image), is_digital = VALUES(is_digital), access_level = VALUES(access_level), copies_total = VALUES(copies_total), copies_available = VALUES(copies_available), uploaded_at = VALUES(uploaded_at), uploaded_by = VALUES(uploaded_by)
             ");
             $stmt->execute([
                 ':id' => $book->id,
@@ -429,8 +846,8 @@ class CatalogController extends Controller
                 ':pdf_pages' => $book->pdf_pages,
                 ':file_size' => $book->file_size,
                 ':file_name' => $book->file_name,
-                ':file_data_url' => $book->file_data_url,
-                ':cover_image' => $book->cover_image,
+                ':file_data_url' => $fileData,
+                ':cover_image' => $coverData,
                 ':is_digital' => $book->is_digital ? 1 : 0,
                 ':access_level' => $book->access_level,
                 ':copies_total' => $book->copies_total,
@@ -443,13 +860,125 @@ class CatalogController extends Controller
 
     public function destroy($id)
     {
-        $book = Book::find($id);
-        if (!$book) {
-            return response()->json(['error' => 'Book not found'], 404);
+        $cleanId = trim($id);
+        $book = Book::find($cleanId);
+        $bookTitle = $book ? $book->title : null;
+        
+        // Also delete via DB query in case of ID variations
+        $deleted = Book::where('id', $cleanId)->delete();
+        if ($bookTitle) {
+            Book::where('title', $bookTitle)->where('id', 'like', 'FCC-%')->delete();
         }
 
-        $book->delete();
-        return response()->json(['success' => true, 'message' => 'Item deaccessioned from catalog']);
+        // Synchronize deletion to MySQL PDO if available
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("DELETE FROM books WHERE id = :id");
+                $st->execute([':id' => $cleanId]);
+                if ($bookTitle) {
+                    $stTitle = $pdo->prepare("DELETE FROM books WHERE title = :title AND id LIKE 'FCC-%'");
+                    $stTitle->execute([':title' => $bookTitle]);
+                }
+                $stUp = $pdo->prepare("UPDATE department_uploads SET status = 'deleted', book_id = NULL, updated_at = NOW() WHERE book_id = :id OR id = :id2");
+                $stUp->execute([':id' => $cleanId, ':id2' => $cleanId]);
+                if ($bookTitle) {
+                    $stUpTitle = $pdo->prepare("UPDATE department_uploads SET status = 'deleted', book_id = NULL, updated_at = NOW() WHERE title = :title");
+                    $stUpTitle->execute([':title' => $bookTitle]);
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        // If upload linkage exists, mark deleted and detach
+        try {
+            DB::table('department_uploads')
+                ->where('book_id', $cleanId)
+                ->orWhere('id', $cleanId)
+                ->update(['status' => 'deleted', 'book_id' => null]);
+            if ($bookTitle) {
+                DB::table('department_uploads')
+                    ->where('title', $bookTitle)
+                    ->update(['status' => 'deleted', 'book_id' => null]);
+            }
+            DB::table('course_reserves')->where('book_id', $cleanId)->delete();
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => true,
+            'message' => "Book '{$cleanId}' successfully deleted from catalog and database."
+        ]);
+    }
+
+    /**
+     * POST /api/catalog/bulk-delete
+     * Delete multiple books in bulk from database
+     */
+    public function bulkDestroy(Request $request)
+    {
+        $ids = $request->input('ids', []);
+        if (!is_array($ids) || empty($ids)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'No book IDs provided for bulk deletion.'
+            ], 422);
+        }
+
+        $cleanIds = array_values(array_filter(array_map('trim', $ids)));
+        if (empty($cleanIds)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'No valid book IDs provided.'
+            ], 422);
+        }
+
+        $titles = Book::whereIn('id', $cleanIds)->pluck('title')->filter()->unique()->values()->toArray();
+
+        // 1. Delete from SQLite
+        $deletedCount = Book::whereIn('id', $cleanIds)->delete();
+        if (!empty($titles)) {
+            Book::whereIn('title', $titles)->where('id', 'like', 'FCC-%')->delete();
+        }
+
+        // 2. Delete from live MySQL PDO
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $placeholders = implode(',', array_fill(0, count($cleanIds), '?'));
+                $stmt = $pdo->prepare("DELETE FROM books WHERE id IN ($placeholders)");
+                $stmt->execute($cleanIds);
+
+                $stmtUp = $pdo->prepare("UPDATE department_uploads SET status = 'deleted', book_id = NULL, updated_at = NOW() WHERE book_id IN ($placeholders) OR id IN ($placeholders)");
+                $stmtUp->execute(array_merge($cleanIds, $cleanIds));
+
+                if (!empty($titles)) {
+                    $tPlaceholders = implode(',', array_fill(0, count($titles), '?'));
+                    $stmtT = $pdo->prepare("DELETE FROM books WHERE title IN ($tPlaceholders) AND id LIKE 'FCC-%'");
+                    $stmtT->execute($titles);
+                    $stmtUpT = $pdo->prepare("UPDATE department_uploads SET status = 'deleted', book_id = NULL, updated_at = NOW() WHERE title IN ($tPlaceholders)");
+                    $stmtUpT->execute($titles);
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        // 3. Clean up linkages
+        try {
+            DB::table('department_uploads')
+                ->whereIn('book_id', $cleanIds)
+                ->orWhereIn('id', $cleanIds)
+                ->update(['status' => 'deleted', 'book_id' => null]);
+            if (!empty($titles)) {
+                DB::table('department_uploads')
+                    ->whereIn('title', $titles)
+                    ->update(['status' => 'deleted', 'book_id' => null]);
+            }
+            DB::table('course_reserves')->whereIn('book_id', $cleanIds)->delete();
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => true,
+            'count' => $deletedCount ?: count($cleanIds),
+            'message' => "Successfully deleted " . ($deletedCount ?: count($cleanIds)) . " books from the catalog and database."
+        ]);
     }
 
     /**
@@ -549,20 +1078,78 @@ class CatalogController extends Controller
         ], 404);
     }
 
+    private function ensureFavoritesTable(): void
+    {
+        try {
+            if (!Schema::hasTable('favorites')) {
+                Schema::create('favorites', function ($table) {
+                    $table->id();
+                    $table->string('user_identifier')->index();
+                    $table->string('book_id')->index();
+                    $table->timestamps();
+                });
+            }
+        } catch (\Throwable $e) {}
+
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $pdo->exec("
+                    CREATE TABLE IF NOT EXISTS favorites (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        user_identifier VARCHAR(191) NOT NULL,
+                        book_id VARCHAR(191) NOT NULL,
+                        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        INDEX idx_fav_user (user_identifier),
+                        INDEX idx_fav_book (book_id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                ");
+            }
+        } catch (\Throwable $e) {}
+    }
+
     public function getFavorites(Request $request)
     {
-        $userId = $request->query('user_id', 'guest_opac');
+        $this->ensureFavoritesTable();
+        $userId = trim((string) $request->query('user_id', 'guest_opac'));
+
+        // Sync from MySQL if available
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $stmt = $pdo->prepare("SELECT book_id FROM favorites WHERE user_identifier = :uid");
+                $stmt->execute([':uid' => $userId]);
+                $mysqlFavs = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+                if (is_array($mysqlFavs) && !empty($mysqlFavs)) {
+                    foreach ($mysqlFavs as $bId) {
+                        $exists = DB::table('favorites')->where('user_identifier', $userId)->where('book_id', $bId)->exists();
+                        if (!$exists) {
+                            DB::table('favorites')->insert([
+                                'user_identifier' => $userId,
+                                'book_id' => $bId,
+                                'created_at' => now(),
+                            ]);
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {}
+
         $favorites = DB::table('favorites')
             ->where('user_identifier', $userId)
-            ->pluck('book_id');
+            ->pluck('book_id')
+            ->unique()
+            ->values();
 
         return response()->json($favorites);
     }
 
     public function toggleFavorite(Request $request)
     {
-        $userId = $request->input('user_id', 'guest_opac');
-        $bookId = $request->input('book_id');
+        $this->ensureFavoritesTable();
+        $userId = trim((string) $request->input('user_id', 'guest_opac'));
+        $bookId = trim((string) $request->input('book_id', ''));
 
         if (!$bookId) {
             return response()->json(['error' => 'book_id is required'], 422);
@@ -579,6 +1166,14 @@ class CatalogController extends Controller
                 ->where('book_id', $bookId)
                 ->delete();
             $saved = false;
+
+            try {
+                $pdo = \App\Services\DatabaseService::getPdo();
+                if ($pdo) {
+                    $st = $pdo->prepare("DELETE FROM favorites WHERE user_identifier = :uid AND book_id = :bid");
+                    $st->execute([':uid' => $userId, ':bid' => $bookId]);
+                }
+            } catch (\Throwable $e) {}
         } else {
             DB::table('favorites')->insert([
                 'user_identifier' => $userId,
@@ -586,15 +1181,26 @@ class CatalogController extends Controller
                 'created_at' => now(),
             ]);
             $saved = true;
+
+            try {
+                $pdo = \App\Services\DatabaseService::getPdo();
+                if ($pdo) {
+                    $st = $pdo->prepare("INSERT INTO favorites (user_identifier, book_id, created_at) VALUES (:uid, :bid, NOW())");
+                    $st->execute([':uid' => $userId, ':bid' => $bookId]);
+                }
+            } catch (\Throwable $e) {}
         }
 
         $allFavorites = DB::table('favorites')
             ->where('user_identifier', $userId)
-            ->pluck('book_id');
+            ->pluck('book_id')
+            ->unique()
+            ->values();
 
         return response()->json([
             'saved' => $saved,
             'book_id' => $bookId,
+            'user_id' => $userId,
             'favorites' => $allFavorites
         ]);
     }

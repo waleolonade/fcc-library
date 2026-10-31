@@ -20,14 +20,60 @@ import TroveExplorer from '../student/TroveExplorer';
 import InternetArchiveExplorer from '../student/InternetArchiveExplorer';
 import GoogleBooksExplorer from '../student/GoogleBooksExplorer';
 import ApiOverlayDiscovery from '../student/ApiOverlayDiscovery';
-import { getBookCoverUrl, DEFAULT_BOOK_COVER, OFFLINE_BOOK_COVER_SVG } from '../utils/bookCoverResolver';
+import DigitalBookReader from '../common/DigitalBookReader';
+import { getApiBase } from '../api/libraryApi';
+import { getActiveUserSession } from '../utils/authSessionManager';
+import UniversalNotificationCenter from '../common/UniversalNotificationCenter';
+import {
+  fetchLiveAcademicJournals,
+  fetchLiveDissertationsAndProjects
+} from '../services/openSourceJournalsApi';
 
 export default function PublicDiscovery({
   books: propBooks = [],
+  currentUser = null,
   partnerLibraries = INITIAL_PARTNER_LIBRARIES,
   onSelectBook,
-  onOpenLogin
+  onOpenReader,
+  onOpenLogin,
+  onOpenDashboard
 }) {
+  const [activeInternalBook, setActiveInternalBook] = useState(null);
+  const [bookmarkToast, setBookmarkToast] = useState(null);
+
+  // Resolve logged-in Student / User session
+  const activeUser = useMemo(() => {
+    if (currentUser && (currentUser.id || currentUser.matric || currentUser.email || currentUser.username)) {
+      return currentUser;
+    }
+    try {
+      const stored = getActiveUserSession();
+      if (stored && (stored.id || stored.matric || stored.email || stored.username)) {
+        return stored;
+      }
+    } catch {}
+    return null;
+  }, [currentUser]);
+
+  const activeUserId = useMemo(() => {
+    if (!activeUser) return null;
+    return String(activeUser.matric || activeUser.id || activeUser.email || activeUser.username || '').trim();
+  }, [activeUser]);
+
+  const handleReadBook = (book, e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    sounds.playClick();
+    if (book?.isLiveExternalJournal && (book.pdfUrl || book.externalUrl)) {
+      window.open(book.pdfUrl || book.externalUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (onOpenReader) {
+      onOpenReader(book);
+    } else {
+      setActiveInternalBook(book);
+    }
+  };
+
   // Live Institutional Catalog State (Direct connection to Backend, API, and SQLite/MySQL Database)
   const [catalogBooks, setCatalogBooks] = useState(() => {
     if (Array.isArray(propBooks) && propBooks.length > 0) return propBooks;
@@ -47,31 +93,53 @@ export default function PublicDiscovery({
   const fetchBackendCatalog = async () => {
     try {
       setIsSyncingCatalog(true);
-      const res = await fetch('/api/catalog');
-      if (res.ok) {
+      const base = getApiBase();
+      let res;
+      try {
+        res = await fetch(`${base}/catalog`);
+      } catch (e) {
+        res = await fetch('/api/catalog');
+      }
+      if (res && res.ok) {
         const backendBooks = await res.json();
         if (Array.isArray(backendBooks)) {
           const normalized = backendBooks
-            .filter(b => !(b.status && b.status !== 'approved'))
+            .filter(b => !b.status || ['approved', 'published', 'active'].includes(String(b.status).toLowerCase()))
             .map(b => ({
               ...b,
-              callNumber: b.call_number || b.callNumber,
-              shelfLocation: b.shelf_location || b.shelfLocation,
-              courseCode: b.course_code || b.courseCode,
-              targetLevel: b.target_level || b.targetLevel,
+              callNumber: b.call_number || b.callNumber || 'FCC.LIB',
+              shelfLocation: b.shelf_location || b.shelfLocation || 'Digital E-Library',
+              courseCode: b.course_code || b.courseCode || '',
+              targetLevel: b.target_level || b.targetLevel || 'HND II',
               copiesTotal: b.copies_total !== undefined ? b.copies_total : (b.copiesTotal || 1),
               copiesAvailable: b.copies_available !== undefined ? b.copies_available : (b.copiesAvailable || 1),
-              pdfPages: b.pdf_pages || b.pdfPages,
-              fileSize: b.file_size || b.fileSize,
+              pdfPages: b.pdf_pages || b.pdfPages || 120,
+              fileSize: b.file_size || b.fileSize || '4.5 MB',
               fileName: b.file_name || b.fileName,
               fileDataUrl: b.file_data_url || b.fileDataUrl || '',
-              cover_image: b.cover_image || b.coverImage || getBookCoverUrl(b),
-              coverImage: b.cover_image || b.coverImage || getBookCoverUrl(b),
-              isDigital: b.is_digital !== undefined ? Boolean(b.is_digital) : (b.isDigital !== undefined ? Boolean(b.isDigital) : true)
+              cover_image: b.cover_image || b.coverImage || b.cover || '/assets/fcc-logo.png',
+              coverImage: b.cover_image || b.coverImage || b.cover || '/assets/fcc-logo.png',
+              isDigital: true,
+              hasPdf: true,
+              has_file: true
             }));
           setCatalogBooks(normalized);
           setLastSyncTime(new Date());
-          localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(normalized));
+          try {
+            const slim = normalized.map(b => {
+              if (!b) return b;
+              const c = { ...b, file_data_url: '', fileDataUrl: '' };
+              if (typeof c.cover_image === 'string' && c.cover_image.startsWith('data:')) {
+                c.cover_image = c.id ? `/api/catalog/${c.id}/cover` : '/assets/fcc-logo.png';
+              }
+              if (typeof c.coverImage === 'string' && c.coverImage.startsWith('data:')) {
+                c.coverImage = c.id ? `/api/catalog/${c.id}/cover` : '/assets/fcc-logo.png';
+              }
+              return c;
+            });
+            localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(slim));
+            localStorage.setItem('fcc_db_catalog', JSON.stringify(slim));
+          } catch (e) {}
         }
       }
     } catch (err) {
@@ -81,12 +149,12 @@ export default function PublicDiscovery({
     }
   };
 
-  // Sync when propBooks changes from parent App.jsx
+  // Sync when propBooks changes from parent App.jsx (only before live backend sync completes)
   useEffect(() => {
-    if (Array.isArray(propBooks) && propBooks.length > 0) {
+    if (!lastSyncTime && Array.isArray(propBooks)) {
       setCatalogBooks(propBooks);
     }
-  }, [propBooks]);
+  }, [propBooks, lastSyncTime]);
 
   // Initial fetch on mount & listen to real-time events when HODs or Admin upload books with covers
   useEffect(() => {
@@ -122,8 +190,47 @@ export default function PublicDiscovery({
     };
   }, []);
 
-  // Use the live catalog books from Backend API & Database
-  const books = catalogBooks;
+  // Live Open-Access Academic Journals & Theses from OpenAlex, Crossref, and Europe PMC APIs
+  const [liveApiJournals, setLiveApiJournals] = useState([]);
+  const [liveApiProjects, setLiveApiProjects] = useState([]);
+  const [isFetchingLiveJournals, setIsFetchingLiveJournals] = useState(false);
+
+  const loadLiveOpenSourceJournalsAndProjects = async (customQuery = '') => {
+    setIsFetchingLiveJournals(true);
+    try {
+      const q = (customQuery || searchQuery || '').trim() || 'cooperative economics computer science agriculture business finance';
+      const [journals, projects] = await Promise.all([
+        fetchLiveAcademicJournals({ query: q, perPage: 16 }),
+        fetchLiveDissertationsAndProjects({ query: q, perPage: 10 })
+      ]);
+      if (Array.isArray(journals) && journals.length > 0) {
+        setLiveApiJournals(journals);
+      }
+      if (Array.isArray(projects) && projects.length > 0) {
+        setLiveApiProjects(projects);
+      }
+    } catch (err) {
+      console.warn('Open-source journals API fetch warning:', err);
+    } finally {
+      setIsFetchingLiveJournals(false);
+    }
+  };
+
+  useEffect(() => {
+    loadLiveOpenSourceJournalsAndProjects();
+  }, []);
+
+  // Combine Local Database Holdings (HOD & Admin uploaded Books, Journals & Student Projects) with Live Open-Access API Journals & Projects
+  const books = useMemo(() => {
+    const merged = [...catalogBooks, ...liveApiJournals, ...liveApiProjects];
+    const seenIds = new Set();
+    return merged.filter(item => {
+      if (!item || !item.id) return false;
+      if (seenIds.has(item.id)) return false;
+      seenIds.add(item.id);
+      return true;
+    });
+  }, [catalogBooks, liveApiJournals, liveApiProjects]);
 
   // Navigation: 'home' | 'catalog' | 'openlibrary' | 'gutenberg' | 'trove' | 'journals' | 'databases' | 'repository' | 'partner_libraries'
   const [activeTab, setActiveTab] = useState('home');
@@ -151,6 +258,7 @@ export default function PublicDiscovery({
   // Server-side / Client Pagination State (Prompt 34: 20, 50, 100 per page)
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [sortBy, setSortBy] = useState(''); // '' (Relevance) | 'new' | 'old' | 'random' | 'rating'
 
   // Resource Category Filter: 'All' | 'Book' | 'Journal' | 'Student Project'
   const [resourceCategory, setResourceCategory] = useState('All');
@@ -160,33 +268,36 @@ export default function PublicDiscovery({
   const [askForm, setAskForm] = useState({ name: '', matricOrEmail: '', department: 'CEM', question: '' });
   const [askSubmitted, setAskSubmitted] = useState(false);
 
-  // Advanced Search State
-  const [advSearch, setAdvSearch] = useState({
+  // Advanced Search Initial State & Filters
+  const INITIAL_ADV_SEARCH = {
     title: '',
     author: '',
     subject: '',
     isbn: '',
     publisher: '',
-    yearFrom: '2015',
-    yearTo: '2026',
+    yearFrom: '',
+    yearTo: '',
     materialTypes: {
-      Book: true,
+      Book: false,
       Journal: false,
       Thesis: false,
       Dissertation: false,
-      eBook: true,
+      eBook: false,
       Video: false,
       Audio: false,
       Newspaper: false,
       ConferencePaper: false
     },
     availability: {
-      Available: true,
-      CheckedOut: false,
-      Electronic: true,
-      ReferenceOnly: false
+      'Available in Stacks': false,
+      'Checked Out': false,
+      'Electronic Digital Access': false,
+      'Reference Only': false
     }
-  });
+  };
+
+  const [advSearch, setAdvSearch] = useState(INITIAL_ADV_SEARCH);
+  const [isAdvSearchApplied, setIsAdvSearchApplied] = useState(false);
 
   // Faceted Filter States (VuFind / LibraryWorld standard)
   const [facets, setFacets] = useState({
@@ -295,43 +406,119 @@ export default function PublicDiscovery({
     setShowAutocomplete(combined.length > 0);
   }, [searchQuery, books]);
 
-  // Load saved bookmarks from SQL database (if backend is active)
+  // Load saved bookmarks for the logged-in user/student from SQL database & user-scoped localStorage
   useEffect(() => {
-    fetch('/api/favorites?user_id=guest_opac')
+    if (!activeUserId) {
+      setSavedBooks([]);
+      return;
+    }
+
+    const storageKey = `fcc_saved_books_${activeUserId}`;
+    let localUserSaved = [];
+    try {
+      localUserSaved = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      if (Array.isArray(localUserSaved)) {
+        setSavedBooks(localUserSaved);
+      }
+    } catch {}
+
+    const base = getApiBase();
+    fetch(`${base}/favorites?user_id=${encodeURIComponent(activeUserId)}`)
       .then(res => {
         if (!res.ok) throw new Error('Backend not available');
         return res.json();
       })
       .then(data => {
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           setSavedBooks(prev => {
-            const merged = Array.from(new Set([...prev, ...data]));
+            const merged = Array.from(new Set([...prev, ...localUserSaved, ...data]));
+            localStorage.setItem(storageKey, JSON.stringify(merged));
             localStorage.setItem('fcc_saved_books_list', JSON.stringify(merged));
             return merged;
           });
         }
       })
       .catch(() => {});
-  }, []);
 
-  // Sync Saved Books from storage and SQL database
-  const handleToggleSaveBook = (bookId, e) => {
+    // Check if the student clicked "Bookmark this title" right before logging in
+    const pendingBookId = sessionStorage.getItem('fcc_pending_bookmark_book_id');
+    const pendingBookTitle = sessionStorage.getItem('fcc_pending_bookmark_book_title');
+    if (pendingBookId) {
+      sessionStorage.removeItem('fcc_pending_bookmark_book_id');
+      sessionStorage.removeItem('fcc_pending_bookmark_book_title');
+      setSavedBooks(prev => {
+        if (prev.includes(pendingBookId)) return prev;
+        const next = [...prev, pendingBookId];
+        localStorage.setItem(storageKey, JSON.stringify(next));
+        localStorage.setItem('fcc_saved_books_list', JSON.stringify(next));
+        return next;
+      });
+      fetch(`${base}/favorites/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: activeUserId, book_id: pendingBookId })
+      }).catch(() => {});
+      sounds.playSuccessChime();
+      setBookmarkToast({
+        type: 'saved',
+        message: `Bookmarked "${pendingBookTitle || pendingBookId}" to your account (${activeUser?.name || activeUserId})!`
+      });
+      setTimeout(() => setBookmarkToast(null), 4500);
+    }
+  }, [activeUserId, activeUser]);
+
+  // Sync Saved Books when user/student is logged in (or prompt login if guest)
+  const handleToggleSaveBook = (bookId, e, bookTitle = '') => {
     e?.stopPropagation();
+
+    if (!activeUserId) {
+      sounds.playClick();
+      sessionStorage.setItem('fcc_pending_bookmark_book_id', bookId);
+      if (bookTitle) {
+        sessionStorage.setItem('fcc_pending_bookmark_book_title', bookTitle);
+      }
+      sessionStorage.setItem('fcc_return_to_opac_after_login', '1');
+      setBookmarkToast({
+        type: 'login_required',
+        message: `Please log in with your Student / User account to bookmark "${bookTitle || 'this title'}".`
+      });
+      setTimeout(() => {
+        setBookmarkToast(null);
+        if (onOpenLogin) onOpenLogin();
+      }, 1200);
+      return;
+    }
+
+    const storageKey = `fcc_saved_books_${activeUserId}`;
     let updated;
-    if (savedBooks.includes(bookId)) {
+    const isRemoving = savedBooks.includes(bookId);
+    if (isRemoving) {
       updated = savedBooks.filter(id => id !== bookId);
+      sounds.playClick();
+      setBookmarkToast({
+        type: 'removed',
+        message: `Removed "${bookTitle || 'title'}" from your Bookmarked Titles.`
+      });
     } else {
       updated = [...savedBooks, bookId];
       sounds.playSuccessChime();
+      setBookmarkToast({
+        type: 'saved',
+        message: `Bookmarked "${bookTitle || 'title'}" to your Scholar Library!`
+      });
     }
+    setTimeout(() => setBookmarkToast(null), 3500);
+
     setSavedBooks(updated);
+    localStorage.setItem(storageKey, JSON.stringify(updated));
     localStorage.setItem('fcc_saved_books_list', JSON.stringify(updated));
 
-    // Persist to SQL backend database
-    fetch('/api/favorites/toggle', {
+    // Persist to SQLite & MySQL backend database under the logged-in user's ID
+    const base = getApiBase();
+    fetch(`${base}/favorites/toggle`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: 'guest_opac', book_id: bookId })
+      body: JSON.stringify({ user_id: activeUserId, book_id: bookId })
     }).catch(() => {});
   };
 
@@ -394,6 +581,9 @@ export default function PublicDiscovery({
   const handlePerformSearch = (e) => {
     if (e) e.preventDefault();
     sounds.playClick();
+    if (searchQuery && searchQuery.trim().length >= 2) {
+      loadLiveOpenSourceJournalsAndProjects(searchQuery.trim());
+    }
     if (searchTarget === 'overlay') {
       setActiveTab('overlay');
     } else if (searchTarget === 'google_books') {
@@ -418,11 +608,13 @@ export default function PublicDiscovery({
   // Filtered Books with Multi-Field, Category, and Advanced Facets
   const filteredBooks = useMemo(() => {
     return books.filter(b => {
-      const isProject = b.category === 'Student Project' || b.materialType === 'Thesis' || b.materialType === 'Dissertation' || (b.id && String(b.id).startsWith('TH-')) || (b.resourceType && String(b.resourceType).toLowerCase().includes('project'));
-      const isJournal = b.category === 'Journal' || b.materialType === 'Journal' || Boolean(b.issn) || (b.resourceType && String(b.resourceType).toLowerCase().includes('journal'));
+      const resTypeStr = String(b.resource_type || b.resourceType || '').toLowerCase();
+      const isProject = b.category === 'Student Project' || b.materialType === 'Thesis' || b.materialType === 'Dissertation' || (b.id && (String(b.id).startsWith('TH-') || String(b.id).startsWith('FCC-PRJ-'))) || resTypeStr.includes('project') || resTypeStr.includes('thesis') || resTypeStr.includes('dissertation');
+      const isJournal = b.category === 'Journal' || b.materialType === 'Journal' || Boolean(b.issn) || (b.id && (String(b.id).startsWith('FCC-JRN-') || String(b.id).startsWith('OA-') || String(b.id).startsWith('CR-') || String(b.id).startsWith('EPMC-'))) || resTypeStr.includes('journal') || resTypeStr.includes('article');
       const isBook = !isProject && !isJournal;
 
       // Category filter
+      if (resourceCategory === 'Bookmarked' && !savedBooks.includes(b.id)) return false;
       if (resourceCategory === 'Book' && !isBook) return false;
       if (resourceCategory === 'Journal' && !isJournal) return false;
       if (resourceCategory === 'Student Project' && !isProject) return false;
@@ -436,6 +628,7 @@ export default function PublicDiscovery({
         else if (searchField === 'course') matchQuery = (b.courseCode || b.course_code || '').toLowerCase().includes(q);
         else if (searchField === 'department') matchQuery = (b.department || b.department_name || '').toLowerCase().includes(q);
         else if (searchField === 'isbn') matchQuery = (b.isbn || '').toLowerCase().includes(q) || (b.issn || '').toLowerCase().includes(q);
+        else if (searchField === 'doi') matchQuery = (b.doi || '').toLowerCase().includes(q);
         else if (searchField === 'subject') matchQuery = (b.subject || '').toLowerCase().includes(q);
         else if (searchField === 'call') matchQuery = (b.callNumber || '').toLowerCase().includes(q);
         else if (searchField === 'publisher') matchQuery = (b.publisher || '').toLowerCase().includes(q) || (b.journalName || b.journal_name || '').toLowerCase().includes(q);
@@ -443,6 +636,7 @@ export default function PublicDiscovery({
           // All fields
           matchQuery = b.title.toLowerCase().includes(q) ||
             b.author.toLowerCase().includes(q) ||
+            (b.author_affiliation || '').toLowerCase().includes(q) ||
             (b.studentNames || b.student_names || '').toLowerCase().includes(q) ||
             (b.studentMatric || b.student_matric || '').toLowerCase().includes(q) ||
             (b.supervisor || '').toLowerCase().includes(q) ||
@@ -451,6 +645,9 @@ export default function PublicDiscovery({
             (b.methodology || '').toLowerCase().includes(q) ||
             (b.isbn || '').includes(q) ||
             (b.issn || '').includes(q) ||
+            (b.doi || '').toLowerCase().includes(q) ||
+            (b.edition || b.volume_issue || '').toLowerCase().includes(q) ||
+            String(b.year || '').includes(q) ||
             (b.callNumber || '').toLowerCase().includes(q) ||
             (b.subject || '').toLowerCase().includes(q) ||
             (b.department || '').toLowerCase().includes(q) ||
@@ -461,16 +658,129 @@ export default function PublicDiscovery({
         }
       }
 
-      // 2. Advanced Search Query Match
-      if (showAdvancedSearch) {
-        if (advSearch.title && !b.title.toLowerCase().includes(advSearch.title.toLowerCase())) return false;
-        if (advSearch.author && !b.author.toLowerCase().includes(advSearch.author.toLowerCase())) return false;
-        if (advSearch.subject && !(b.subject || '').toLowerCase().includes(advSearch.subject.toLowerCase())) return false;
-        if (advSearch.isbn && !(b.isbn || '').includes(advSearch.isbn)) return false;
-        if (advSearch.publisher && !(b.publisher || '').toLowerCase().includes(advSearch.publisher.toLowerCase())) return false;
-        if (b.year) {
-          const y = parseInt(b.year);
-          if (y < parseInt(advSearch.yearFrom) || y > parseInt(advSearch.yearTo)) return false;
+      // 2. Structured Advanced Bibliographic Search Match
+      if (isAdvSearchApplied) {
+        // Title (full or partial match)
+        if (advSearch.title) {
+          const tQ = advSearch.title.toLowerCase().trim();
+          if (!b.title || !b.title.toLowerCase().includes(tQ)) return false;
+        }
+
+        // Author (supports Adebayo, Smith, Olaluwoye, multiple student names, supervisors)
+        if (advSearch.author) {
+          const aQ = advSearch.author.toLowerCase().trim();
+          const authorStr = `${b.author || ''} ${b.studentNames || b.student_names || ''} ${b.supervisor || ''}`.toLowerCase();
+          // Check comma-separated tokens or full query
+          const tokens = aQ.split(',').map(s => s.trim()).filter(Boolean);
+          const matchesAnyToken = tokens.some(t => authorStr.includes(t));
+          if (!matchesAnyToken) return false;
+        }
+
+        // Subject (e.g. Microcredit, Econometrics)
+        if (advSearch.subject) {
+          const sQ = advSearch.subject.toLowerCase().trim();
+          const subjectStr = `${b.subject || ''} ${b.courseCode || b.course_code || ''} ${b.department || ''}`.toLowerCase();
+          if (!subjectStr.includes(sQ)) return false;
+        }
+
+        // ISBN / ISSN (matches 10/13 digits, hyphens or stripped)
+        if (advSearch.isbn) {
+          const rawIsbnQ = advSearch.isbn.trim().replace(/[^0-9X]/gi, '').toLowerCase();
+          const bIsbn = String(b.isbn || '').replace(/[^0-9X]/gi, '').toLowerCase();
+          const bIssn = String(b.issn || '').replace(/[^0-9X]/gi, '').toLowerCase();
+          if (!bIsbn.includes(rawIsbnQ) && !bIssn.includes(rawIsbnQ) && !String(b.isbn || '').includes(advSearch.isbn.trim())) {
+            return false;
+          }
+        }
+
+        // Publisher / Journal (e.g. Oxford, Pearson, Spectrum)
+        if (advSearch.publisher) {
+          const pQ = advSearch.publisher.toLowerCase().trim();
+          const pubStr = `${b.publisher || ''} ${b.journalName || b.journal_name || ''}`.toLowerCase();
+          if (!pubStr.includes(pQ)) return false;
+        }
+
+        // Publication Year Range
+        const yFrom = parseInt(advSearch.yearFrom);
+        const yTo = parseInt(advSearch.yearTo);
+        const bookYear = parseInt(b.year || b.publication_year || b.publish_year || b.first_publish_year || 0);
+        if (!isNaN(yFrom) && bookYear > 0 && bookYear < yFrom) return false;
+        if (!isNaN(yTo) && bookYear > 0 && bookYear > yTo) return false;
+
+        // Material Types Checkboxes (Book, Journal, Thesis, Dissertation, eBook, Video, Audio, Newspaper, Conference Paper)
+        const selectedMaterials = Object.entries(advSearch.materialTypes || {})
+          .filter(([_, checked]) => Boolean(checked))
+          .map(([type]) => type);
+
+        if (selectedMaterials.length > 0) {
+          const matType = (b.materialType || b.material_type || b.category || '').toLowerCase();
+          const resType = (b.resourceType || b.resource_type || '').toLowerCase();
+          const bTitle = (b.title || '').toLowerCase();
+          const isDigitalEbook = Boolean(b.isDigital || b.ebook || b.pdf_file || b.file_url || b.access_url);
+
+          const matchesMaterial = selectedMaterials.some(m => {
+            const mLow = m.toLowerCase();
+            if (mLow === 'book') {
+              return isBook && !isDigitalEbook;
+            }
+            if (mLow === 'ebook') {
+              return isDigitalEbook || matType.includes('ebook') || resType.includes('ebook');
+            }
+            if (mLow === 'journal') {
+              return isJournal || matType.includes('journal') || resType.includes('journal');
+            }
+            if (mLow === 'thesis') {
+              return isProject || matType.includes('thesis') || resType.includes('thesis');
+            }
+            if (mLow === 'dissertation') {
+              return isProject || matType.includes('dissertation') || resType.includes('dissertation');
+            }
+            if (mLow === 'video') {
+              return matType.includes('video') || resType.includes('video') || b.hasVideo;
+            }
+            if (mLow === 'audio') {
+              return matType.includes('audio') || resType.includes('audio') || b.hasAudio;
+            }
+            if (mLow === 'newspaper') {
+              return matType.includes('newspaper') || resType.includes('newspaper') || matType.includes('periodical');
+            }
+            if (mLow === 'conference paper' || mLow === 'conferencepaper') {
+              return matType.includes('conference') || resType.includes('conference') || bTitle.includes('proceedings');
+            }
+            return matType.includes(mLow) || resType.includes(mLow);
+          });
+
+          if (!matchesMaterial) return false;
+        }
+
+        // Holding Availability Checkboxes:
+        // ['Available in Stacks', 'Checked Out', 'Electronic Digital Access', 'Reference Only']
+        const selectedAvail = Object.entries(advSearch.availability || {})
+          .filter(([_, checked]) => Boolean(checked))
+          .map(([type]) => type);
+
+        if (selectedAvail.length > 0) {
+          const copies = parseInt(b.copiesAvailable ?? b.copies_available ?? (b.available ? 1 : 0));
+          const isDigital = Boolean(b.isDigital || b.ebook || b.file_url || b.pdf_file);
+          const isReference = Boolean(b.isReference || b.referenceOnly || (b.shelfLocation || '').toLowerCase().includes('ref'));
+
+          const matchesAvail = selectedAvail.some(availKey => {
+            if (availKey === 'Available in Stacks' || availKey === 'Available') {
+              return copies > 0 && !isDigital;
+            }
+            if (availKey === 'Checked Out') {
+              return copies === 0 && !isDigital;
+            }
+            if (availKey === 'Electronic Digital Access' || availKey === 'Electronic') {
+              return isDigital;
+            }
+            if (availKey === 'Reference Only') {
+              return isReference;
+            }
+            return false;
+          });
+
+          if (!matchesAvail) return false;
         }
       }
 
@@ -482,12 +792,42 @@ export default function PublicDiscovery({
 
       return matchQuery && matchSubject && matchDepartment && matchFormat && matchAvail;
     });
-  }, [books, searchQuery, searchField, showAdvancedSearch, advSearch, facets, resourceCategory]);
+
+    // Apply Sorting: Relevance (''), Newest First ('new'), Oldest First ('old'), Random ('random'), Rating ('rating')
+    if (sortBy === 'new') {
+      result.sort((a, b) => {
+        const yA = parseInt(a.year || a.publication_year || a.publish_year || a.first_publish_year || 0);
+        const yB = parseInt(b.year || b.publication_year || b.publish_year || b.first_publish_year || 0);
+        return yB - yA;
+      });
+    } else if (sortBy === 'old') {
+      result.sort((a, b) => {
+        const yA = parseInt(a.year || a.publication_year || a.publish_year || a.first_publish_year || 9999);
+        const yB = parseInt(b.year || b.publication_year || b.publish_year || b.first_publish_year || 9999);
+        return yA - yB;
+      });
+    } else if (sortBy === 'rating') {
+      result.sort((a, b) => {
+        const rA = parseFloat(a.rating || a.ratings_average || 0);
+        const rB = parseFloat(b.rating || b.ratings_average || 0);
+        if (rB !== rA) return rB - rA;
+        return (b.views || b.borrowCount || 0) - (a.views || a.borrowCount || 0);
+      });
+    } else if (sortBy === 'random') {
+      // Deterministic / Fisher-Yates shuffle
+      for (let i = result.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]];
+      }
+    }
+
+    return result;
+  }, [books, searchQuery, searchField, isAdvSearchApplied, advSearch, facets, resourceCategory, sortBy]);
 
   // Reset page when search or facet changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, searchField, facets, advSearch, resourceCategory]);
+  }, [searchQuery, searchField, facets, isAdvSearchApplied, advSearch, resourceCategory, sortBy]);
 
   const bookCount = useMemo(() => books.filter(b => b.category !== 'Journal' && b.category !== 'Student Project' && !String(b.id || '').startsWith('TH-') && !String(b.resourceType || '').toLowerCase().includes('project') && !String(b.resourceType || '').toLowerCase().includes('journal')).length, [books]);
   const journalCount = useMemo(() => books.filter(b => b.category === 'Journal' || b.materialType === 'Journal' || Boolean(b.issn) || String(b.resourceType || '').toLowerCase().includes('journal')).length, [books]);
@@ -725,20 +1065,75 @@ export default function PublicDiscovery({
               <span>Ask a Librarian</span>
             </button>
 
-            {/* 11. Student / Staff Login */}
-            <button
-              onClick={() => {
-                sounds.playClick();
-                onOpenLogin();
-              }}
-              className="px-3 py-1 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[11px] font-bold shadow-md shadow-emerald-950 flex items-center gap-1 transition shrink-0 border border-emerald-400/40 active:scale-95"
-            >
-              <span>Student / Staff Login</span>
-              <ArrowRight size={12} />
-            </button>
+            {/* 11. Student / Staff Login or Active User Session */}
+            {activeUser ? (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <UniversalNotificationCenter
+                  user={activeUser}
+                  role={activeUser.role || 'student'}
+                  compact={true}
+                />
+                <button
+                  onClick={() => {
+                    sounds.playClick();
+                    setActiveTab('catalog');
+                    setResourceCategory(resourceCategory === 'Bookmarked' ? 'All' : 'Bookmarked');
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition border ${
+                    resourceCategory === 'Bookmarked'
+                      ? 'bg-amber-500 text-slate-950 border-amber-300 shadow'
+                      : 'bg-amber-950/70 hover:bg-amber-900/80 text-amber-300 border-amber-600/60'
+                  }`}
+                  title="View your bookmarked titles"
+                >
+                  <Bookmark size={12} className="fill-current" />
+                  <span>Bookmarks ({savedBooks.length})</span>
+                </button>
+                <button
+                  onClick={() => {
+                    sounds.playClick();
+                    if (onOpenDashboard) onOpenDashboard();
+                    else navigateTo('/scholar/profile');
+                  }}
+                  className="px-3 py-1 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[11px] font-bold shadow-md shadow-emerald-950 flex items-center gap-1.5 transition shrink-0 border border-emerald-400/40 active:scale-95"
+                  title="Return to your Student / Staff Dashboard"
+                >
+                  <CheckCircle size={12} className="text-emerald-200" />
+                  <span className="max-w-[120px] truncate">{activeUser.name || activeUser.matric || 'My Portal'}</span>
+                  <ArrowRight size={12} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  sounds.playClick();
+                  onOpenLogin();
+                }}
+                className="px-3 py-1 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[11px] font-bold shadow-md shadow-emerald-950 flex items-center gap-1 transition shrink-0 border border-emerald-400/40 active:scale-95"
+              >
+                <span>Student / Staff Login</span>
+                <ArrowRight size={12} />
+              </button>
+            )}
           </nav>
         </div>
       </header>
+
+      {/* FLOATING BOOKMARK TOAST NOTIFICATION */}
+      {bookmarkToast && (
+        <div className="fixed top-20 right-4 z-50 max-w-sm animate-fadeIn">
+          <div className={`px-4 py-3 rounded-2xl shadow-2xl border flex items-center gap-3 text-xs font-bold backdrop-blur-xl ${
+            bookmarkToast.type === 'login_required'
+              ? 'bg-amber-950/95 border-amber-500 text-amber-200'
+              : bookmarkToast.type === 'removed'
+              ? 'bg-slate-900/95 border-slate-700 text-slate-200'
+              : 'bg-emerald-950/95 border-emerald-400 text-emerald-100'
+          }`}>
+            <Bookmark size={16} className={bookmarkToast.type === 'saved' ? 'fill-amber-400 text-amber-400 shrink-0' : 'text-amber-400 shrink-0'} />
+            <span className="leading-snug">{bookmarkToast.message}</span>
+          </div>
+        </div>
+      )}
 
       {/* MOBILE BOTTOM NAVIGATION DOCK FOR PUBLIC OPAC */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 mobile-nav-dock pb-safe px-2 py-1.5 flex items-center justify-around select-none">
@@ -1029,6 +1424,27 @@ export default function PublicDiscovery({
                     )}
                   </div>
 
+                  {/* Catalog Sort Selector */}
+                  <div className="w-44 sm:w-48 relative">
+                    <select
+                      value={sortBy}
+                      onChange={(e) => {
+                        setSortBy(e.target.value);
+                        sounds.playClick();
+                      }}
+                      className="w-full bg-[#032316] border border-emerald-700/50 rounded-xl px-4 py-3 text-emerald-100 text-xs font-semibold focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all appearance-none cursor-pointer"
+                    >
+                      <option value="">Relevance</option>
+                      <option value="new">Newest First</option>
+                      <option value="old">Oldest First</option>
+                      <option value="random">Random</option>
+                      <option value="rating">Rating</option>
+                    </select>
+                    <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+                      <ChevronDown className="w-4 h-4 text-emerald-500" />
+                    </div>
+                  </div>
+
                   <button
                     onClick={handlePerformSearch}
                     className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-950 flex items-center justify-center gap-2 transition hover:scale-102 active:scale-98"
@@ -1309,31 +1725,42 @@ export default function PublicDiscovery({
                     </div>
                   </div>
 
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAdvSearch({
-                          title: '', author: '', subject: '', isbn: '', publisher: '',
-                          yearFrom: '2015', yearTo: '2026',
-                          materialTypes: { Book: true, eBook: true },
-                          availability: { Available: true, Electronic: true }
-                        });
-                      }}
-                      className="px-4 py-2 rounded-xl bg-[#021810] text-emerald-400 hover:text-white border border-emerald-800"
-                    >
-                      Reset Criteria
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab('catalog');
-                        setShowAdvancedSearch(false);
-                      }}
-                      className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-lg"
-                    >
-                      Apply Search Filter
-                    </button>
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-emerald-900/60">
+                    <div className="text-xs text-emerald-400/80 font-mono flex items-center gap-1.5">
+                      {isAdvSearchApplied && (
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                          <Check size={12} className="text-emerald-400" />
+                          <span>Filter Active</span>
+                        </span>
+                      )}
+                      <span>Specify any single field or combination to narrow catalog search</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAdvSearch(INITIAL_ADV_SEARCH);
+                          setIsAdvSearchApplied(false);
+                          sounds.playClick();
+                        }}
+                        className="px-4 py-2 rounded-xl bg-[#021810] text-emerald-400 hover:text-white border border-emerald-800 hover:border-emerald-600 transition"
+                      >
+                        Reset Criteria
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAdvSearchApplied(true);
+                          setActiveTab('catalog');
+                          setShowAdvancedSearch(false);
+                          sounds.playClick();
+                        }}
+                        className="px-6 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold shadow-lg shadow-emerald-950 transition hover:scale-102 active:scale-98"
+                      >
+                        Apply Search Filter
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1352,6 +1779,12 @@ export default function PublicDiscovery({
                       <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-mono font-bold">
                         {books.length === 0 ? 'Awaiting Uploads (0 titles)' : `${filteredBooks.length} ${filteredBooks.length === 1 ? 'title' : 'titles'} matched`}
                       </span>
+                      {isAdvSearchApplied && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-600 text-white border border-emerald-400 flex items-center gap-1 font-mono font-bold shadow-sm">
+                          <Sliders size={10} />
+                          <span>Advanced Filter Active</span>
+                        </span>
+                      )}
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-900/70 text-emerald-300 border border-emerald-600/60 flex items-center gap-1 font-mono">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                         <span className="hidden sm:inline">Backend API & SQLite Connected</span>
@@ -1379,10 +1812,12 @@ export default function PublicDiscovery({
                     <span>{isSyncingCatalog ? 'Syncing...' : 'Sync Stacks'}</span>
                   </button>
 
-                  {(searchQuery || facets.subject !== 'All' || facets.format !== 'All' || facets.availability !== 'All') && (
+                  {(searchQuery || isAdvSearchApplied || facets.subject !== 'All' || facets.format !== 'All' || facets.availability !== 'All') && (
                     <button
                       onClick={() => {
                         setSearchQuery('');
+                        setAdvSearch(INITIAL_ADV_SEARCH);
+                        setIsAdvSearchApplied(false);
                         setFacets({ subject: 'All', department: 'All', format: 'All', availability: 'All', yearRange: 'All', language: 'All' });
                         setShowAdvancedSearch(false);
                         sounds.playClick();
@@ -1397,39 +1832,74 @@ export default function PublicDiscovery({
                 </div>
               </div>
 
-              {/* Category Filter Pills (Books, Journals, Student Projects) */}
-              <div className="flex flex-wrap items-center gap-2 p-1.5 rounded-2xl bg-[#021810] border border-emerald-800/80">
-                {[
-                  { id: 'All', label: 'All Holdings', icon: Layers, count: books.length },
-                  { id: 'Book', label: 'Books & Monograms', icon: BookOpen, count: bookCount },
-                  { id: 'Journal', label: 'Academic Journals', icon: Newspaper, count: journalCount },
-                  { id: 'Student Project', label: 'Student Projects & Theses', icon: Award, count: projectCount }
-                ].map(cat => {
-                  const Icon = cat.icon;
-                  const isActive = resourceCategory === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      onClick={() => {
-                        setResourceCategory(cat.id);
-                        sounds.playClick();
-                      }}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                        isActive
-                          ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-950 ring-1 ring-emerald-400'
-                          : 'text-emerald-300/80 hover:text-white hover:bg-emerald-900/40'
-                      }`}
-                    >
-                      <Icon size={14} className={isActive ? 'text-white' : 'text-emerald-400'} />
-                      <span>{cat.label}</span>
-                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                        isActive ? 'bg-black/30 text-emerald-100' : 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                      }`}>
-                        {cat.count}
-                      </span>
-                    </button>
-                  );
-                })}
+              {/* Category Filter Pills (Books, Journals, Student Projects, Bookmarked) */}
+              <div className="flex flex-wrap items-center justify-between gap-2 p-1.5 rounded-2xl bg-[#021810] border border-emerald-800/80">
+                <div className="flex flex-wrap items-center gap-2">
+                  {[
+                    { id: 'All', label: 'All Holdings', icon: Layers, count: books.length },
+                    { id: 'Book', label: 'Books & Monograms', icon: BookOpen, count: bookCount },
+                    { id: 'Journal', label: 'Academic Journals', icon: Newspaper, count: journalCount },
+                    { id: 'Student Project', label: 'Student Projects & Theses', icon: Award, count: projectCount },
+                    { id: 'Bookmarked', label: 'Bookmarked Titles', icon: Bookmark, count: savedBooks.length }
+                  ].map(cat => {
+                    const Icon = cat.icon;
+                    const isActive = resourceCategory === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        onClick={() => {
+                          if (cat.id === 'Bookmarked' && !activeUserId) {
+                            sessionStorage.setItem('fcc_return_to_opac_after_login', '1');
+                            setBookmarkToast({
+                              type: 'login_required',
+                              message: 'Please log in with your Student / User account to view and manage your Bookmarked Titles.'
+                            });
+                            setTimeout(() => {
+                              setBookmarkToast(null);
+                              if (onOpenLogin) onOpenLogin();
+                            }, 1200);
+                            return;
+                          }
+                          setResourceCategory(cat.id);
+                          sounds.playClick();
+                          if ((cat.id === 'Journal' && liveApiJournals.length === 0) || (cat.id === 'Student Project' && liveApiProjects.length === 0)) {
+                            loadLiveOpenSourceJournalsAndProjects(searchQuery);
+                          }
+                        }}
+                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                          isActive
+                            ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-950 ring-1 ring-emerald-400'
+                            : 'text-emerald-300/80 hover:text-white hover:bg-emerald-900/40'
+                        }`}
+                      >
+                        <Icon size={14} className={isActive ? 'text-white' : (cat.id === 'Bookmarked' ? 'text-amber-400' : 'text-emerald-400')} />
+                        <span>{cat.label}</span>
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                          isActive ? 'bg-black/30 text-emerald-100' : 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                        }`}>
+                          {cat.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {(resourceCategory === 'Journal' || resourceCategory === 'Student Project') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sounds.playClick();
+                      loadLiveOpenSourceJournalsAndProjects(searchQuery);
+                      fetchBackendCatalog();
+                    }}
+                    disabled={isFetchingLiveJournals}
+                    className="px-3 py-1.5 rounded-xl bg-teal-950/90 hover:bg-teal-900 border border-teal-600/60 text-teal-200 text-[11px] font-bold flex items-center gap-1.5 transition"
+                    title="Fetch latest peer-reviewed Open-Access Journals & Theses from OpenAlex, Crossref & Europe PMC APIs + Local HOD Database"
+                  >
+                    <RefreshCw size={12} className={isFetchingLiveJournals ? 'animate-spin text-teal-300' : 'text-teal-400'} />
+                    <span>{isFetchingLiveJournals ? 'Fetching OpenAlex & Crossref...' : 'Refresh Open-Access API + HOD Uploads'}</span>
+                  </button>
+                )}
               </div>
 
               {/* BOOK CARDS GRID */}
@@ -1499,8 +1969,12 @@ export default function PublicDiscovery({
                               )}
                             </div>
                             <button
-                              onClick={(e) => handleToggleSaveBook(b.id, e)}
-                              className="p-1 rounded-lg hover:bg-[#021810] text-emerald-400 hover:text-white transition shrink-0"
+                              onClick={(e) => handleToggleSaveBook(b.id, e, b.title)}
+                              className={`p-1.5 rounded-lg transition shrink-0 flex items-center gap-1 ${
+                                isSaved
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                  : 'hover:bg-[#021810] text-emerald-400 hover:text-white'
+                              }`}
                               title={isSaved ? "Remove from saved books" : "Bookmark this title"}
                             >
                               <Bookmark size={15} className={isSaved ? 'fill-amber-400 text-amber-400' : ''} />
@@ -1510,15 +1984,11 @@ export default function PublicDiscovery({
                           {/* Front Cover Artwork with 3D Spine and Realistic Sheen */}
                           <div className="w-full h-56 sm:h-64 rounded-xl overflow-hidden relative shadow-2xl shadow-black/80 border border-emerald-900/80 bg-emerald-950/90 group-hover:border-emerald-400/80 group-hover:shadow-emerald-950/80 transition-all duration-300 flex items-center justify-center">
                             <img
-                              src={getBookCoverUrl(b)}
+                              src={b.cover_image || b.coverImage || b.cover || '/assets/fcc-logo.png'}
                               alt={`Cover of ${b.title}`}
                               onError={(e) => {
-                                if (e.currentTarget.src !== DEFAULT_BOOK_COVER && e.currentTarget.src !== OFFLINE_BOOK_COVER_SVG) {
-                                  e.currentTarget.src = DEFAULT_BOOK_COVER;
-                                } else {
-                                  e.currentTarget.onerror = null;
-                                  e.currentTarget.src = OFFLINE_BOOK_COVER_SVG;
-                                }
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.src = '/assets/fcc-logo.png';
                               }}
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                               loading="lazy"
@@ -1550,6 +2020,17 @@ export default function PublicDiscovery({
                               <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${b.isDigital ? 'bg-teal-950/90 text-teal-300 border border-teal-600/70' : 'bg-slate-900/90 text-slate-300 border border-slate-700'}`}>
                                 {b.isDigital ? '⚡ Digital' : 'Physical'}
                               </span>
+                            </div>
+                            {/* Hover Quick Read Button on Cover */}
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-2 z-20 backdrop-blur-[2px]">
+                              <button
+                                type="button"
+                                onClick={(e) => handleReadBook(b, e)}
+                                className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs flex items-center gap-2 shadow-2xl transition transform group-hover:scale-105 active:scale-95 cursor-pointer ring-2 ring-emerald-300/60"
+                              >
+                                <BookOpen size={15} className="text-slate-950" />
+                                <span>READ ONLINE</span>
+                              </button>
                             </div>
                           </div>
 
@@ -1640,17 +2121,15 @@ export default function PublicDiscovery({
                           </div>
 
                           <div className="flex items-center gap-1.5 ml-auto">
-                            {(b.isDigital || b.fileDataUrl || b.file_data_url) && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onSelectBook(b);
-                                }}
-                                className="px-2 py-0.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-bold flex items-center gap-1 text-[10px] shadow transition"
-                              >
-                                <BookOpen size={11} /> {isProject ? 'Preview' : isJournal ? 'Read Article' : 'Read'}
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => handleReadBook(b, e)}
+                              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold flex items-center gap-1.5 text-[11px] shadow-md shadow-emerald-950 transition active:scale-95 cursor-pointer"
+                              title="Open in digital reader"
+                            >
+                              <BookOpen size={13} />
+                              <span>{isProject ? 'Read Project' : isJournal ? 'Read Article' : 'Read Book'}</span>
+                            </button>
                             <span className="text-emerald-400 group-hover:translate-x-1 transition font-bold flex items-center gap-0.5 text-[11px]">
                               Details <ChevronRight size={13} />
                             </span>
@@ -2468,6 +2947,16 @@ export default function PublicDiscovery({
         activeLiveReader={activeLiveReader}
         onClose={() => setActiveLiveReader(null)}
       />
+
+      {/* ─── DIGITAL FULL-TEXT READER FOR INSTITUTIONAL BOOKS (Public Access • 1-Click OPAC Reader) ─── */}
+      {activeInternalBook && (
+        <div className="fixed inset-0 z-[150] bg-slate-950/95 backdrop-blur-md p-2 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
+          <DigitalBookReader
+            book={activeInternalBook}
+            onClose={() => setActiveInternalBook(null)}
+          />
+        </div>
+      )}
     </div>
   );
 }

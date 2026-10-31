@@ -1,6 +1,7 @@
 import {
   ArrowUpDown,
   Award,
+  Bookmark,
   BookOpen,
   Bot,
   Building2,
@@ -31,89 +32,32 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { filterCatalogByNlp, parseNaturalLanguageQuery } from '../utils/nlpSearch';
 import { sounds } from '../utils/soundEffects';
 import { useDeviceType } from '../utils/useDeviceType';
-import { getBookCoverUrl, DEFAULT_BOOK_COVER, OFFLINE_BOOK_COVER_SVG } from '../utils/bookCoverResolver';
+import { getDynamicDeptTheme } from '../hod/hodThemeConfig';
+import {
+  fetchLiveAcademicJournals,
+  fetchLiveDissertationsAndProjects
+} from '../services/openSourceJournalsApi';
 
-const DEFAULT_RECENT_SEARCHES = [
-  'computer science',
-  'cooperative economics',
-  'banking & finance',
-  'agricultural extension',
-  'CSC 312',
-  'CEM 411'
-];
+const DEFAULT_RECENT_SEARCHES = [];
 
-export const STUDENT_DEPARTMENTS = [
-  {
-    code: 'CSC',
-    name: 'Computer Science & Information Technology',
-    shortName: 'Computer Science',
-    hod: 'Dr. K. E. Okonjo',
-    colorName: 'Royal Blue',
-    solidBg: 'bg-blue-600',
-    solidText: 'text-blue-400',
-    badgeColor: 'bg-blue-950 text-blue-300 border-blue-700',
-    accentHex: '#1d4ed8'
-  },
-  {
-    code: 'CEM',
-    name: 'Co-operative Economics & Management',
-    shortName: 'Cooperative Economics',
-    hod: 'Dr. Mrs. F. A. Babalola',
-    colorName: 'Forest Emerald',
-    solidBg: 'bg-emerald-600',
-    solidText: 'text-emerald-400',
-    badgeColor: 'bg-emerald-950 text-emerald-300 border-emerald-700',
-    accentHex: '#059669'
-  },
-  {
-    code: 'BNF',
-    name: 'Banking & Finance',
-    shortName: 'Banking & Finance',
-    hod: 'Mrs. Folake Sanusi',
-    colorName: 'Amber Gold',
-    solidBg: 'bg-amber-600',
-    solidText: 'text-amber-400',
-    badgeColor: 'bg-amber-950 text-amber-300 border-amber-700',
-    accentHex: '#d97706'
-  },
-  {
-    code: 'AGR',
-    name: 'Agricultural Extension & Management',
-    shortName: 'Agricultural Extension',
-    hod: 'Dr. A. O. Olabode',
-    colorName: 'Violet Purple',
-    solidBg: 'bg-violet-600',
-    solidText: 'text-violet-400',
-    badgeColor: 'bg-violet-950 text-violet-300 border-violet-700',
-    accentHex: '#7c3aed'
-  },
-  {
-    code: 'BAM',
-    name: 'Business Administration & Management',
-    shortName: 'Business Admin',
-    hod: 'Dr. T. M. Adewale',
-    colorName: 'Crimson Red',
-    solidBg: 'bg-rose-600',
-    solidText: 'text-rose-400',
-    badgeColor: 'bg-rose-950 text-rose-300 border-rose-700',
-    accentHex: '#e11d48'
-  },
-  {
-    code: 'PAD',
-    name: 'Public Administration',
-    shortName: 'Public Admin',
-    hod: 'Dr. Mrs. B. O. Adeleke',
-    colorName: 'Ocean Teal',
-    solidBg: 'bg-teal-600',
-    solidText: 'text-teal-400',
-    badgeColor: 'bg-teal-950 text-teal-300 border-teal-700',
-    accentHex: '#0d9488'
-  }
-];
+// Dynamic academic departments (loaded directly from backend database)
+export const STUDENT_DEPARTMENTS = [];
 
-export const normalizeDeptCode = (str) => {
+export const normalizeDeptCode = (str, depts = []) => {
   if (!str) return 'GEN';
   const s = String(str).toLowerCase().trim();
+
+  // If live database departments are available, match against them first
+  if (Array.isArray(depts) && depts.length > 0) {
+    const matched = depts.find(d => {
+      const c = (d.code || '').toLowerCase();
+      const n = (d.name || '').toLowerCase();
+      return c === s || `hod_${c}` === s || n === s || n.includes(s) || s.includes(c);
+    });
+    if (matched) return matched.code.toUpperCase();
+  }
+
+  // Academic pattern recognition fallback
   if (s.includes('comp') || s.includes('csc') || s.includes('ict') || s.includes('software')) return 'CSC';
   if (s.includes('coop') || s.includes('co-op') || s.includes('cem') || s.includes('economic')) return 'CEM';
   if (s.includes('bank') || s.includes('fin') || s.includes('bnf')) return 'BNF';
@@ -123,44 +67,6 @@ export const normalizeDeptCode = (str) => {
   if (s.includes('acc')) return 'ACC';
   if (s.includes('mkt')) return 'MKT';
   return 'GEN';
-};
-
-export const isDemoOrExcluded = (item) => {
-  if (!item) return false;
-  const id = String(item.id || '');
-  const demoIds = [
-    'HOD-UP-001', 'HOD-UP-002', 'HOD-UP-003', 'HOD-UP-004',
-    'FCC-HOD-CSC-001', 'FCC-HOD-CSC-PRJ', 'FCC-HOD-CSC-JRN',
-    'FCC-HOD-CEM-001', 'FCC-HOD-CEM-PRJ',
-    'FCC-HOD-BNF-001', 'FCC-HOD-BNF-PRJ',
-    'FCC-HOD-AGR-001'
-  ];
-  if (demoIds.includes(id)) return true;
-
-  const callNum = String(item.callNumber || item.call_number || item.assigned_call_number || '');
-  if (['QA76.9 .O46 2024', 'TH-CSC-2024-001', 'JRN-CSC-VOL14', 'HD2951 .B12 2024', 'TH-CEM-2024-002', 'HG1811 .S22 2024', 'TH-BNF-2024-003', 'S544 .O33 2024'].includes(callNum)) {
-    return true;
-  }
-
-  const title = (item.title || '').toLowerCase();
-  if (
-    title.includes('distributed multi-cloud systems') ||
-    title.includes('autonomous multi-agent citation resolution') ||
-    title.includes('west african journal of applied computer science') ||
-    title.includes('quantitative cooperative econometrics & capital formation') ||
-    title.includes('empirical assessment of micro-credit lending') ||
-    title.includes('central banking monetary policy & fintech') ||
-    title.includes('evaluation of mobile pos terminals & financial deepening') ||
-    title.includes('modern agricultural extension methodologies & farm harvest') ||
-    title.includes('cooperative econometrics past examination') ||
-    title.includes('soil nitrogen dynamics & cocoa harvest') ||
-    title.includes('modern micro-credit lending & syndicate') ||
-    title.includes('vector indexing lab handout')
-  ) {
-    return true;
-  }
-
-  return false;
 };
 
 export const isPendingOrUnapproved = (item) => {
@@ -267,9 +173,54 @@ export default function SmartCatalogSearch({
   onRequestAcquisition,
   initialQuery = ''
 }) {
+  // Live dynamic academic departments fetched from database
+  const [departmentsList, setDepartmentsList] = useState(() => {
+    try {
+      const cached = JSON.parse(
+        localStorage.getItem('fcc_departments_v48_gov') ||
+        localStorage.getItem('fcc_cached_departments') ||
+        '[]'
+      );
+      return Array.isArray(cached) ? cached : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const studentDepartments = useMemo(() => {
+    if (departmentsList.length === 0) {
+      const c = (user?.dept || user?.department_name || user?.department || 'CSC').toUpperCase();
+      return [{
+        code: c,
+        name: `${c} Department`,
+        shortName: c,
+        hod: 'Head of Department',
+        colorName: 'Royal Blue',
+        solidBg: 'bg-blue-600',
+        solidText: 'text-blue-400',
+        badgeColor: 'bg-blue-950 text-blue-300 border-blue-700',
+        accentHex: '#1d4ed8'
+      }];
+    }
+    return departmentsList.map(d => {
+      const theme = getDynamicDeptTheme(d.code, d.name, d.color, departmentsList);
+      return {
+        code: d.code,
+        name: d.name,
+        shortName: d.short_name || d.name.replace(/& Information Technology|& Management|& Rural Development|Extension &/gi, '').trim(),
+        hod: d.hod_name || d.hod || 'Head of Department',
+        colorName: theme.colorName || 'Royal Blue',
+        solidBg: theme.btnPrimary ? theme.btnPrimary.split(' ')[0] : 'bg-blue-600',
+        solidText: theme.textAccent || 'text-blue-400',
+        badgeColor: theme.badgeClass || 'bg-blue-950 text-blue-300 border-blue-700',
+        accentHex: theme.solidPrimary || '#1d4ed8'
+      };
+    });
+  }, [departmentsList, user]);
+
   const initialStudentDept = useMemo(() => {
-    return normalizeDeptCode(user?.dept || user?.department_name || user?.department || 'CSC');
-  }, [user]);
+    return normalizeDeptCode(user?.dept || user?.department_name || user?.department || 'CSC', departmentsList);
+  }, [user, departmentsList]);
 
   const initialStudentLevel = useMemo(() => {
     if (user?.level) return normalizeAcademicLevel(user.level);
@@ -303,12 +254,12 @@ export default function SmartCatalogSearch({
   // Sync state whenever authenticated user changes
   useEffect(() => {
     if (user?.dept || user?.department_name || user?.department) {
-      setStudentDeptCode(normalizeDeptCode(user.dept || user.department_name || user.department));
+      setStudentDeptCode(normalizeDeptCode(user.dept || user.department_name || user.department, departmentsList));
     }
     if (user?.level) {
       setStudentLevel(normalizeAcademicLevel(user.level));
     }
-  }, [user]);
+  }, [user, departmentsList]);
 
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [searchField, setSearchField] = useState('all'); // 'all' | 'author' | 'title' | 'course' | 'subject' | 'isbn'
@@ -345,8 +296,76 @@ export default function SmartCatalogSearch({
   }, []);
 
   const currentStudentDept = useMemo(() => {
-    return STUDENT_DEPARTMENTS.find(d => d.code === studentDeptCode) || STUDENT_DEPARTMENTS[0];
-  }, [studentDeptCode]);
+    return studentDepartments.find(d => d.code === studentDeptCode) || studentDepartments[0];
+  }, [studentDepartments, studentDeptCode]);
+
+  const activeUserId = useMemo(() => {
+    return String(user?.matric || user?.id || user?.email || user?.username || 'student_scholar').trim();
+  }, [user]);
+
+  const [savedBooks, setSavedBooks] = useState(() => {
+    try {
+      const uid = String(user?.matric || user?.id || user?.email || user?.username || 'student_scholar').trim();
+      return JSON.parse(localStorage.getItem(`fcc_saved_books_${uid}`) || localStorage.getItem('fcc_saved_books_list') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [bookmarkToast, setBookmarkToast] = useState(null);
+
+  useEffect(() => {
+    if (!activeUserId) return;
+    const storageKey = `fcc_saved_books_${activeUserId}`;
+    let localSaved = [];
+    try {
+      localSaved = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      if (Array.isArray(localSaved) && localSaved.length > 0) {
+        setSavedBooks(localSaved);
+      }
+    } catch {}
+
+    fetch(`/api/favorites?user_id=${encodeURIComponent(activeUserId)}`)
+      .then(r => (r.ok ? r.json() : []))
+      .then(data => {
+        if (Array.isArray(data)) {
+          setSavedBooks(prev => {
+            const merged = Array.from(new Set([...prev, ...localSaved, ...data]));
+            localStorage.setItem(storageKey, JSON.stringify(merged));
+            localStorage.setItem('fcc_saved_books_list', JSON.stringify(merged));
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
+  }, [activeUserId]);
+
+  const handleToggleSaveBook = (bookId, e, bookTitle = '') => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    const storageKey = `fcc_saved_books_${activeUserId}`;
+    const isRemoving = savedBooks.includes(bookId);
+    const updated = isRemoving
+      ? savedBooks.filter(id => id !== bookId)
+      : [...savedBooks, bookId];
+
+    if (isRemoving) {
+      sounds.playClick();
+      setBookmarkToast({ type: 'removed', message: `Removed "${bookTitle || 'title'}" from Bookmarked Titles.` });
+    } else {
+      sounds.playSuccessChime();
+      setBookmarkToast({ type: 'saved', message: `Bookmarked "${bookTitle || 'title'}" to your Scholar Library!` });
+    }
+    setTimeout(() => setBookmarkToast(null), 3500);
+
+    setSavedBooks(updated);
+    localStorage.setItem(storageKey, JSON.stringify(updated));
+    localStorage.setItem('fcc_saved_books_list', JSON.stringify(updated));
+
+    fetch('/api/favorites/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: activeUserId, book_id: bookId })
+    }).catch(() => {});
+  };
 
   // Friendly student categories
   const categories = [
@@ -355,36 +374,69 @@ export default function SmartCatalogSearch({
     { id: 'eBooks & PDFs', label: 'E-Books & PDFs', icon: Zap },
     { id: 'Journals', label: 'Academic Journals', icon: Layers },
     { id: 'Theses & Projects', label: 'Student Projects & Theses', icon: GraduationCap },
-    { id: 'Course Materials', label: 'Course Materials', icon: FileText }
+    { id: 'Course Materials', label: 'Course Materials', icon: FileText },
+    { id: 'Bookmarked', label: `Bookmarked (${savedBooks.length})`, icon: Bookmark }
   ];
 
-  // State for live database sync
+  // State for live database sync + live Open-Access Journals & Theses API
   const [backendApprovedUploads, setBackendApprovedUploads] = useState([]);
   const [backendBooks, setBackendBooks] = useState([]);
+  const [backendTheses, setBackendTheses] = useState([]);
+  const [liveDeptJournals, setLiveDeptJournals] = useState([]);
+  const [liveDeptProjects, setLiveDeptProjects] = useState([]);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
+
+  // Fetch real Open-Access Academic Journals & Dissertations for the student's department
+  useEffect(() => {
+    let isMounted = true;
+    const deptTopic = currentStudentDept?.name || 'computer science cooperative economics agriculture';
+    const q = searchQuery.trim() ? `${searchQuery.trim()} ${deptTopic}` : deptTopic;
+    Promise.all([
+      fetchLiveAcademicJournals({ query: q, perPage: 12 }),
+      fetchLiveDissertationsAndProjects({ query: q, perPage: 8 })
+    ]).then(([journals, projects]) => {
+      if (!isMounted) return;
+      if (Array.isArray(journals)) {
+        setLiveDeptJournals(journals.map(j => ({
+          ...j,
+          department: currentStudentDept?.name || j.department,
+          format: 'Journal',
+          category: 'Journal',
+          targetLevel: normalizedStudentLevel
+        })));
+      }
+      if (Array.isArray(projects)) {
+        setLiveDeptProjects(projects.map(p => ({
+          ...p,
+          department: currentStudentDept?.name || p.department,
+          format: 'Student Project',
+          category: 'Student Project',
+          targetLevel: normalizedStudentLevel
+        })));
+      }
+    }).catch(() => {});
+    return () => { isMounted = false; };
+  }, [currentStudentDept?.name, normalizedStudentLevel]);
 
   // Synchronize strictly with the backend database
   const refreshCatalogFromDatabase = useCallback(async () => {
     setIsLoadingCatalog(true);
-    // Purge any legacy mock / demo entries from browser storage
+
+    // 1. Fetch live academic departments from backend database
     try {
-      ['fcc_catalog_v48_gov', 'fcc_hod_submissions_v48', 'fcc_pending_department_uploads'].forEach(key => {
-        const raw = localStorage.getItem(key);
-        if (raw) {
-          const arr = JSON.parse(raw);
-          if (Array.isArray(arr)) {
-            const cleaned = arr.filter(x => !isDemoOrExcluded(x));
-            if (cleaned.length > 0) {
-              localStorage.setItem(key, JSON.stringify(cleaned));
-            } else {
-              localStorage.removeItem(key);
-            }
-          }
+      const dRes = await fetch('/api/departments', { headers: { 'Accept': 'application/json' } });
+      if (dRes.ok) {
+        const dData = await dRes.json();
+        if (Array.isArray(dData) && dData.length > 0) {
+          setDepartmentsList(dData);
+          try {
+            localStorage.setItem('fcc_cached_departments', JSON.stringify(dData));
+          } catch (e) {}
         }
-      });
+      }
     } catch (e) {}
 
-    // 1. Fetch live master catalog books from backend /api/catalog
+    // 2. Fetch live master catalog books from backend /api/catalog
     try {
       const bRes = await fetch('/api/catalog');
       if (bRes.ok) {
@@ -405,9 +457,9 @@ export default function SmartCatalogSearch({
             externalUrl: b.external_url || b.externalUrl || '',
             isDigital: b.is_digital !== undefined ? Boolean(b.is_digital) : (b.isDigital !== undefined ? Boolean(b.isDigital) : true),
             abstract: b.abstract || '',
-            cover_image: getBookCoverUrl(b),
-            coverImage: getBookCoverUrl(b)
-          })).filter(b => !isDemoOrExcluded(b) && !isPendingOrUnapproved(b));
+            cover_image: b.cover_image || b.coverImage || b.cover || '',
+            coverImage: b.cover_image || b.coverImage || b.cover || ''
+          })).filter(b => !isPendingOrUnapproved(b));
           setBackendBooks(norm);
         }
       }
@@ -415,19 +467,31 @@ export default function SmartCatalogSearch({
       console.warn('Catalog live fetch error:', err);
     }
 
-    // 2. Fetch live approved uploads from backend /api/department-uploads?status=approved
-    // If Admin at #/admin/hod-submissions has not Approved & Published, this will NOT return them!
+    // 3. Fetch live approved uploads from backend /api/department-uploads?status=approved
     try {
       const uRes = await fetch('/api/department-uploads?status=approved');
       if (uRes.ok) {
         const uData = await uRes.json();
         if (Array.isArray(uData)) {
-          const approved = uData.filter(u => u && u.status === 'approved' && !isDemoOrExcluded(u));
+          const approved = uData.filter(u => u && u.status === 'approved');
           setBackendApprovedUploads(approved);
         }
       }
     } catch (err) {
       console.warn('Approved uploads live fetch error:', err);
+    }
+
+    // 4. Fetch live theses/dissertations from backend /api/theses
+    try {
+      const tRes = await fetch('/api/theses');
+      if (tRes.ok) {
+        const tData = await tRes.json();
+        if (Array.isArray(tData)) {
+          setBackendTheses(tData);
+        }
+      }
+    } catch (err) {
+      console.warn('Theses live fetch error:', err);
     } finally {
       setIsLoadingCatalog(false);
     }
@@ -477,29 +541,30 @@ export default function SmartCatalogSearch({
         category: isProject ? 'Student Project' : (isJournal ? 'Journal' : 'Book'),
         branch: 'Main Campus Library (Prof. Hezekiah Complex)',
         shelfLocation: item.assigned_shelf || item.shelf_location || (isProject ? 'Postgraduate & Project Repository' : (isJournal ? 'Serials & Periodicals Section' : 'Floor 2 / Open Stacks')),
-        uploaded_by_hod_id: item.uploaded_by_hod_id || `HOD-${normalizeDeptCode(item.department_name)}`,
+        uploaded_by_hod_id: item.uploaded_by_hod_id || `HOD-${normalizeDeptCode(item.department_name, departmentsList)}`,
         hod_name: item.hod_name,
         status: 'approved',
-        cover_image: getBookCoverUrl(item),
-        coverImage: getBookCoverUrl(item)
+        cover_image: item.cover_image || item.coverImage || item.cover || '',
+        coverImage: item.cover_image || item.coverImage || item.cover || ''
       };
     });
 
-    // 2. Format theses (strictly approved / published)
-    const formattedTheses = (theses || []).filter(t => t && (t.status === 'Published' || t.is_approved) && !isDemoOrExcluded(t)).map(t => ({
+    // 2. Format theses (strictly approved / published from backend database)
+    const sourceTheses = (backendTheses.length > 0 ? backendTheses : (theses || []));
+    const formattedTheses = sourceTheses.filter(t => t && (t.status === 'Published' || t.is_approved)).map(t => ({
       id: `thesis-${t.id}`,
       title: t.title,
       author: t.studentName || t.author || 'Postgraduate Researcher',
       supervisor: t.supervisor || 'Departmental Supervisor',
       publisher: `FCC Institutional Repository (${t.department || 'Academic Affairs'})`,
       year: t.year || new Date().getFullYear(),
-      callNumber: `TH-${normalizeDeptCode(t.department)}-${t.year || 2024}-${t.id}`,
+      callNumber: `TH-${normalizeDeptCode(t.department, departmentsList)}-${t.year || 2024}-${t.id}`,
       isbn: `ETD-${t.id}`,
       subject: t.topic || t.abstract || 'Academic Dissertation / Project',
       abstract: t.abstract || `Research study submitted to the Department of ${t.department || 'General Studies'}, Federal Cooperative College Ibadan.`,
       department: t.department || 'General Studies',
       isDigital: true,
-      pdfUrl: t.fileUrl || '/',
+      pdfUrl: t.fileUrl || t.file_data_url || '/',
       pdfPages: t.pages || 142,
       copiesAvailable: 1,
       totalCopies: 1,
@@ -507,34 +572,33 @@ export default function SmartCatalogSearch({
       category: 'Student Project',
       branch: 'Main Campus Library (Prof. Hezekiah Complex)',
       shelfLocation: 'Postgraduate Archive & Repository',
-      uploaded_by_hod_id: `HOD-${normalizeDeptCode(t.department)}`,
+      uploaded_by_hod_id: `HOD-${normalizeDeptCode(t.department, departmentsList)}`,
       status: 'approved',
-      cover_image: getBookCoverUrl(t),
-      coverImage: getBookCoverUrl(t)
+      cover_image: t.cover_image || t.coverImage || t.cover || '',
+      coverImage: t.cover_image || t.coverImage || t.cover || ''
     }));
 
     // 3. Central books strictly from backend database
     const sourceBooks = (backendBooks.length > 0 ? backendBooks : (books || []))
-      .filter(b => b && !isDemoOrExcluded(b) && !isPendingOrUnapproved(b));
+      .filter(b => b && !isPendingOrUnapproved(b));
 
     const seenMap = new Map();
-    // Absolutely NO hardcoded mock entries (departmentalCurated is completely removed)
-    const allItems = [...sourceBooks, ...approvedHOD, ...formattedTheses];
+    const allItems = [...sourceBooks, ...approvedHOD, ...formattedTheses, ...liveDeptJournals, ...liveDeptProjects];
 
     for (const b of allItems) {
       if (!b || !b.title) continue;
-      if (isDemoOrExcluded(b) || isPendingOrUnapproved(b)) continue;
+      if (isPendingOrUnapproved(b)) continue;
       const normKey = (b.title || '').trim().toLowerCase().replace(/[-_]/g, ' ').replace(/\.pdf$/i, '').replace(/[^\w\s]/g, '').trim();
       const key = (b.isbn && !b.isbn.startsWith('978-978-000') ? b.isbn : null) || normKey || b.id;
       if (!seenMap.has(key)) {
-        b.cover_image = getBookCoverUrl(b);
+        b.cover_image = b.cover_image || b.coverImage || b.cover || '';
         b.coverImage = b.cover_image;
         seenMap.set(key, b);
       }
     }
 
     return Array.from(seenMap.values());
-  }, [backendBooks, backendApprovedUploads, books, theses]);
+  }, [backendBooks, backendApprovedUploads, backendTheses, books, theses, departmentsList, liveDeptJournals, liveDeptProjects]);
 
   // Dynamic list of unique authors across combined catalog for current student department
   const uniqueAuthors = useMemo(() => {
@@ -727,6 +791,8 @@ export default function SmartCatalogSearch({
       );
     } else if (activeCategory === 'Course Materials') {
       results = results.filter(b => Boolean(b.courseCode) || b.format === 'Course Material');
+    } else if (activeCategory === 'Bookmarked') {
+      results = results.filter(b => savedBooks.includes(b.id));
     }
 
     // 2. Branch Filter
@@ -768,7 +834,7 @@ export default function SmartCatalogSearch({
     }
 
     return sorted;
-  }, [combinedCatalog, searchQuery, searchField, authorFilter, activeCategory, selectedBranch, availabilityFilter, sortBy, studentDeptCode, studentLevel, levelEnforcementMode, exclusiveDepartmentMode]);
+  }, [combinedCatalog, searchQuery, searchField, authorFilter, activeCategory, selectedBranch, availabilityFilter, sortBy, studentDeptCode, studentLevel, levelEnforcementMode, exclusiveDepartmentMode, savedBooks]);
 
   // Voice Search
   const handleToggleVoice = () => {
@@ -825,13 +891,13 @@ export default function SmartCatalogSearch({
   const fallbackVoiceSimulation = () => {
     setIsListening(true);
     sounds.playClick();
-    const demoVoiceQueries = [
+    const suggestedVoiceQueries = [
       'Find available course textbooks',
       'Show final year projects',
       'Find approved HOD books',
       'Show lecture handouts'
     ];
-    const randomQuery = demoVoiceQueries[Math.floor(Math.random() * demoVoiceQueries.length)];
+    const randomQuery = suggestedVoiceQueries[Math.floor(Math.random() * suggestedVoiceQueries.length)];
     setTimeout(() => {
       setSearchQuery(randomQuery);
       handleSaveRecentSearch(randomQuery);
@@ -951,7 +1017,7 @@ export default function SmartCatalogSearch({
                   }}
                   className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer w-full pr-1"
                 >
-                  {STUDENT_DEPARTMENTS.map(d => (
+                  {studentDepartments.map(d => (
                     <option key={d.code} value={d.code} className="bg-slate-900 text-white">
                       {d.code} - {d.shortName}
                     </option>
@@ -1062,7 +1128,7 @@ export default function SmartCatalogSearch({
 
           {/* Department Quick Pills (Horizontal Scrolling) */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
-            {STUDENT_DEPARTMENTS.map(d => {
+            {studentDepartments.map(d => {
               const isSelected = studentDeptCode === d.code;
               return (
                 <button
@@ -1194,7 +1260,7 @@ export default function SmartCatalogSearch({
                     }}
                     className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer pr-1"
                   >
-                    {STUDENT_DEPARTMENTS.map(d => (
+                    {studentDepartments.map(d => (
                       <option key={d.code} value={d.code} className="bg-slate-900 text-white">
                         {d.code} - {d.shortName}
                       </option>
@@ -1746,15 +1812,11 @@ export default function SmartCatalogSearch({
                   className="w-full aspect-[2/3] rounded-xl overflow-hidden relative shadow-lg shadow-black/70 border border-slate-800 bg-slate-950 group-hover:border-slate-600 transition cursor-pointer select-none"
                 >
                   <img
-                    src={getBookCoverUrl(book)}
+                    src={book.cover_image || book.coverImage || book.cover || '/assets/fcc-logo.png'}
                     alt={`Cover of ${book.title}`}
                     onError={(e) => {
-                      if (e.currentTarget.src !== DEFAULT_BOOK_COVER && e.currentTarget.src !== OFFLINE_BOOK_COVER_SVG) {
-                        e.currentTarget.src = DEFAULT_BOOK_COVER;
-                      } else {
-                        e.currentTarget.onerror = null;
-                        e.currentTarget.src = OFFLINE_BOOK_COVER_SVG;
-                      }
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = '/assets/fcc-logo.png';
                     }}
                     className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
                     loading="lazy"
@@ -1834,13 +1896,17 @@ export default function SmartCatalogSearch({
                   </div>
                 </div>
 
-                {/* ACTION BUTTONS (DIRECT ACCESS) */}
+                {/* ACTION BUTTONS (DIRECT ACCESS + BOOKMARK) */}
                 <div className="pt-2 mt-2 border-t border-slate-800/80 flex items-center gap-1.5">
                   {(isEbook || book.pdfUrl) && onOpenReader ? (
                     <button
                       onClick={() => {
                         sounds.playClick();
-                        onOpenReader(book);
+                        if (book.isLiveExternalJournal && (book.pdfUrl || book.externalUrl)) {
+                          window.open(book.pdfUrl || book.externalUrl, '_blank', 'noopener,noreferrer');
+                        } else {
+                          onOpenReader(book);
+                        }
                       }}
                       className="flex-1 py-1.5 px-2 rounded-xl text-white font-bold text-[11px] flex items-center justify-center gap-1 shadow transition active:scale-95 cursor-pointer"
                       style={{ backgroundColor: currentStudentDept.accentHex }}
@@ -1865,6 +1931,18 @@ export default function SmartCatalogSearch({
                       <span>Details</span>
                     </button>
                   )}
+
+                  <button
+                    onClick={(e) => handleToggleSaveBook(book.id, e, book.title)}
+                    className={`p-1.5 rounded-xl border transition cursor-pointer shrink-0 ${
+                      savedBooks.includes(book.id)
+                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                        : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                    }`}
+                    title={savedBooks.includes(book.id) ? "Remove from saved books" : "Bookmark this title"}
+                  >
+                    <Bookmark size={13} className={savedBooks.includes(book.id) ? 'fill-amber-400 text-amber-400' : ''} />
+                  </button>
                 </div>
               </div>
             );
@@ -1943,7 +2021,18 @@ export default function SmartCatalogSearch({
                       })()}
                     </div>
 
-                    <div className="shrink-0">
+                    <div className="shrink-0 flex items-center gap-1.5">
+                      <button
+                        onClick={(e) => handleToggleSaveBook(book.id, e, book.title)}
+                        className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                          savedBooks.includes(book.id)
+                            ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                            : 'bg-slate-950 hover:bg-slate-800 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                        title={savedBooks.includes(book.id) ? "Remove from saved books" : "Bookmark this title"}
+                      >
+                        <Bookmark size={14} className={savedBooks.includes(book.id) ? 'fill-amber-400 text-amber-400' : ''} />
+                      </button>
                       <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${
                         (book.copiesAvailable > 0 || book.isDigital)
                           ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
@@ -1961,15 +2050,11 @@ export default function SmartCatalogSearch({
                     {/* FRONT COVER ARTWORK CANVAS */}
                     <div className="w-24 sm:w-28 h-36 sm:h-40 rounded-xl overflow-hidden shrink-0 relative shadow-xl shadow-black/60 border border-slate-700/80 bg-slate-950 group-hover:border-teal-500/60 transition group self-center sm:self-start">
                       <img
-                        src={getBookCoverUrl(book)}
+                        src={book.cover_image || book.coverImage || book.cover || '/assets/fcc-logo.png'}
                         alt={`Cover of ${book.title}`}
                         onError={(e) => {
-                          if (e.currentTarget.src !== DEFAULT_BOOK_COVER && e.currentTarget.src !== OFFLINE_BOOK_COVER_SVG) {
-                            e.currentTarget.src = DEFAULT_BOOK_COVER;
-                          } else {
-                            e.currentTarget.onerror = null;
-                            e.currentTarget.src = OFFLINE_BOOK_COVER_SVG;
-                          }
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = '/assets/fcc-logo.png';
                         }}
                         className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                         loading="lazy"

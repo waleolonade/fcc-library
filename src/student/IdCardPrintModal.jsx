@@ -121,8 +121,8 @@ export default function IdCardPrintModal({ user, onClose }) {
                 <div className="text-[9px] font-mono text-slate-800 font-bold">{user.matric}</div>
               </div>
 
-              <div className="text-center text-[8px] text-slate-500 font-mono">
-                AUTONOMOUS LSP NODE • 127.0.0.1:5172
+              <div className="text-center text-[8px] text-slate-500 font-mono tracking-wider">
+                FCCIBADANLIBRARY.COM.NG • OFFICIAL INSTITUTIONAL LSP NODE
               </div>
             </div>
           )}

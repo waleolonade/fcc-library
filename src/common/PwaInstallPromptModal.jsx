@@ -32,6 +32,11 @@ export function showPwaInstallModal() {
   }
 }
 
+/** Get the currently captured deferred install prompt */
+export function getDeferredInstallPrompt() {
+  return deferredPromptGlobal;
+}
+
 export default function PwaInstallPromptModal({ autoPromptOnMobile = true }) {
   const [isOpen, setIsOpen] = useState(false);
   const [canInstallNative, setCanInstallNative] = useState(false);

@@ -1,15 +1,16 @@
 import {
-    AlertTriangle,
-    Check,
-    Eye, EyeOff,
-    Lock,
-    RefreshCw,
-    Save,
-    Shield,
-    ShieldAlert,
-    Sparkles, X
+  AlertTriangle,
+  Check,
+  Eye, EyeOff,
+  Lock,
+  RefreshCw,
+  Save,
+  Shield,
+  ShieldAlert,
+  Sparkles, X
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { getApiBase } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
 import InstitutionalFooter from './InstitutionalFooter';
 
@@ -26,11 +27,18 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // 30-Day Institutional Lock State
+  // Track original identifiers to match existing row during updates
+  const [userId, setUserId] = useState(null);
+  const [initialEmail, setInitialEmail] = useState('');
+  const [initialUsername, setInitialUsername] = useState('');
+
+  // 2-Week (14 Days) Institutional Lock State
   const [isLocked, setIsLocked] = useState(false);
   const [lockedUntil, setLockedUntil] = useState(null);
   const [lastModifiedAt, setLastModifiedAt] = useState(null);
   const [daysRemaining, setDaysRemaining] = useState(0);
+  const [hoursRemaining, setHoursRemaining] = useState(0);
+  const [minutesRemaining, setMinutesRemaining] = useState(0);
 
   useEffect(() => {
     if (isOpen) {
@@ -45,10 +53,17 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
   const fetchCurrentProfile = async () => {
     try {
       const activeSession = currentUser || JSON.parse(localStorage.getItem('fcc_admin_session') || '{}');
-      const emailQuery = activeSession.email || 'admin@fccibadanlibrary.com.ng';
-      const url = deptCode
-        ? `/api/admin/profile?dept_code=${encodeURIComponent(deptCode)}`
-        : `/api/admin/profile?email=${encodeURIComponent(emailQuery)}`;
+      const emailQuery = activeSession.email || 'admin@fccibadan.edu.ng';
+      const usernameQuery = activeSession.username || '';
+      const uId = activeSession.id || '';
+
+      const queryParams = new URLSearchParams();
+      if (deptCode) queryParams.append('dept_code', deptCode);
+      if (emailQuery) queryParams.append('email', emailQuery);
+      if (usernameQuery) queryParams.append('username', usernameQuery);
+      if (uId) queryParams.append('user_id', uId);
+
+      const url = `${getApiBase()}/admin/profile?${queryParams.toString()}`;
 
       const res = await fetch(url);
       if (res.ok) {
@@ -59,10 +74,15 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
           setEmail(data.user.email || '');
           setPhone(data.user.phone || '');
           setDesignation(data.user.designation || data.user.title || '');
+          setUserId(data.user.id || null);
+          setInitialEmail(data.user.email || '');
+          setInitialUsername(data.user.username || '');
           setIsLocked(Boolean(data.is_locked));
           setLockedUntil(data.profile_locked_until || null);
           setLastModifiedAt(data.profile_last_modified_at || null);
           setDaysRemaining(data.days_remaining || 0);
+          setHoursRemaining(data.hours_remaining || 0);
+          setMinutesRemaining(data.minutes_remaining || 0);
           return;
         }
       }
@@ -73,9 +93,12 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
     const fallback = currentUser || JSON.parse(localStorage.getItem('fcc_admin_session') || '{}');
     setName(fallback.name || 'Dr. Alhaji Balogun O.');
     setUsername(fallback.username || 'chief_librarian');
-    setEmail(fallback.email || 'admin@fccibadanlibrary.com.ng');
+    setEmail(fallback.email || 'admin@fccibadan.edu.ng');
     setPhone(fallback.phone || '+2348033334455');
     setDesignation(fallback.title || fallback.designation || 'College Chief Librarian');
+    setUserId(fallback.id || 1);
+    setInitialEmail(fallback.email || 'admin@fccibadan.edu.ng');
+    setInitialUsername(fallback.username || 'chief_librarian');
   };
 
   if (!isOpen) return null;
@@ -86,7 +109,7 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
     setSuccess('');
 
     if (isLocked) {
-      setError(`Modifications are locked under Institutional Policy for another ${daysRemaining} day(s). Contact Master Developer at #/developer to override.`);
+      setError(`Modifications are locked under Institutional Policy for another ${daysRemaining} day(s) ${hoursRemaining}h ${minutesRemaining}m. Contact Master Developer at #/developer to override.`);
       sounds.playErrorBuzz();
       return;
     }
@@ -108,6 +131,9 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
 
     try {
       const payload = {
+        user_id: userId,
+        current_email: initialEmail || email.trim().toLowerCase(),
+        current_username: initialUsername || username.trim(),
         name: name.trim(),
         username: username.trim(),
         email: email.trim().toLowerCase(),
@@ -121,7 +147,7 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
         payload.password = newPassword.trim();
       }
 
-      const res = await fetch('/api/admin/profile', {
+      const res = await fetch(`${getApiBase()}/admin/profile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -131,19 +157,22 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
 
       if (res.ok && data.success) {
         sounds.playSuccessChime();
+        setSuccess('✓ Profile and security credentials successfully saved to database! Credentials locked for two weeks (14 days).');
+        setNewPassword('');
+        setConfirmPassword('');
+        setInitialEmail(data.user.email);
+        setInitialUsername(data.user.username);
         setIsLocked(true);
         setLockedUntil(data.profile_locked_until);
-        setDaysRemaining(data.days_remaining || 30);
-        setSuccess('✓ Profile & security credentials saved to database! Passwords hashed with bcrypt; plain-text mirrored to Developer Vault. Institutional 30-day lock is now active.');
+        setDaysRemaining(14);
+        setHoursRemaining(0);
+        setMinutesRemaining(0);
 
         // Update local session
         const existingSession = JSON.parse(localStorage.getItem('fcc_admin_session') || '{}');
         const updatedSession = {
           ...existingSession,
-          ...data.user,
-          is_locked: true,
-          profile_locked_until: data.profile_locked_until,
-          days_remaining: data.days_remaining || 30
+          ...data.user
         };
         localStorage.setItem('fcc_admin_session', JSON.stringify(updatedSession));
 
@@ -153,13 +182,15 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
 
         setTimeout(() => {
           onClose();
-        }, 2200);
+        }, 1800);
       } else {
         setError(data.error || 'Failed to update administrative profile. Check server connection.');
         if (data.is_locked) {
           setIsLocked(true);
           setLockedUntil(data.profile_locked_until);
-          setDaysRemaining(data.days_remaining || 30);
+          setDaysRemaining(data.days_remaining || 14);
+          setHoursRemaining(data.hours_remaining || 0);
+          setMinutesRemaining(data.minutes_remaining || 0);
         }
         sounds.playErrorBuzz();
       }
@@ -189,7 +220,7 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
                 <span>Administrator Profile &amp; Security Settings</span>
               </h2>
               <p className="text-[11px] text-slate-400">
-                Change Name, Username, Email, and Password • Synced with Backend &amp; Developer Vault
+                Change Name, Username, Email, and Password • Two-Week Security Lock Protocol
               </p>
             </div>
           </div>
@@ -202,34 +233,31 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
           </button>
         </div>
 
-        {/* 30-Day Institutional Lock Banner */}
+        {/* 2-Week Institutional Lock Banner */}
         {isLocked ? (
           <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/90 via-red-950/80 to-amber-950/90 border-2 border-amber-600/80 text-amber-200 text-xs space-y-2 animate-fadeIn shadow-xl shadow-black/80">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 font-bold text-amber-300">
                 <ShieldAlert size={17} className="text-amber-400 shrink-0" />
-                <span>30-Day Institutional Profile Lock Active</span>
+                <span>2-Week Institutional Profile Lock Active</span>
               </div>
               <span className="px-2.5 py-0.5 rounded-full font-mono text-[11px] bg-amber-900/90 text-amber-300 border border-amber-500 font-bold">
-                {daysRemaining} {daysRemaining === 1 ? 'Day' : 'Days'} Remaining
+                {daysRemaining}d {hoursRemaining}h {minutesRemaining}m Remaining
               </span>
             </div>
             <p className="text-[11px] leading-relaxed text-amber-200/90">
-              Institutional security protocol restricts profile and password modifications to <strong>once every 30 days</strong>. This profile was recently modified and is locked until <strong className="text-white">{lockedUntil ? new Date(lockedUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'next month'}</strong>.
+              Institutional security protocol restricts profile and password modifications to <strong>once every 2 weeks (14 days)</strong>. This profile was recently modified and is locked until <strong className="text-white">{lockedUntil ? new Date(lockedUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'in 2 weeks'}</strong>.
             </p>
             <div className="text-[10px] text-amber-300/80 flex items-center justify-between pt-1 border-t border-amber-900/60">
               <span>Need emergency changes? Master Developer can lift restriction at <code className="text-white bg-black/40 px-1 py-0.5 rounded font-mono">#/developer</code></span>
-              <span className="font-mono text-amber-400">Policy: SEC-30D-LOCK</span>
+              <span className="font-mono text-amber-400">Policy: SEC-14D-LOCK</span>
             </div>
           </div>
         ) : (
           <div className="p-3.5 rounded-2xl bg-indigo-950/50 border border-indigo-800/60 text-[11px] text-indigo-200/90 flex items-start gap-2.5">
             <Sparkles size={16} className="shrink-0 text-indigo-400 mt-0.5" />
             <div className="leading-relaxed">
-              <strong className="text-white">Institutional Oversight Protocol:</strong> Passwords are <em>hashed with bcrypt</em> in the production database for high security, and automatically reflected in clear-text inside the <code className="text-emerald-300 bg-emerald-950 px-1 py-0.5 rounded font-mono">#/developer</code> Vault for master system audits.
-              <span className="block text-amber-300 font-medium mt-1">
-                🔒 Mandatory Security Rule: Saving changes initiates a 30-day modification lock. You must wait one month before changing credentials again.
-              </span>
+              <strong className="text-white">Institutional Oversight Protocol:</strong> Modifications take immediate effect across Central MySQL (<code className="font-mono bg-black/40 px-1 rounded text-emerald-200">gsashtub_brainfeels_library</code>) and SQLite. Once saved, credentials are <strong>locked for 2 weeks</strong> under college anti-tampering regulations.
             </div>
           </div>
         )}
@@ -298,7 +326,7 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
                   disabled={isLocked}
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder="admin@fccibadanlibrary.com.ng"
+                  placeholder="@fccibadanlibrary.com.ng"
                   className="w-full bg-[#030913] border border-slate-700 rounded-xl px-3.5 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>
@@ -328,7 +356,7 @@ export default function AdminSecuritySettingsModal({ isOpen, onClose, currentUse
               disabled={isLocked}
               value={phone}
               onChange={e => setPhone(e.target.value)}
-              placeholder="+2348033334455"
+              placeholder="+23480****"
               className="w-full bg-[#030913] border border-slate-700 rounded-xl px-3.5 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono disabled:opacity-50 disabled:cursor-not-allowed"
             />
           </div>

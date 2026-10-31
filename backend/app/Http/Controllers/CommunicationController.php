@@ -155,6 +155,7 @@ class CommunicationController extends Controller
         ];
 
         DB::table('institutional_communications')->insert($record);
+        $this->syncToMysql($record);
 
         return response()->json([
             'success' => true,
@@ -177,6 +178,14 @@ class CommunicationController extends Controller
                 'status' => $status,
                 'updated_at' => now()
             ]);
+
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("UPDATE institutional_communications SET status = :status, updated_at = NOW() WHERE id = :id OR msg_id = :mid");
+                $st->execute([':status' => $status, ':id' => $id, ':mid' => $id]);
+            }
+        } catch (\Throwable $e) {}
 
         return response()->json([
             'success' => true,
@@ -223,6 +232,7 @@ class CommunicationController extends Controller
         ];
 
         DB::table('institutional_communications')->insert($record);
+        $this->syncToMysql($record);
 
         // Mark original thread items as in_progress or resolved
         DB::table('institutional_communications')
@@ -230,10 +240,53 @@ class CommunicationController extends Controller
             ->where('msg_id', '!=', $msgId)
             ->update(['status' => 'in_progress', 'updated_at' => now()]);
 
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("UPDATE institutional_communications SET status = 'in_progress', updated_at = NOW() WHERE thread_id = :tid AND msg_id != :mid");
+                $st->execute([':tid' => $threadId, ':mid' => $msgId]);
+            }
+        } catch (\Throwable $e) {}
+
         return response()->json([
             'success' => true,
             'message' => 'Reply dispatched to thread.',
             'data' => $record
         ], 201);
+    }
+
+    private function syncToMysql(array $record): void
+    {
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if (!$pdo) return;
+
+            $st = $pdo->prepare("
+                INSERT INTO institutional_communications 
+                (msg_id, thread_id, sender_id, sender_name, sender_role, sender_dept, recipient_id, recipient_name, recipient_role, recipient_dept, category, subject, message, priority, status, action_type, action_data, created_at, updated_at)
+                VALUES 
+                (:msg_id, :thread_id, :sender_id, :sender_name, :sender_role, :sender_dept, :recipient_id, :recipient_name, :recipient_role, :recipient_dept, :category, :subject, :message, :priority, :status, :action_type, :action_data, NOW(), NOW())
+                ON DUPLICATE KEY UPDATE status = VALUES(status), updated_at = NOW()
+            ");
+            $st->execute([
+                ':msg_id' => $record['msg_id'],
+                ':thread_id' => $record['thread_id'],
+                ':sender_id' => $record['sender_id'],
+                ':sender_name' => $record['sender_name'],
+                ':sender_role' => $record['sender_role'],
+                ':sender_dept' => $record['sender_dept'] ?? null,
+                ':recipient_id' => $record['recipient_id'],
+                ':recipient_name' => $record['recipient_name'],
+                ':recipient_role' => $record['recipient_role'],
+                ':recipient_dept' => $record['recipient_dept'] ?? null,
+                ':category' => $record['category'],
+                ':subject' => $record['subject'],
+                ':message' => $record['message'],
+                ':priority' => $record['priority'] ?? 'normal',
+                ':status' => $record['status'] ?? 'unread',
+                ':action_type' => $record['action_type'] ?? null,
+                ':action_data' => $record['action_data'] ?? null
+            ]);
+        } catch (\Throwable $e) {}
     }
 }

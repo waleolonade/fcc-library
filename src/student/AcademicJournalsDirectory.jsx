@@ -13,7 +13,7 @@ const SCHOLARLY_JOURNALS = [
     id: 'JRN-01',
     title: 'Nigerian Journal of Co-operative Economics & Rural Development (NJCERD)',
     shortCode: 'NJCERD',
-    issn: '0794-8212',
+    issn: '',
     frequency: 'Quarterly (March, June, September, December)',
     publisher: 'FCC Academic Press & Directorate of Research & Innovation',
     latestIssue: 'Vol. 18, No. 2 (June 2026)',
@@ -24,7 +24,7 @@ const SCHOLARLY_JOURNALS = [
     discipline: 'Cooperative Economics',
     rating: 4.9,
     doiPrefix: '10.5897/NJCERD',
-    pdfUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
+    pdfUrl: ''
   },
   {
     id: 'JRN-02',
@@ -41,7 +41,7 @@ const SCHOLARLY_JOURNALS = [
     discipline: 'Computer Science & AI',
     rating: 4.8,
     doiPrefix: '10.5897/WAJACIS',
-    pdfUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
+    pdfUrl: ''
   },
   {
     id: 'JRN-03',
@@ -58,7 +58,7 @@ const SCHOLARLY_JOURNALS = [
     discipline: 'Banking & Finance',
     rating: 4.7,
     doiPrefix: '10.5897/JBSME',
-    pdfUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
+    pdfUrl: ''
   },
   {
     id: 'JRN-04',
@@ -75,7 +75,7 @@ const SCHOLARLY_JOURNALS = [
     discipline: 'Agricultural Extension',
     rating: 4.9,
     doiPrefix: '10.5897/TJAEE',
-    pdfUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
+    pdfUrl: ''
   }
 ];
 
@@ -116,22 +116,51 @@ export default function AcademicJournalsDirectory({
   // Citation copying notification state
   const [copiedId, setCopiedId] = useState(null);
 
-  // Load HOD Approved Serials from backend
+  // Load HOD Approved & Local Serials from backend database
   useEffect(() => {
     const fetchApprovedHodJournals = async () => {
       setIsLoadingHod(true);
       try {
-        const res = await fetch('/api/department-uploads?status=approved');
-        if (res.ok) {
-          const data = await res.json();
-          const items = Array.isArray(data) ? data : [];
-          const journals = items.filter(s => {
-            const cat = (s.category || '').toLowerCase();
-            const resType = (s.resource_type || s.resourceType || '').toLowerCase();
-            return cat.includes('journal') || resType.includes('journal') || resType.includes('periodical') || resType.includes('serial') || Boolean(s.issn);
-          });
-          setApprovedHodJournals(journals);
+        const [upRes, catRes] = await Promise.allSettled([
+          fetch('/api/department-uploads'),
+          fetch('/api/catalog')
+        ]);
+        const combined = [];
+        if (upRes.status === 'fulfilled' && upRes.value.ok) {
+          const data = await upRes.value.json();
+          if (Array.isArray(data)) combined.push(...data);
         }
+        if (catRes.status === 'fulfilled' && catRes.value.ok) {
+          const cData = await catRes.value.json();
+          if (Array.isArray(cData)) combined.push(...cData);
+        }
+        const seen = new Set();
+        const journals = combined.filter(s => {
+          if (!s || ['deleted', 'withdrawn', 'purged', 'rejected', 'declined'].includes(String(s.status || '').toLowerCase())) return false;
+          let extra = {};
+          try {
+            if (typeof s.review_notes === 'string' && s.review_notes.trim().startsWith('{')) {
+              extra = JSON.parse(s.review_notes);
+            }
+          } catch {}
+          const cat = String(s.category || extra.upload_category || '').toLowerCase();
+          const resType = String(s.resource_type || s.resourceType || '').toLowerCase();
+          const rights = String(s.rights_status || '').toLowerCase();
+          const isJrn =
+            cat.includes('journal') ||
+            resType.includes('journal') ||
+            resType.includes('periodical') ||
+            resType.includes('serial') ||
+            rights.includes('journal') ||
+            String(s.id || '').startsWith('FCC-JRN-') ||
+            Boolean(s.issn || extra.issn || extra.journal_name);
+          if (!isJrn) return false;
+          const key = String(s.title || s.id).toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        setApprovedHodJournals(journals);
       } catch (err) {
         console.warn('Failed to load approved HOD journals:', err);
       } finally {
@@ -142,7 +171,7 @@ export default function AcademicJournalsDirectory({
     fetchApprovedHodJournals();
   }, []);
 
-  // Fetch OpenAlex Sources / Journals API
+  // Fetch OpenAlex Sources / Journals API (with direct CORS-enabled fallback)
   const fetchOpenAlexJournals = async (query = searchQuery, targetPage = 1) => {
     setOpenAlexLoading(true);
     setOpenAlexError(null);
@@ -152,14 +181,24 @@ export default function AcademicJournalsDirectory({
       if (query.trim()) {
         params.append('search', query.trim());
       }
-      params.append('filter', 'type:journal');
-      if (openAccessOnly) {
-        params.append('filter', 'type:journal,is_oa:true');
-      }
+      params.append('filter', openAccessOnly ? 'type:journal,is_oa:true' : 'type:journal');
       params.append('page', targetPage.toString());
       params.append('per_page', '12');
 
-      const res = await fetch(`/api/openalex/sources?${params.toString()}`);
+      let res = await fetch(`/api/openalex/sources?${params.toString()}`).catch(() => null);
+      if (!res || !res.ok) {
+        params.delete('per_page');
+        params.append('per-page', '12');
+        params.append('mailto', 'library@fccibadan.edu.ng');
+        params.append('api_key', 'FD6xNHEEyHhLMW5Htsx3Vv');
+        res = await fetch(`https://api.openalex.org/sources?${params.toString()}`, {
+          headers: {
+            'Accept': 'application/json',
+            'api_key': 'FD6xNHEEyHhLMW5Htsx3Vv',
+            'Authorization': 'Bearer FD6xNHEEyHhLMW5Htsx3Vv'
+          }
+        });
+      }
       if (!res.ok) {
         throw new Error(`OpenAlex API responded with HTTP ${res.status}`);
       }
@@ -183,39 +222,43 @@ export default function AcademicJournalsDirectory({
     return () => clearTimeout(timer);
   }, [searchQuery, openAccessOnly]);
 
-  // Normalized Institutional Journals (FCC Flagship + HOD Approved)
+  // Normalized Institutional Journals (FCC Flagship + HOD Uploaded Local Journals)
   const normalizedInstitutionalJournals = useMemo(() => {
-    const list = [...SCHOLARLY_JOURNALS];
+    const list = [];
 
     approvedHodJournals.forEach((j, i) => {
       let parsedNotes = {};
       try {
-        if (typeof j.notes === 'string') parsedNotes = JSON.parse(j.notes);
+        const rawNotes = j.review_notes || j.notes;
+        if (typeof rawNotes === 'string' && rawNotes.trim().startsWith('{')) {
+          parsedNotes = JSON.parse(rawNotes);
+        }
       } catch (e) {}
 
       list.push({
-        id: j.id || `HOD-JRN-${i}`,
+        id: j.book_id || j.id || `HOD-JRN-${i}`,
         title: j.title || j.resource_title || 'Institutional Journal Serial',
-        shortCode: `FCC-HOD-${i + 1}`,
-        issn: j.issn || parsedNotes.issn || '0794-8212',
-        frequency: j.frequency || 'Quarterly Issue',
-        publisher: j.publisher || 'Department of Co-operative Studies / HOD Directorate',
-        latestIssue: j.latest_issue || j.academic_session || '2025/2026 Academic Session',
-        indexedIn: 'Federal Co-operative College Institutional Repository, Crossref Archive',
-        scope: j.description || j.abstract || 'Approved departmental research publication and peer-reviewed faculty monograph.',
+        shortCode: `HOD-JRN-${i + 1}`,
+        issn: j.issn || parsedNotes.issn || String(j.isbn || '').replace(/^ISSN\s*/i, '') || '',
+        frequency: j.frequency || parsedNotes.volume_issue || 'Departmental Peer-Reviewed Issue',
+        publisher: parsedNotes.journal_name || j.journal_name || j.publisher || `Department of ${j.department_name || j.department || 'Academic Studies'}`,
+        latestIssue: parsedNotes.volume_issue || j.volume_issue || j.edition || 'Academic Issue',
+        indexedIn: 'Federal Co-operative College Institutional Repository & Open-Access Archive',
+        scope: parsedNotes.abstract || j.description || j.abstract || `Official Academic Journal uploaded locally by ${j.hod_name || j.uploaded_by || 'Department HOD'}.`,
         articlesCount: 1,
         openAccess: true,
-        discipline: j.department || 'Cooperative Studies',
-        rating: 4.8,
-        doiPrefix: '10.5897/FCC.HOD',
+        discipline: j.department_name || j.department || 'Cooperative Studies',
+        rating: 4.9,
+        doiPrefix: parsedNotes.doi || j.doi || '',
         isHodUpload: true,
-        author: j.author || j.uploaded_by_name || 'Faculty Researcher',
-        fileDataUrl: j.file_url || j.fileDataUrl || j.file_path || '',
-        fileName: j.file_name || 'journal_issue.pdf'
+        author: j.author || j.hod_name || 'Faculty Researcher',
+        fileDataUrl: j.file_url || j.pdfUrl || `/api/catalog/${j.book_id || j.id}/file`,
+        fileName: j.file_name || 'journal_issue.pdf',
+        coverImage: j.cover_image || j.coverImage || '/assets/fcc-logo.png'
       });
     });
 
-    return list;
+    return [...list, ...SCHOLARLY_JOURNALS];
   }, [approvedHodJournals]);
 
   // Filter Institutional Journals by search & discipline
@@ -379,7 +422,7 @@ export default function AcademicJournalsDirectory({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search journals by title, ISSN (e.g. 0794-8212), subject (Cooperative, AI, Finance), or publisher..."
+                placeholder="Search journals by title, ISSN, DOI, subject (Cooperative, AI, Finance), or publisher..."
                 className="w-full bg-slate-950 border border-slate-700/80 focus:border-teal-500 rounded-2xl pl-11 pr-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 font-sans shadow-inner transition"
               />
               {searchQuery && (

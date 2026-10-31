@@ -26,11 +26,19 @@ use App\Http\Controllers\Api\LmsApiController;
 use App\Http\Controllers\Api\SimpleLibApiController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\PolicyController;
+use App\Http\Controllers\Api\BookPdfController;
+
+// Institutional Book PDF Delivery Engine (Streaming & Attachment Download)
+Route::get('/books/{id}/pdf', [BookPdfController::class, 'show']);
+Route::get('/books/{id}/pdf/download', [BookPdfController::class, 'download']);
 
 // Institutional Courses & Curriculum Syllabus API (Fetched from database)
 Route::get('/courses', [CourseController::class, 'index']);
 Route::get('/courses/{code}', [CourseController::class, 'show']);
 Route::post('/courses', [CourseController::class, 'store']);
+Route::put('/courses/{code}', [CourseController::class, 'update'])->where('code', '.*');
+Route::post('/courses/{code}/update', [CourseController::class, 'update'])->where('code', '.*');
+Route::delete('/courses/{code}', [CourseController::class, 'destroy'])->where('code', '.*');
 
 // 00. Thetechguy44 Library Management System API Gateway
 Route::get('/books',      [LmsApiController::class, 'index']);
@@ -180,6 +188,19 @@ Route::prefix('auth')->group(function () {
     Route::post('/qr-login/phone/deny', [AuthController::class, 'phoneDeny']);
     Route::post('/qr-login/consume', [AuthController::class, 'consumeQrLogin']);
     Route::post('/mobile-pass/verify', [AuthController::class, 'verifyMobilePass']);
+
+    // Strict Two-Factor OTP Security Gate (Admin, HOD, and Developer)
+    Route::post('/otp/send-login-otp', [AuthController::class, 'sendLoginOtp']);
+    Route::post('/otp/verify-login-otp', [AuthController::class, 'verifyLoginOtp']);
+
+    // Universal Forgot Password & PIN Reset Endpoints (Students, Admins, HODs, Developer)
+    Route::post('/password-reset/request-otp', [AuthController::class, 'requestPasswordResetOtp']);
+    Route::post('/password-reset/verify-otp', [AuthController::class, 'verifyPasswordResetOtp']);
+    Route::post('/password-reset/confirm', [AuthController::class, 'confirmPasswordReset']);
+
+    // Multi-Role Mobile QR Verification & Action Router
+    Route::post('/qr-login/phone/verify-multi-role', [AuthController::class, 'multiRoleQrVerify']);
+    Route::post('/qr-login/phone/execute-action', [AuthController::class, 'multiRoleQrExecute']);
 });
 Route::post('/hod/login', [AuthController::class, 'login']);
 
@@ -225,12 +246,17 @@ Route::get('/catalog/categories', [CatalogController::class, 'categories']);
 Route::get('/catalog/departments', [CatalogController::class, 'departments']);
 Route::get('/catalog/locations', [CatalogController::class, 'locations']);
 Route::get('/catalog/lookup-isbn', [CatalogController::class, 'lookupIsbn']);
+Route::get('/catalog/{id}/cover', [CatalogController::class, 'cover']);
 Route::get('/catalog/{id}/file', [CatalogController::class, 'file']);
 Route::get('/catalog/{id}', [CatalogController::class, 'show']);
+Route::get('/books/{id}/cover', [CatalogController::class, 'cover']);
 Route::get('/books/{id}/file', [CatalogController::class, 'file']);
 Route::post('/catalog/check-duplicate', [CatalogController::class, 'checkDuplicate']);
 Route::post('/catalog', [CatalogController::class, 'store']);
-Route::delete('/catalog/{id}', [CatalogController::class, 'destroy']);
+Route::post('/catalog/bulk-delete', [CatalogController::class, 'bulkDestroy']);
+Route::post('/books/bulk-delete', [CatalogController::class, 'bulkDestroy']);
+Route::delete('/catalog/{id}', [CatalogController::class, 'destroy'])->where('id', '.*');
+Route::delete('/books/{id}', [CatalogController::class, 'destroy'])->where('id', '.*');
 Route::get('/favorites', [CatalogController::class, 'getFavorites']);
 Route::post('/favorites/toggle', [CatalogController::class, 'toggleFavorite']);
 
@@ -287,6 +313,8 @@ Route::delete('/theses/{id}', [ThesisController::class, 'destroy']);
 // 9b. Course Reserves Desk API (HOD & Stacks)
 Route::get('/course-reserves', [\App\Http\Controllers\Api\CourseReserveController::class, 'index']);
 Route::post('/course-reserves', [\App\Http\Controllers\Api\CourseReserveController::class, 'store']);
+Route::put('/course-reserves/{id}', [\App\Http\Controllers\Api\CourseReserveController::class, 'update']);
+Route::post('/course-reserves/{id}/update', [\App\Http\Controllers\Api\CourseReserveController::class, 'update']);
 Route::delete('/course-reserves/{id}', [\App\Http\Controllers\Api\CourseReserveController::class, 'destroy']);
 
 // System Health & Diagnostics
@@ -327,25 +355,55 @@ Route::delete('/room-bookings/{id}', [LibrarySystemController::class, 'cancelRoo
 
 // Notifications & Institutional Announcements
 Route::get('/notifications', [LibrarySystemController::class, 'getNotifications']);
+Route::post('/notifications', [LibrarySystemController::class, 'storeNotification']);
+Route::put('/notifications/{id}/read', [LibrarySystemController::class, 'markNotificationRead']);
+Route::delete('/notifications', [LibrarySystemController::class, 'clearNotifications']);
 Route::get('/announcements', [LibrarySystemController::class, 'getAnnouncements']);
 Route::get('/digital-resources', [LibrarySystemController::class, 'getDigitalResources']);
 Route::get('/digital/materials', [LibrarySystemController::class, 'getDigitalResources']);
 
+// AI Smart Librarian Knowledge Agent
+Route::post('/ai/chat', [LibrarySystemController::class, 'aiChat']);
+Route::post('/ai-librarian/chat', [LibrarySystemController::class, 'aiChat']);
+
+// Live cPanel Server Mail Configuration & Diagnostic Test
+Route::get('/mail/config', [LibrarySystemController::class, 'getMailConfig']);
+Route::post('/mail/config', [LibrarySystemController::class, 'updateMailConfig']);
+Route::post('/mail/test', [LibrarySystemController::class, 'sendTestMail']);
+
 // 10. Consortia, Serials, Study Rooms & Facilities API
 Route::get('/partner-libraries', [LibrarySystemController::class, 'getPartnerLibrariesFull']);
 Route::get('/external-links', [LibrarySystemController::class, 'getExternalLinks']);
+Route::get('/acquisitions/stats', [LibrarySystemController::class, 'getAcquisitionsStats']);
+Route::post('/acquisitions/budget', [LibrarySystemController::class, 'updateBudget']);
 Route::get('/acquisitions', [LibrarySystemController::class, 'getAcquisitions']);
 Route::post('/acquisitions', [LibrarySystemController::class, 'storeAcquisition']);
+Route::put('/acquisitions/{id}/status', [LibrarySystemController::class, 'updateAcquisitionStatus']);
+Route::put('/acquisitions/{id}', [LibrarySystemController::class, 'updateAcquisition']);
+Route::delete('/acquisitions/{id}', [LibrarySystemController::class, 'deleteAcquisition']);
+
 Route::get('/serials', [LibrarySystemController::class, 'getSerials']);
-Route::get('/study-rooms', [LibrarySystemController::class, 'getStudyRooms']);
-Route::get('/reservations', [LibrarySystemController::class, 'getReservations']);
-Route::post('/reservations', [LibrarySystemController::class, 'getReservations']);
+Route::post('/serials', [LibrarySystemController::class, 'storeSerial']);
+Route::put('/serials/{id}', [LibrarySystemController::class, 'updateSerial']);
+Route::delete('/serials/{id}', [LibrarySystemController::class, 'deleteSerial']);
+
+Route::get('/vendors', [LibrarySystemController::class, 'getVendors']);
+Route::post('/vendors', [LibrarySystemController::class, 'storeVendor']);
+Route::put('/vendors/{id}', [LibrarySystemController::class, 'updateVendor']);
+Route::delete('/vendors/{id}', [LibrarySystemController::class, 'deleteVendor']);
+// Physical & Digital Book Reservations (Direct to reservations table)
+Route::get('/reservations', [\App\Http\Controllers\Api\ReservationController::class, 'index']);
+Route::post('/reservations', [\App\Http\Controllers\Api\ReservationController::class, 'store']);
+Route::get('/reservations/{id}', [\App\Http\Controllers\Api\ReservationController::class, 'show']);
+Route::put('/reservations/{id}', [\App\Http\Controllers\Api\ReservationController::class, 'update']);
+Route::delete('/reservations/{id}', [\App\Http\Controllers\Api\ReservationController::class, 'destroy']);
 Route::get('/audit-logs', [LibrarySystemController::class, 'getAuditLogs']);
 Route::get('/shelves', [LibrarySystemController::class, 'getShelves']);
 Route::get('/analytics', [LibrarySystemController::class, 'getAnalytics']);
 
 // 11. AI Smart Reference Desk API
 Route::post('/ai-chat', [LibrarySystemController::class, 'aiChat']);
+Route::post('/ai/chat', [LibrarySystemController::class, 'aiChat']);
 
 // 12. Dynamic World Library APIs & Custom Admin API Ingestion
 Route::get('/library-apis', [LibraryApiController::class, 'index']);
@@ -363,11 +421,27 @@ Route::post('/departments', [\App\Http\Controllers\DepartmentUploadController::c
 Route::put('/departments/{id}', [\App\Http\Controllers\DepartmentUploadController::class, 'updateDepartment']);
 Route::delete('/departments/{id}', [\App\Http\Controllers\DepartmentUploadController::class, 'deleteDepartment']);
 Route::get('/department-uploads', [\App\Http\Controllers\DepartmentUploadController::class, 'index']);
+Route::get('/department-uploads/batch-metadata', [\App\Http\Controllers\DepartmentUploadController::class, 'getBatchMetadata']);
+Route::get('/hod/batch-metadata', [\App\Http\Controllers\DepartmentUploadController::class, 'getBatchMetadata']);
+Route::get('/department-uploads/books', [\App\Http\Controllers\DepartmentUploadController::class, 'getHodBooks']);
+Route::get('/department-uploads/{id}/file', [\App\Http\Controllers\DepartmentUploadController::class, 'file']);
+Route::get('/department-uploads/{id}', [\App\Http\Controllers\DepartmentUploadController::class, 'show']);
 Route::post('/department-uploads', [\App\Http\Controllers\DepartmentUploadController::class, 'store']);
+Route::post('/department-uploads/extract-metadata', [\App\Http\Controllers\DepartmentUploadController::class, 'extractMetadata']);
+Route::post('/documents/extract-metadata', [\App\Http\Controllers\DepartmentUploadController::class, 'extractMetadata']);
+Route::post('/department-uploads/bulk', [\App\Http\Controllers\DepartmentUploadController::class, 'bulkStore']);
+Route::put('/department-uploads/bulk', [\App\Http\Controllers\DepartmentUploadController::class, 'bulkStore']);
 Route::put('/department-uploads/{id}', [\App\Http\Controllers\DepartmentUploadController::class, 'updateUpload']);
 Route::post('/department-uploads/{id}/update', [\App\Http\Controllers\DepartmentUploadController::class, 'updateUpload']);
+Route::delete('/department-uploads/{id}', [\App\Http\Controllers\DepartmentUploadController::class, 'destroy']);
+Route::post('/department-uploads/bulk-delete', [\App\Http\Controllers\DepartmentUploadController::class, 'bulkDestroy']);
+Route::delete('/department-uploads/bulk-delete', [\App\Http\Controllers\DepartmentUploadController::class, 'bulkDestroy']);
+Route::post('/department-uploads/{id}/restore', [\App\Http\Controllers\DepartmentUploadController::class, 'restore']);
+Route::post('/department-uploads/approve-all', [\App\Http\Controllers\DepartmentUploadController::class, 'approveAll']);
 Route::post('/department-uploads/{id}/approve', [\App\Http\Controllers\DepartmentUploadController::class, 'approve']);
 Route::post('/department-uploads/{id}/reject', [\App\Http\Controllers\DepartmentUploadController::class, 'reject']);
+Route::get('/hod/books', [\App\Http\Controllers\DepartmentUploadController::class, 'getHodBooks']);
+Route::get('/hod/courses', [\App\Http\Controllers\DepartmentUploadController::class, 'getHodCourses']);
 Route::post('/hod/login', [\App\Http\Controllers\DepartmentUploadController::class, 'hodLogin']);
 
 // 14. Inter-Role Tri-Party Institutional Communication & Dispatch API
@@ -445,9 +519,13 @@ Route::prefix('simplelib')->group(function () {
     Route::get('/users', [SimpleLibApiController::class, 'users']);
 });
 
-// 16b. Admin Profile & Custom Pages Gateway
+// 16b. Admin & HOD Profile & Custom Pages Gateway
 Route::get('/admin/profile', [\App\Http\Controllers\DeveloperController::class, 'getAdminProfile']);
 Route::post('/admin/profile', [\App\Http\Controllers\DeveloperController::class, 'updateAdminProfile']);
+Route::get('/hod/profile', [\App\Http\Controllers\DeveloperController::class, 'getAdminProfile']);
+Route::post('/hod/profile', [\App\Http\Controllers\DeveloperController::class, 'updateAdminProfile']);
+Route::post('/hod/send-reset-link', [\App\Http\Controllers\DeveloperController::class, 'sendPasswordResetLink']);
+Route::post('/admin/send-reset-link', [\App\Http\Controllers\DeveloperController::class, 'sendPasswordResetLink']);
 Route::get('/admin/custom-pages', [\App\Http\Controllers\DeveloperController::class, 'getCustomPages']);
 
 // 17. Master Developer Architecture, Visual Builder & Kill-Switch API
@@ -471,15 +549,16 @@ Route::prefix('developer')->group(function () {
     // Staff & Administrator Authority
     Route::get('/staff', [\App\Http\Controllers\DeveloperController::class, 'getStaff']);
     Route::post('/staff', [\App\Http\Controllers\DeveloperController::class, 'storeStaff']);
-    Route::put('/staff/{id}', [\App\Http\Controllers\DeveloperController::class, 'updateStaff'])->where('id', '.*');
-    Route::put('/staff/{id}/status', [\App\Http\Controllers\DeveloperController::class, 'updateStaffStatus'])->where('id', '.*');
-    Route::delete('/staff/{id}', [\App\Http\Controllers\DeveloperController::class, 'deleteStaff'])->where('id', '.*');
+    Route::put('/staff/{id}/status', [\App\Http\Controllers\DeveloperController::class, 'updateStaffStatus'])->where('id', '[0-9]+');
+    Route::put('/staff/{id}', [\App\Http\Controllers\DeveloperController::class, 'updateStaff'])->where('id', '[0-9]+');
+    Route::delete('/staff/{id}', [\App\Http\Controllers\DeveloperController::class, 'deleteStaff'])->where('id', '[0-9]+');
 
     // Direct Book Ingestion & Cataloguing Studio
     Route::get('/books', [\App\Http\Controllers\DeveloperController::class, 'getBooks']);
     Route::post('/books', [\App\Http\Controllers\DeveloperController::class, 'uploadBook']);
     Route::put('/books/{id}', [\App\Http\Controllers\DeveloperController::class, 'updateBook'])->where('id', '.*');
     Route::delete('/books/{id}', [\App\Http\Controllers\DeveloperController::class, 'deleteBook'])->where('id', '.*');
+    Route::post('/books/bulk-delete', [\App\Http\Controllers\DeveloperController::class, 'bulkDeleteBooks']);
 
     // Cryptographic Security Audit Log Trail
     Route::get('/audit-logs', [\App\Http\Controllers\DeveloperController::class, 'getAuditLogs']);
@@ -502,11 +581,75 @@ Route::prefix('developer')->group(function () {
 
     // Live Database Telemetry & Health
     Route::get('/database/status', [\App\Http\Controllers\DeveloperController::class, 'getDatabaseStatus']);
+
+    // 2FA OTP Access Control Matrix (Global & Individual Pause/Bypass)
+    Route::get('/otp-settings', [\App\Http\Controllers\DeveloperController::class, 'getOtpSettings']);
+    Route::post('/otp-settings/toggle-global', [\App\Http\Controllers\DeveloperController::class, 'toggleGlobalOtp']);
+    Route::post('/otp-settings/toggle-user', [\App\Http\Controllers\DeveloperController::class, 'toggleUserOtp']);
+    Route::post('/otp-settings/toggle-role', [\App\Http\Controllers\DeveloperController::class, 'toggleRoleOtp']);
+
+    // Individual & Bulk User Notification Switch Matrix (Email & In-App Alerts)
+    Route::get('/user-notification-settings', [\App\Http\Controllers\DeveloperController::class, 'getUserNotificationSettings']);
+    Route::post('/user-notification-settings', [\App\Http\Controllers\DeveloperController::class, 'updateUserNotificationSettings']);
+
+    // HOD Resource Publishing & Approval Workflow (Direct to Students vs Admin Review)
+    Route::get('/hod-publishing-mode', [\App\Http\Controllers\DeveloperController::class, 'getHodPublishingMode']);
+    Route::post('/hod-publishing-mode', [\App\Http\Controllers\DeveloperController::class, 'setHodPublishingMode']);
+
+    // Departmental Staff & Workspaces Master Controller
+    Route::get('/hod-staff', [\App\Http\Controllers\DeveloperController::class, 'getHodStaff']);
+    Route::post('/hod-staff', [\App\Http\Controllers\DeveloperController::class, 'storeHodStaff']);
+    Route::get('/hod-staff/features-catalog', [\App\Http\Controllers\DeveloperController::class, 'getStaffFeaturesCatalog']);
+    Route::post('/hod-staff/features-catalog', [\App\Http\Controllers\DeveloperController::class, 'saveStaffFeaturesCatalog']);
+    Route::get('/hod-staff/activities', [\App\Http\Controllers\DeveloperController::class, 'getStaffActivityLogs']);
+    Route::match(['put', 'post'], '/hod-staff/{id}', [\App\Http\Controllers\DeveloperController::class, 'updateHodStaff'])->where('id', '.*');
+    Route::delete('/hod-staff/{id}', [\App\Http\Controllers\DeveloperController::class, 'deleteHodStaff'])->where('id', '.*');
+
+    // Targeted Broadcast & Maintenance/Upgrade Matrix (Students, Admins, HODs, Staff under HODs)
+    Route::get('/maintenance-broadcasts', [\App\Http\Controllers\DeveloperController::class, 'getMaintenanceBroadcasts']);
+    Route::post('/maintenance-broadcasts', [\App\Http\Controllers\DeveloperController::class, 'updateMaintenanceBroadcast']);
 });
+
+// System Maintenance Broadcast & Real-Time Alerts (Public/Client Dashboards)
+Route::get('/system/maintenance-broadcasts', [\App\Http\Controllers\DeveloperController::class, 'getPublicMaintenanceBroadcasts']);
+
+// HOD Public Workflow Mode Route
+Route::get('/hod/publishing-mode', [\App\Http\Controllers\DepartmentUploadController::class, 'getPublishingMode']);
+Route::post('/hod/publishing-mode', [\App\Http\Controllers\DepartmentUploadController::class, 'setPublishingMode']);
+
+// HOD Delegated Departmental Staff Page Builder & Access Matrix Routes
+Route::get('/hod/staff', [\App\Http\Controllers\Api\HodStaffPortalController::class, 'index']);
+Route::post('/hod/staff', [\App\Http\Controllers\Api\HodStaffPortalController::class, 'store']);
+Route::post('/hod/staff/bulk-permissions', [\App\Http\Controllers\Api\HodStaffPortalController::class, 'bulkUpdatePermissions']);
+Route::post('/hod/staff/login', [\App\Http\Controllers\Api\HodStaffPortalController::class, 'login']);
+Route::post('/hod/staff/log-activity', [\App\Http\Controllers\DeveloperController::class, 'logStaffActivity']);
+Route::get('/hod/staff/features-catalog', [\App\Http\Controllers\DeveloperController::class, 'getStaffFeaturesCatalog']);
+Route::match(['put', 'post'], '/hod/staff/{id}', [\App\Http\Controllers\Api\HodStaffPortalController::class, 'update'])->where('id', '.*');
+Route::delete('/hod/staff/{id}', [\App\Http\Controllers\Api\HodStaffPortalController::class, 'destroy'])->where('id', '.*');
 
 // Database Management & init-db Endpoints
 Route::get('/database/status', [\App\Http\Controllers\LibrarySystemController::class, 'getDatabaseStatus']);
 Route::post('/database/init', [\App\Http\Controllers\LibrarySystemController::class, 'initDatabase']);
 
+// =========================================================================
+// GORA NETWORK OFF-CHAIN COMPUTATION API & INNEAI SCHOLARLY INTELLIGENCE API
+// Specification: https://goranetwork.github.io/doc/#introduction
+//                https://goranetwork.github.io/doc/#gora-off-chain-computation-api-1
+// =========================================================================
+Route::prefix('gora')->group(function () {
+    Route::get('/status', [\App\Http\Controllers\Api\GoraAndInneAiController::class, 'goraStatus']);
+    Route::get('/info', [\App\Http\Controllers\Api\GoraAndInneAiController::class, 'goraStatus']);
+    Route::match(['get', 'post'], '/compute', [\App\Http\Controllers\Api\GoraAndInneAiController::class, 'goraCompute']);
+    Route::match(['get', 'post'], '/offchain-computation', [\App\Http\Controllers\Api\GoraAndInneAiController::class, 'goraCompute']);
+    Route::get('/feeds', [\App\Http\Controllers\Api\GoraAndInneAiController::class, 'goraCompute']);
+    Route::match(['get', 'post'], '/verify', [\App\Http\Controllers\Api\GoraAndInneAiController::class, 'goraVerify']);
+});
 
-
+Route::prefix('inneai')->group(function () {
+    Route::get('/status', [\App\Http\Controllers\Api\GoraAndInneAiController::class, 'inneAiStatus']);
+    Route::get('/info', [\App\Http\Controllers\Api\GoraAndInneAiController::class, 'inneAiStatus']);
+    Route::match(['get', 'post'], '/chat', [\App\Http\Controllers\Api\GoraAndInneAiController::class, 'inneAiChat']);
+    Route::match(['get', 'post'], '/completions', [\App\Http\Controllers\Api\GoraAndInneAiController::class, 'inneAiChat']);
+    Route::match(['get', 'post'], '/analyze', [\App\Http\Controllers\Api\GoraAndInneAiController::class, 'inneAiAnalyze']);
+    Route::get('/search', [\App\Http\Controllers\Api\GoraAndInneAiController::class, 'inneAiSearch']);
+});

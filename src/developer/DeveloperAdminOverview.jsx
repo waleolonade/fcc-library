@@ -14,6 +14,7 @@ import {
     Users
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { developerApiCall } from '../services/developerApi';
 
 export default function DeveloperAdminOverview({ passkey, onSwitchTab, onImpersonate, showToast }) {
   const [data, setData] = useState(null);
@@ -23,10 +24,10 @@ export default function DeveloperAdminOverview({ passkey, onSwitchTab, onImperso
   const fetchOverview = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/developer/admin-overview', {
-        headers: { 'X-Developer-Passkey': passkey }
+      const res = await developerApiCall('/api/developer/admin-overview', {
+        passkey
       });
-      if (res.ok) {
+      if (res && res.ok) {
         const json = await res.json();
         if (json.success) {
           setData(json);
@@ -39,6 +40,7 @@ export default function DeveloperAdminOverview({ passkey, onSwitchTab, onImperso
       setLoading(false);
     }
   };
+
 
   useEffect(() => {
     fetchOverview();
@@ -82,7 +84,7 @@ export default function DeveloperAdminOverview({ passkey, onSwitchTab, onImperso
             </button>
 
             <button
-              onClick={() => onImpersonate?.('admin', { role: 'admin', name: 'Dr. Alhaji Balogun O.', email: 'admin@fccibadanlibrary.com.ng' })}
+              onClick={() => onImpersonate?.('admin', { role: 'admin', name: 'Dr. Alhaji Balogun O.', email: '@fccibadanlibrary.com.ng' })}
               className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-xl shadow-emerald-950"
             >
               <Play size={14} />

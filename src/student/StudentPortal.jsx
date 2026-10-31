@@ -5,8 +5,10 @@ import {
   Award, ShieldCheck, Globe, MessageSquare, Printer, Fingerprint, Building2, Link2, Shield,
   Menu, ChevronLeft, ChevronRight, ChevronDown, X, User, GraduationCap, Barcode,
   Home, Library, Clock, Star, History, Bell, Quote, Compass, BookMarked,
-  ExternalLink, Check, Copy, AlertCircle, RefreshCw, Send, Sparkle, Zap, Database
+  ExternalLink, Check, Copy, AlertCircle, RefreshCw, Send, Sparkle, Zap, Database,
+  ArrowLeft, ArrowRight
 } from 'lucide-react';
+import { pwaHistory } from '../utils/pwaHistoryManager';
 import { INSTITUTION, INITIAL_PARTNER_LIBRARIES } from '../data/institutionalSeedData';
 import DigitalBookReader from './DigitalBookReader';
 import StudentOverviewDashboard from './StudentOverviewDashboard';
@@ -46,10 +48,13 @@ import OpenAlexExplorer from './OpenAlexExplorer';
 import AcademicJournalsDirectory from './AcademicJournalsDirectory';
 import SmartCatalogSearch from './SmartCatalogSearch';
 import { useDeviceType } from '../utils/useDeviceType';
+import MaintenanceBroadcastBanner from '../common/MaintenanceBroadcastBanner';
 import MobileStudentNavigation from './MobileStudentNavigation';
 import TabletStudentNavigation from './TabletStudentNavigation';
 import { Smartphone, Monitor, Tablet as TabletIcon, PhoneCall, Bot as BotIcon } from 'lucide-react';
 import { developerConfigService } from '../services/developerConfigService';
+import { libraryApi } from '../api/libraryApi';
+import UniversalNotificationCenter from '../common/UniversalNotificationCenter';
 
 export default function StudentPortal({
   user,
@@ -118,10 +123,117 @@ export default function StudentPortal({
     user?.level === 'HND II'
   );
 
-  // Sync activeTab with URL Hash
+  // Live in-system unread notification count based on user's email / matric
+  const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
+
+  // Live Database Synchronized Records for Patron
+  const [reservations, setReservations] = useState([]);
+  const [continueReading, setContinueReading] = useState([]);
+  const [roomBookings, setRoomBookings] = useState([]);
+  const [readingLists, setReadingLists] = useState([]);
+  const [theses, setTheses] = useState([]);
+  const [fines, setFines] = useState([]);
+  const [favorites, setFavorites] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [reserveLoading, setReserveLoading] = useState(false);
+
+  // Central Live Data Fetcher across Backend & SQLite Database
+  const fetchStudentData = async () => {
+    if (!user?.matric && !user?.email) return;
+    const matric = user?.matric;
+    const queryParam = matric || user?.email;
+
+    try {
+      // 1. Notifications
+      const dbNotifs = await libraryApi.notifications.getAll(queryParam);
+      if (Array.isArray(dbNotifs)) {
+        setNotifications(dbNotifs);
+        const unread = dbNotifs.filter(n => !n.read).length;
+        setUnreadNotifsCount(unread);
+      }
+    } catch (e) {}
+
+    try {
+      // 2. Reservations
+      if (matric) {
+        const res = await libraryApi.reservations.getByMatric(matric);
+        if (Array.isArray(res)) setReservations(res);
+      }
+    } catch (e) {}
+
+    try {
+      // 3. Continue Reading Progress
+      if (matric) {
+        const cr = await libraryApi.continueReading.getByMatric(matric);
+        if (Array.isArray(cr)) setContinueReading(cr);
+      }
+    } catch (e) {}
+
+    try {
+      // 4. Study Room Bookings
+      if (matric) {
+        const rb = await libraryApi.studyRooms.getBookings(matric);
+        if (Array.isArray(rb)) setRoomBookings(rb);
+      }
+    } catch (e) {}
+
+    try {
+      // 5. Reading Lists
+      if (matric) {
+        const rl = await libraryApi.readingLists.getByMatric(matric);
+        if (Array.isArray(rl)) setReadingLists(rl);
+      }
+    } catch (e) {}
+
+    try {
+      // 6. Theses
+      const th = await libraryApi.theses.getAll();
+      if (Array.isArray(th)) setTheses(th);
+    } catch (e) {}
+
+    try {
+      // 7. Fines
+      if (matric) {
+        const fn = await libraryApi.fines.getAll({ matric });
+        const list = Array.isArray(fn) ? fn : (fn?.data || []);
+        setFines(list);
+      }
+    } catch (e) {}
+  };
+
   useEffect(() => {
-    const syncFromHash = () => {
-      const { path } = parseCurrentRoute();
+    fetchStudentData();
+    const interval = setInterval(fetchStudentData, 20000);
+    return () => clearInterval(interval);
+  }, [user?.matric, user?.email]);
+
+  const handleReserveBook = async (book) => {
+    if (!book || !user?.matric) {
+      alert('Please log in with a valid Scholar ID to reserve library holdings.');
+      return;
+    }
+    setReserveLoading(true);
+    try {
+      const res = await libraryApi.reservations.create(user.matric, book);
+      if (res && res.success !== false) {
+        sounds.playCashChime();
+        alert(`Successfully reserved "${book.title}". You will receive an automated notification when ready for pickup.`);
+        const updated = await libraryApi.reservations.getByMatric(user.matric);
+        if (Array.isArray(updated)) setReservations(updated);
+      } else {
+        alert(res?.message || 'Could not complete reservation.');
+      }
+    } catch (err) {
+      alert(err.message || 'Error communicating with reservation gateway.');
+    } finally {
+      setReserveLoading(false);
+    }
+  };
+
+  // Sync activeTab with URL Hash & Notification Click Events
+  useEffect(() => {
+    const syncFromHash = (e) => {
+      const path = e?.detail?.route || parseCurrentRoute().path;
       if (path.startsWith('/scholar/')) {
         const sub = path.replace('/scholar/', '').split('/')[0];
         
@@ -198,7 +310,11 @@ export default function StudentPortal({
     };
     syncFromHash();
     window.addEventListener('hashchange', syncFromHash);
-    return () => window.removeEventListener('hashchange', syncFromHash);
+    window.addEventListener('fcc-notification-navigate', syncFromHash);
+    return () => {
+      window.removeEventListener('hashchange', syncFromHash);
+      window.removeEventListener('fcc-notification-navigate', syncFromHash);
+    };
   }, []);
 
   const handleTabSwitch = (tabId) => {
@@ -296,6 +412,9 @@ export default function StudentPortal({
       }`}
       style={{ backgroundImage: PATTERNS.scholar }}
     >
+      {/* Targeted Developer Broadcast Banner & Maintenance Lock */}
+      <MaintenanceBroadcastBanner role="student" currentPage={activeTab} />
+
       {/* MOBILE ADAPTIVE HEADER, FLOATING DOCK & SERVICES DRAWER */}
       {isMobile && (
         <MobileStudentNavigation
@@ -326,6 +445,26 @@ export default function StudentPortal({
               <Menu size={18} />
               <span className="text-xs font-semibold hidden sm:inline">Menu</span>
             </button>
+
+            {/* Desktop Back & Front Navigation Controls */}
+            <div className="flex items-center gap-1 bg-[#021810] p-1 rounded-xl border border-emerald-800/80">
+              <button
+                onClick={() => pwaHistory.goBack()}
+                title="Go Back / Previous (Alt + ←)"
+                className="px-2 py-1 rounded-lg bg-emerald-950/80 hover:bg-emerald-600 text-emerald-300 hover:text-white text-xs font-semibold flex items-center gap-1 transition"
+              >
+                <ArrowLeft size={13} />
+                <span className="hidden xl:inline">Back</span>
+              </button>
+              <button
+                onClick={() => pwaHistory.goForward()}
+                title="Go Front / Forward (Alt + →)"
+                className="px-2 py-1 rounded-lg bg-emerald-950/80 hover:bg-emerald-600 text-emerald-300 hover:text-white text-xs font-semibold flex items-center gap-1 transition"
+              >
+                <span className="hidden xl:inline">Front</span>
+                <ArrowRight size={13} />
+              </button>
+            </div>
 
             <div className="flex items-center gap-2.5">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 p-0.5 flex items-center justify-center shadow-md shadow-emerald-950/60 overflow-hidden shrink-0">
@@ -440,12 +579,17 @@ export default function StudentPortal({
               <span className="hidden sm:inline">AI Librarian</span>
             </button>
 
+            <UniversalNotificationCenter
+              user={{ ...(user || {}), role: 'student' }}
+              role="student"
+            />
+
             <button
               onClick={() => handleTabSwitch('notifications')}
               className={`p-2 rounded-xl border border-emerald-800/80 transition relative ${
                 activeTab === 'notifications' ? 'bg-emerald-600 text-white' : 'bg-[#021810] text-emerald-300 hover:text-white'
               }`}
-              title="Notifications"
+              title="Open Full Notifications Page"
             >
               <Bell size={16} />
               {dueSoonLoans.length > 0 && (
@@ -562,7 +706,7 @@ export default function StudentPortal({
                         { id: 'library_gutendex', label: 'Project Gutenberg', icon: Globe, prefix: '├──' },
                         { id: 'library_openlibrary', label: 'Open Library', icon: Globe, prefix: '├──' },
                         { id: 'library_archive', label: 'Internet Archive', icon: Library, prefix: '└──' },
-                      ].map(sub => {
+                      ].filter(sub => devConfig?.studentPages?.[sub.id]?.enabled !== false).map(sub => {
                         const SubIcon = sub.icon;
                         const isSubActive = activeTab === sub.id;
                         return (
@@ -909,18 +1053,20 @@ export default function StudentPortal({
               user={user}
               books={books}
               loans={loans}
-              reservations={[]}
-              continueReading={[]}
-              roomBookings={[]}
-              readingLists={[]}
-              theses={[]}
-              notifications={[]}
+              reservations={reservations}
+              continueReading={continueReading}
+              roomBookings={roomBookings}
+              readingLists={readingLists}
+              theses={theses}
+              notifications={notifications}
+              devConfig={devConfig}
               onNavigateTab={(tab) => handleTabSwitch(tab)}
               onOpenReader={(b) => setActiveBookForReader(b)}
               onSelectBook={(b) => setActiveBookDetails(b)}
               onRenewLoan={onRenewLoan}
               onOpenAi={() => setIsAiOpen(true)}
             />
+
           ) : activeTab === 'library_search' ? (
             /* ============================================================== */
             /* 2. LIBRARY ├── Institutional Catalog Search (User Friendly)     */
@@ -1038,20 +1184,7 @@ export default function StudentPortal({
                   setActiveBookDetails(null);
                   setActiveBookForReader(b);
                 }}
-                onReserve={(b) => {
-                  setLocalReservations(prev => [
-                    {
-                      id: `res-${Date.now()}`,
-                      bookId: b.id,
-                      matric: user?.matric,
-                      title: b.title,
-                      author: b.author,
-                      date: new Date().toISOString().split('T')[0],
-                      status: 'Confirmed'
-                    },
-                    ...prev
-                  ]);
-                }}
+                onReserve={(b) => handleReserveBook(b)}
               />
             </div>
           ) : activeTab === 'library_openalex' ? (
@@ -1082,11 +1215,11 @@ export default function StudentPortal({
               user={user}
               loans={loans}
               books={books}
-              reservations={[]}
-              fines={[]}
-              notifications={[]}
-              favorites={[]}
-              readingLists={[]}
+              reservations={reservations}
+              fines={fines}
+              notifications={notifications}
+              favorites={favorites}
+              readingLists={readingLists}
               onRenewLoan={onRenewLoan}
               onPayFine={onPayFine}
               initialSection={
@@ -1243,7 +1376,7 @@ export default function StudentPortal({
           book={activeBookDetails}
           onClose={() => setActiveBookDetails(null)}
           onOpenReader={(b) => { setActiveBookDetails(null); setActiveBookForReader(b); }}
-          onReserve={(b) => alert(`Reserved copy of "${b.title}". You will be notified when returned.`)}
+          onReserve={(b) => handleReserveBook(b)}
         />
       )}
 

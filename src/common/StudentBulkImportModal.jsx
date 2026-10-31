@@ -379,20 +379,11 @@ FCC/BAM/2026/014, Emmanuel David, Business Administration & Management, HND II, 
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setPastedText(getSampleText())}
-                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition flex items-center gap-1"
-                title="Populate test data with 1-click"
-              >
-                <Sparkles size={12} className="text-amber-400" />
-                <span>Load Sample Data</span>
-              </button>
-              <button
-                type="button"
                 onClick={handleDownloadTemplate}
-                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition flex items-center gap-1"
+                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition flex items-center gap-1.5 shadow"
               >
-                <Download size={12} />
-                <span>Download Template (.csv)</span>
+                <Download size={13} />
+                <span>Download Clean CSV Template (.csv)</span>
               </button>
             </div>
           </div>

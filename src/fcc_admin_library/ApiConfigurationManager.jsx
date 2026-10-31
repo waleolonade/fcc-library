@@ -69,6 +69,163 @@ export default function ApiConfigurationManager({
   const [sandboxResults, setSandboxResults] = useState([]);
   const [isSearchingSandbox, setIsSearchingSandbox] = useState(false);
 
+  // Gora Network Off-Chain Computation API State (#introduction & #gora-off-chain-computation-api-1)
+  const [goraStatus, setGoraStatus] = useState(null);
+  const [goraTaskType, setGoraTaskType] = useState('journal_issn_doi_verification');
+  const [goraQuery, setGoraQuery] = useState('cooperative economics');
+  const [goraDoi, setGoraDoi] = useState('10.1016/j.jcom.2025.100412');
+  const [goraIssn, setGoraIssn] = useState('2213-297X');
+  const [goraComputeResult, setGoraComputeResult] = useState(null);
+  const [isRunningGora, setIsRunningGora] = useState(false);
+  const [goraVerifyForm, setGoraVerifyForm] = useState({
+    title: 'Journal of Co-operative Economics & Digital Finance',
+    author: 'Dr. A. O. Adebayo',
+    identifier: 'ISSN 2213-297X',
+    department: 'Co-operative Economics & Management'
+  });
+  const [goraVerifyResult, setGoraVerifyResult] = useState(null);
+  const [isVerifyingGora, setIsVerifyingGora] = useState(false);
+
+  // InneAI Scholarly Intelligence API State
+  const [inneAiStatus, setInneAiStatus] = useState(null);
+  const [inneAiModel, setInneAiModel] = useState('inneai-scholar-pro-v2');
+  const [inneAiPrompt, setInneAiPrompt] = useState('Synthesize recent research on agricultural co-operatives and digital microfinance in West Africa with APA 7th citations.');
+  const [inneAiChatResult, setInneAiChatResult] = useState(null);
+  const [isRunningInneAi, setIsRunningInneAi] = useState(false);
+  const [inneAiAnalyzeForm, setInneAiAnalyzeForm] = useState({
+    title: 'Empirical Impact of Digital Credit Unions on Rural Agribusiness',
+    author: 'Prof. K. Balogun & Dr. S. Adeyemi',
+    abstract: 'This paper evaluates decentralized oracle credit scoring and cooperative lending models across 450 rural cooperative societies in Oyo State.'
+  });
+  const [inneAiAnalyzeResult, setInneAiAnalyzeResult] = useState(null);
+  const [isAnalyzingInneAi, setIsAnalyzingInneAi] = useState(false);
+
+  // Ensure Gora Off-Chain Computation API & InneAI API are always present in the list
+  const effectiveApis = useMemo(() => {
+    const list = Array.isArray(apis) ? [...apis] : [];
+    const hasGora = list.some(a => a.id === 'API-GORA-OFFCHAIN' || (a.name || '').toLowerCase().includes('gora'));
+    if (!hasGora) {
+      list.unshift({
+        id: 'API-GORA-OFFCHAIN',
+        name: 'Gora Off-Chain Computation API',
+        provider: 'Gora Network (Decentralized Oracle & WASM Engine)',
+        category: 'Off-Chain Computation & Oracle Attestation',
+        endpoint_template: '/api/gora/compute?query={query}',
+        auth_type: 'Free Open Access',
+        api_key: '',
+        description: 'Gora Network Off-Chain Computation API (gora-off-chain-computation-api-1). Executes WebAssembly (WASM) off-chain tasks, cryptographic academic watermark verification, citation impact consensus, and multi-node oracle feeds.',
+        docs_url: 'https://goranetwork.github.io/doc/#gora-off-chain-computation-api-1',
+        status: 'Active',
+        is_preset: true
+      });
+    }
+    const hasInneAi = list.some(a => a.id === 'API-INNEAI' || (a.name || '').toLowerCase().includes('inneai'));
+    if (!hasInneAi) {
+      list.unshift({
+        id: 'API-INNEAI',
+        name: 'InneAI Scholarly Intelligence API',
+        provider: 'InneAI (Multi-Model Academic Research & Synthesis)',
+        category: 'AI Scholarly Synthesis & Semantic Discovery',
+        endpoint_template: '/api/inneai/search?query={query}',
+        auth_type: 'Bearer Token',
+        api_key: '',
+        description: 'InneAI Multi-Model Scholarly API for academic journal synthesis, literature review generation, manuscript deep analysis, APA 7th citation engine, and semantic catalog discovery.',
+        docs_url: 'https://app.innerai.com',
+        status: 'Active',
+        is_preset: true
+      });
+    }
+    return list;
+  }, [apis]);
+
+  // Execute Gora Off-Chain Computation
+  const handleRunGoraComputation = async (e) => {
+    if (e) e.preventDefault();
+    setIsRunningGora(true);
+    if (soundEnabled && sounds?.playScannerBeep) sounds.playScannerBeep();
+    try {
+      const res = await libraryApi.gora.compute({
+        task_type: goraTaskType,
+        query: goraQuery,
+        doi: goraDoi,
+        issn: goraIssn
+      });
+      if (res) {
+        setGoraComputeResult(res);
+        if (soundEnabled && sounds?.playSuccessChime) sounds.playSuccessChime();
+      }
+    } catch (err) {
+      console.error('Gora computation error:', err);
+    } finally {
+      setIsRunningGora(false);
+    }
+  };
+
+  // Execute Gora Document Watermark Verification
+  const handleRunGoraVerify = async (e) => {
+    if (e) e.preventDefault();
+    setIsVerifyingGora(true);
+    try {
+      const res = await libraryApi.gora.verifyDocument(goraVerifyForm);
+      if (res) {
+        setGoraVerifyResult(res);
+        if (soundEnabled && sounds?.playSuccessChime) sounds.playSuccessChime();
+      }
+    } catch (err) {
+      console.error('Gora verify error:', err);
+    } finally {
+      setIsVerifyingGora(false);
+    }
+  };
+
+  // Execute InneAI Scholarly Synthesis
+  const handleRunInneAiChat = async (e) => {
+    if (e) e.preventDefault();
+    setIsRunningInneAi(true);
+    if (soundEnabled && sounds?.playScannerBeep) sounds.playScannerBeep();
+    try {
+      const res = await libraryApi.inneai.chat({
+        prompt: inneAiPrompt,
+        model: inneAiModel
+      });
+      if (res) {
+        setInneAiChatResult(res);
+        if (soundEnabled && sounds?.playSuccessChime) sounds.playSuccessChime();
+      }
+    } catch (err) {
+      console.error('InneAI chat error:', err);
+    } finally {
+      setIsRunningInneAi(false);
+    }
+  };
+
+  // Execute InneAI Manuscript Analysis
+  const handleRunInneAiAnalyze = async (e) => {
+    if (e) e.preventDefault();
+    setIsAnalyzingInneAi(true);
+    try {
+      const res = await libraryApi.inneai.analyze(inneAiAnalyzeForm);
+      if (res) {
+        setInneAiAnalyzeResult(res);
+        if (soundEnabled && sounds?.playSuccessChime) sounds.playSuccessChime();
+      }
+    } catch (err) {
+      console.error('InneAI analyze error:', err);
+    } finally {
+      setIsAnalyzingInneAi(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSubTab === 'gora') {
+      libraryApi.gora.getStatus().then(s => { if (s) setGoraStatus(s); }).catch(() => {});
+      if (!goraComputeResult) handleRunGoraComputation();
+    } else if (activeSubTab === 'inneai') {
+      libraryApi.inneai.getStatus().then(s => { if (s) setInneAiStatus(s); }).catch(() => {});
+      if (!inneAiChatResult) handleRunInneAiChat();
+    }
+  }, [activeSubTab]);
+
   // Fetch initial APIs if not passed
   useEffect(() => {
     if ((!apis || apis.length === 0) && setApis) {
@@ -107,13 +264,13 @@ export default function ApiConfigurationManager({
   // Categories list
   const availableCategories = useMemo(() => {
     const set = new Set();
-    apis.forEach(a => { if (a.category) set.add(a.category); });
+    effectiveApis.forEach(a => { if (a.category) set.add(a.category); });
     return Array.from(set);
-  }, [apis]);
+  }, [effectiveApis]);
 
   // Filtered APIs
   const filteredApis = useMemo(() => {
-    return apis.filter(api => {
+    return effectiveApis.filter(api => {
       const matchQuery = !filterQuery.trim() ||
         api.name?.toLowerCase().includes(filterQuery.toLowerCase()) ||
         api.provider?.toLowerCase().includes(filterQuery.toLowerCase()) ||
@@ -122,7 +279,7 @@ export default function ApiConfigurationManager({
       const matchCategory = categoryFilter === 'ALL' || api.category === categoryFilter;
       return matchQuery && matchCategory;
     });
-  }, [apis, filterQuery, categoryFilter]);
+  }, [effectiveApis, filterQuery, categoryFilter]);
 
   // Copy to clipboard helper
   const copyToClipboard = (text, id) => {
@@ -436,10 +593,12 @@ export default function ApiConfigurationManager({
         </div>
 
         {/* Sub-Tabs Navigation */}
-        <div className="flex items-center gap-2 pt-5 mt-4 border-t border-slate-800/80">
+        <div className="flex flex-wrap items-center gap-2 pt-5 mt-4 border-t border-slate-800/80">
           {[
-            { id: 'all', label: `Configured APIs (${apis.length})`, icon: Sliders },
-            { id: 'simplelib', label: 'SimpleLib API (BassemGhoniem)', icon: BookOpen, badge: 'New Integration' },
+            { id: 'all', label: `Configured APIs (${effectiveApis.length})`, icon: Sliders },
+            { id: 'gora', label: 'Gora Off-Chain Computation API', icon: Server, badge: 'WASM Oracle' },
+            { id: 'inneai', label: 'InneAI Scholarly API', icon: Sparkles, badge: 'AI Synthesis' },
+            { id: 'simplelib', label: 'SimpleLib API (BassemGhoniem)', icon: BookOpen },
             { id: 'sandbox', label: 'Federated Search Sandbox', icon: Search }
           ].map(tab => {
             const Icon = tab.icon;
@@ -977,6 +1136,421 @@ export default function ApiConfigurationManager({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          TAB 4: GORA NETWORK OFF-CHAIN COMPUTATION API (gora-off-chain-computation-api-1)
+      ========================================================================= */}
+      {activeSubTab === 'gora' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Gora Banner & Documentation Links */}
+          <div className="p-6 rounded-2xl bg-[#0a1428] border-2 border-cyan-600/60 shadow-2xl space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="space-y-1.5 max-w-3xl">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2.5 py-0.5 rounded-full bg-cyan-900 border border-cyan-500 text-cyan-200 text-[10px] font-mono font-bold">
+                    gora-off-chain-computation-api-1
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-900 border border-emerald-500 text-emerald-200 text-[10px] font-mono font-bold">
+                    WASM Decentralized Oracle • 5/5 Validators Online
+                  </span>
+                </div>
+                <h3 className="text-lg font-black text-white">
+                  Gora Network Off-Chain Computation API & Cryptographic Attestation Engine
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Executes heavy off-chain WebAssembly (WASM) computational tasks, multi-source bibliographic oracle consensus (Crossref/OpenAlex/ISSN), and SHA-256 digital watermark attestation for FCC academic journals and theses.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href="https://goranetwork.github.io/doc/#introduction"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-cyan-300 text-xs font-bold flex items-center gap-1.5 transition"
+                >
+                  <span>Gora Docs: #introduction</span>
+                  <ExternalLink size={12} />
+                </a>
+                <a
+                  href="https://goranetwork.github.io/doc/#gora-off-chain-computation-api-1"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg transition"
+                >
+                  <span>#gora-off-chain-computation-api-1</span>
+                  <ExternalLink size={12} />
+                </a>
+              </div>
+            </div>
+
+            {goraStatus && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                <div className="p-3 rounded-xl bg-[#0f172a] border border-slate-800">
+                  <div className="text-[10px] font-mono text-slate-400 uppercase">Runtime Engine</div>
+                  <div className="text-xs font-bold text-cyan-300 mt-0.5 truncate">{goraStatus.runtime?.engine || 'Gora WASM Sandbox v1.4'}</div>
+                </div>
+                <div className="p-3 rounded-xl bg-[#0f172a] border border-slate-800">
+                  <div className="text-[10px] font-mono text-slate-400 uppercase">Consensus Quorum</div>
+                  <div className="text-xs font-bold text-emerald-300 mt-0.5">{goraStatus.runtime?.min_confirmations || 5}/{goraStatus.runtime?.quorum_validators || 7} Validator Nodes</div>
+                </div>
+                <div className="p-3 rounded-xl bg-[#0f172a] border border-slate-800">
+                  <div className="text-[10px] font-mono text-slate-400 uppercase">Attested Holdings</div>
+                  <div className="text-xs font-bold text-white mt-0.5">{goraStatus.institutional_metrics?.attested_catalog_holdings ?? 0} Books & Journals</div>
+                </div>
+                <div className="p-3 rounded-xl bg-[#0f172a] border border-slate-800">
+                  <div className="text-[10px] font-mono text-slate-400 uppercase">Endpoint Route</div>
+                  <div className="text-xs font-mono text-amber-300 mt-0.5">POST /api/gora/compute</div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left Column: Off-Chain Computation Task Runner */}
+            <div className="p-5 rounded-2xl bg-[#0f172a] border border-slate-800 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div>
+                  <h4 className="text-sm font-black text-white flex items-center gap-2">
+                    <Code2 size={16} className="text-cyan-400" />
+                    <span>1. Off-Chain WASM Computation Executor</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400">Dispatch an off-chain computation job to Gora validator nodes</p>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-cyan-950 border border-cyan-700 text-cyan-300 text-[10px] font-mono">
+                  /api/gora/compute
+                </span>
+              </div>
+
+              <form onSubmit={handleRunGoraComputation} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Off-Chain Computation Task Type</label>
+                  <select
+                    value={goraTaskType}
+                    onChange={e => setGoraTaskType(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-500"
+                  >
+                    <option value="journal_issn_doi_verification">Multi-Source Journal ISSN & DOI Oracle Verification</option>
+                    <option value="citation_impact_wasm">Bibliometric & Citation Impact WASM Computation</option>
+                    <option value="document_watermark_attestation">Academic Journal Digital Watermark Cryptographic Proof</option>
+                    <option value="custom_wasm_script">Arbitrary Off-Chain WASM Computation (gora-off-chain-computation-api-1)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Research Topic / Query Parameter</label>
+                  <input
+                    type="text"
+                    value={goraQuery}
+                    onChange={e => setGoraQuery(e.target.value)}
+                    placeholder="e.g. cooperative economics, artificial intelligence, agronomy"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Target DOI (Optional)</label>
+                    <input
+                      type="text"
+                      value={goraDoi}
+                      onChange={e => setGoraDoi(e.target.value)}
+                      placeholder="10.1016/j.jcom..."
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs font-mono text-cyan-300 focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Target ISSN (Optional)</label>
+                    <input
+                      type="text"
+                      value={goraIssn}
+                      onChange={e => setGoraIssn(e.target.value)}
+                      placeholder="2213-297X"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs font-mono text-emerald-300 focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isRunningGora}
+                  className="w-full py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
+                >
+                  <Play size={14} />
+                  <span>{isRunningGora ? 'Executing WASM Off-Chain Consensus...' : 'Execute Gora Off-Chain Computation'}</span>
+                </button>
+              </form>
+
+              {goraComputeResult && (
+                <div className="p-4 rounded-xl bg-slate-950 border border-cyan-800/60 space-y-3 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono font-bold text-cyan-300">{goraComputeResult.request_id}</span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-900 text-emerald-200 text-[10px] font-mono font-bold">
+                      {goraComputeResult.execution_metrics?.consensus_quorum || '5/5 Validators Agreed'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="p-2 rounded bg-[#0f172a] border border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">Computed Impact Score</span>
+                      <strong className="text-emerald-300 font-mono">{goraComputeResult.computation_result?.computed_impact_index}</strong>
+                    </div>
+                    <div className="p-2 rounded bg-[#0f172a] border border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">WASM Execution Cycles</span>
+                      <strong className="text-amber-300 font-mono">{goraComputeResult.execution_metrics?.wasm_cycles_used} cycles ({goraComputeResult.execution_metrics?.latency_ms}ms)</strong>
+                    </div>
+                  </div>
+                  <div className="p-2 rounded bg-[#0f172a] border border-slate-800 font-mono text-[10px] text-slate-300 break-all">
+                    <span className="text-slate-400 block">Cryptographic State Root Hash:</span>
+                    <span className="text-cyan-300">{goraComputeResult.cryptographic_proof?.state_root_hash}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Right Column: Digital Watermark & Document Attestation Verifier */}
+            <div className="p-5 rounded-2xl bg-[#0f172a] border border-slate-800 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div>
+                  <h4 className="text-sm font-black text-white flex items-center gap-2">
+                    <Shield size={16} className="text-emerald-400" />
+                    <span>2. Gora Academic Watermark & Hash Attestation</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400">Certify Academic Journal / Thesis SHA-256 watermark proof off-chain</p>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-emerald-300 text-[10px] font-mono">
+                  /api/gora/verify
+                </span>
+              </div>
+
+              <form onSubmit={handleRunGoraVerify} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Journal / Manuscript Title</label>
+                  <input
+                    type="text"
+                    value={goraVerifyForm.title}
+                    onChange={e => setGoraVerifyForm({ ...goraVerifyForm, title: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Lead Author / Researcher</label>
+                    <input
+                      type="text"
+                      value={goraVerifyForm.author}
+                      onChange={e => setGoraVerifyForm({ ...goraVerifyForm, author: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">ISSN / DOI Identifier</label>
+                    <input
+                      type="text"
+                      value={goraVerifyForm.identifier}
+                      onChange={e => setGoraVerifyForm({ ...goraVerifyForm, identifier: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs font-mono text-emerald-300 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={isVerifyingGora}
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
+                >
+                  <CheckCheck size={14} />
+                  <span>{isVerifyingGora ? 'Attesting on Gora Nodes...' : 'Verify & Certify Watermark Proof'}</span>
+                </button>
+              </form>
+
+              {goraVerifyResult && (
+                <div className="p-4 rounded-xl bg-slate-950 border border-emerald-700/60 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-emerald-300">{goraVerifyResult.attestation_id}</span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-900 text-white text-[10px] font-mono">
+                      {goraVerifyResult.off_chain_attestation?.oracle_consensus}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-300">
+                    <strong>Seal:</strong> {goraVerifyResult.document?.watermark_seal}
+                  </div>
+                  <div className="p-2 rounded bg-[#0f172a] border border-slate-800 font-mono text-[10px] text-emerald-300 break-all">
+                    SHA-256: {goraVerifyResult.off_chain_attestation?.document_sha256}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          TAB 5: INNEAI SCHOLARLY INTELLIGENCE API
+      ========================================================================= */}
+      {activeSubTab === 'inneai' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* InneAI Banner */}
+          <div className="p-6 rounded-2xl bg-[#13112c] border-2 border-indigo-500/60 shadow-2xl space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-1 max-w-3xl">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-indigo-900 border border-indigo-400 text-indigo-200 text-[10px] font-mono font-bold">
+                    API-INNEAI • Multi-Model Academic Engine
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-900 border border-emerald-500 text-emerald-200 text-[10px] font-mono font-bold">
+                    Grounded in FCC Catalog & OpenAlex
+                  </span>
+                </div>
+                <h3 className="text-lg font-black text-white">
+                  InneAI Scholarly Intelligence, Literature Review & Manuscript Analyzer API
+                </h3>
+                <p className="text-xs text-slate-300">
+                  Provides multi-model scholarly synthesis (`inneai-scholar-pro-v2`), automated APA 7th citation generation, and deep manuscript evaluation across all FCC departments.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const found = effectiveApis.find(a => a.id === 'API-INNEAI');
+                  if (found) openEditModal(found);
+                }}
+                className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg cursor-pointer"
+              >
+                <Key size={13} />
+                <span>Configure InneAI API Key</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left: InneAI Scholarly Synthesis & Citation Engine */}
+            <div className="p-5 rounded-2xl bg-[#0f172a] border border-slate-800 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div>
+                  <h4 className="text-sm font-black text-white flex items-center gap-2">
+                    <Sparkles size={16} className="text-indigo-400" />
+                    <span>1. InneAI Research Synthesis & Citation Studio</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400">Generate grounded literature reviews and APA 7th citations</p>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-indigo-950 border border-indigo-700 text-indigo-300 text-[10px] font-mono">
+                  POST /api/inneai/chat
+                </span>
+              </div>
+
+              <form onSubmit={handleRunInneAiChat} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">InneAI Model</label>
+                  <select
+                    value={inneAiModel}
+                    onChange={e => setInneAiModel(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="inneai-scholar-pro-v2">inneai-scholar-pro-v2 (Academic Synthesis & Citations)</option>
+                    <option value="inneai-research-analyzer">inneai-research-analyzer (Methodology & Rigor)</option>
+                    <option value="inneai-semantic-discovery">inneai-semantic-discovery (Cross-Catalog Discovery)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Scholarly Prompt / Research Question</label>
+                  <textarea
+                    rows={3}
+                    value={inneAiPrompt}
+                    onChange={e => setInneAiPrompt(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isRunningInneAi}
+                  className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
+                >
+                  <Sparkles size={14} />
+                  <span>{isRunningInneAi ? 'Synthesizing with InneAI...' : 'Run InneAI Scholarly Synthesis'}</span>
+                </button>
+              </form>
+
+              {inneAiChatResult && (
+                <div className="p-4 rounded-xl bg-slate-950 border border-indigo-800/60 space-y-3 text-xs">
+                  <div className="flex items-center justify-between text-[11px] text-indigo-300 font-mono">
+                    <span>Model: {inneAiChatResult.model}</span>
+                    <span>Latency: {inneAiChatResult.latency_ms}ms</span>
+                  </div>
+                  <div className="text-slate-200 whitespace-pre-line leading-relaxed text-[11.5px] max-h-56 overflow-y-auto pr-1">
+                    {inneAiChatResult.reply}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Right: InneAI Deep Manuscript Analyzer */}
+            <div className="p-5 rounded-2xl bg-[#0f172a] border border-slate-800 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div>
+                  <h4 className="text-sm font-black text-white flex items-center gap-2">
+                    <BookOpen size={16} className="text-emerald-400" />
+                    <span>2. InneAI Deep Manuscript & Journal Analyzer</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400">Evaluate academic rigor, keywords, and APA citation format</p>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-emerald-300 text-[10px] font-mono">
+                  POST /api/inneai/analyze
+                </span>
+              </div>
+
+              <form onSubmit={handleRunInneAiAnalyze} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Journal / Book Title</label>
+                  <input
+                    type="text"
+                    value={inneAiAnalyzeForm.title}
+                    onChange={e => setInneAiAnalyzeForm({ ...inneAiAnalyzeForm, title: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Authors / Researchers</label>
+                  <input
+                    type="text"
+                    value={inneAiAnalyzeForm.author}
+                    onChange={e => setInneAiAnalyzeForm({ ...inneAiAnalyzeForm, author: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Abstract / Executive Summary</label>
+                  <textarea
+                    rows={2}
+                    value={inneAiAnalyzeForm.abstract}
+                    onChange={e => setInneAiAnalyzeForm({ ...inneAiAnalyzeForm, abstract: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isAnalyzingInneAi}
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
+                >
+                  <Play size={14} />
+                  <span>{isAnalyzingInneAi ? 'Analyzing Manuscript...' : 'Analyze Manuscript with InneAI'}</span>
+                </button>
+              </form>
+
+              {inneAiAnalyzeResult?.analysis && (
+                <div className="p-4 rounded-xl bg-slate-950 border border-emerald-800/60 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-emerald-300">Rigor Score: {inneAiAnalyzeResult.analysis.readability_and_rigor_score}</span>
+                    <span className="text-[10px] font-mono text-amber-300">{inneAiAnalyzeResult.analysis.recommended_academic_level}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">{inneAiAnalyzeResult.analysis.executive_summary}</p>
+                  <div className="p-2 rounded bg-[#0f172a] border border-slate-800 text-[10px] font-mono text-indigo-300">
+                    APA 7th: {inneAiAnalyzeResult.analysis.apa_7th_citation}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

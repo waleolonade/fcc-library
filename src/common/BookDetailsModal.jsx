@@ -9,7 +9,6 @@ import { getPermalink, copyToClipboardWithFeedback } from '../utils/router';
 import TraceBadge from './TraceBadge';
 import { sounds } from '../utils/soundEffects';
 import { libraryApi } from '../api/libraryApi';
-import { getBookCoverUrl, DEFAULT_BOOK_COVER, OFFLINE_BOOK_COVER_SVG } from '../utils/bookCoverResolver';
 import InstitutionalFooter from './InstitutionalFooter';
 
 export default function BookDetailsModal({ book, onClose, onOpenReader, onReserve, user: propUser }) {
@@ -255,15 +254,11 @@ export default function BookDetailsModal({ book, onClose, onOpenReader, onReserv
           {/* BOOK COVER CANVAS */}
           <div className="w-full sm:w-48 h-64 sm:h-72 rounded-2xl bg-gradient-to-br from-[#063f2b] via-[#04281c] to-[#02150e] border-2 border-emerald-600/40 shrink-0 shadow-2xl shadow-emerald-950 font-serif relative overflow-hidden group">
             <img
-              src={getBookCoverUrl(book)}
-              alt={book.title}
+              src={book?.cover_image || book?.coverImage || book?.cover || '/assets/fcc-logo.png'}
+              alt={book?.title}
               onError={(e) => {
-                if (e.currentTarget.src !== DEFAULT_BOOK_COVER && e.currentTarget.src !== OFFLINE_BOOK_COVER_SVG) {
-                  e.currentTarget.src = DEFAULT_BOOK_COVER;
-                } else {
-                  e.currentTarget.onerror = null;
-                  e.currentTarget.src = OFFLINE_BOOK_COVER_SVG;
-                }
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = '/assets/fcc-logo.png';
               }}
               className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
               loading="lazy"
@@ -353,18 +348,18 @@ export default function BookDetailsModal({ book, onClose, onOpenReader, onReserv
                 <span>CITE</span>
               </button>
 
-              {book.isDigital && (
-                <button
-                  id="btn-modal-read-online"
-                  onClick={() => {
-                    if (onOpenReader) onOpenReader(book);
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-emerald-900/60 hover:bg-emerald-800 text-emerald-200 border border-emerald-700 text-xs font-bold flex items-center gap-1.5 transition ml-auto"
-                >
-                  <BookOpen size={15} />
-                  <span>READ DIGITAL FULL-TEXT</span>
-                </button>
-              )}
+              <button
+                id="btn-modal-read-online"
+                onClick={() => {
+                  sounds.playClick();
+                  if (onOpenReader) onOpenReader(book);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center gap-2 shadow-lg shadow-emerald-950/80 transition ml-auto active:scale-95 cursor-pointer ring-1 ring-emerald-400/50"
+                title="Open and read this book in the Digital Reader"
+              >
+                <BookOpen size={16} />
+                <span>READ DIGITAL FULL-TEXT</span>
+              </button>
             </div>
 
             {/* Traceable URI */}

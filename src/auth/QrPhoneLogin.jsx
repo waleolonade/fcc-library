@@ -3,6 +3,7 @@ import { RefreshCw, ShieldCheck, AlertTriangle, ArrowLeft, CheckCircle, Smartpho
 import { QrCodeSvg } from '../common/BarcodeQrStudio';
 import { sounds } from '../utils/soundEffects';
 import fccLogo from '../assets/fcc-logo.png';
+import { clearAllAuthStores, storeUserSession, getDashboardRouteForRole } from '../utils/authSessionManager';
 
 const API = import.meta.env.VITE_API_BASE_URL || '';
 // Public URL the phone should open so phones on any network connect to the official domain.
@@ -85,6 +86,8 @@ export function QrPhoneLogin({ onLogin, onBack }) {
   }, []);
 
   useEffect(() => {
+    // Purge any residual tokens or stores from a prior user whenever the QR workstation screen loads
+    clearAllAuthStores({ reason: 'qr_workstation_mounted' });
     createChallenge();
   }, [createChallenge]);
 
@@ -111,25 +114,28 @@ export function QrPhoneLogin({ onLogin, onBack }) {
               body: { challengeId: challenge.challengeId, pollToken: challenge.pollToken },
             });
             sounds.playSuccessChime();
-            const studentUser = auth?.user ? {
+
+            // CRITICAL: Always wipe every previous user's tokens and storage before applying new session
+            clearAllAuthStores({ reason: 'qr_login_consume_success' });
+
+            const targetRole = auth?.role || auth?.user?.role || 'student';
+            const authenticatedUser = auth?.user ? {
               ...auth.user,
-              role: 'student',
-              matric: auth.user.matric || auth.user.barcode
+              role: targetRole,
+              matric: auth.user.matric || auth.user.barcode || auth.user.username || auth.user.id
             } : null;
 
-            if (studentUser) {
-              localStorage.setItem('fcc_student_session', JSON.stringify(studentUser));
-              if (auth.accessToken) {
-                localStorage.setItem('fcc_student_token', auth.accessToken);
-              }
+            if (authenticatedUser) {
+              storeUserSession(authenticatedUser, auth.accessToken, targetRole);
               if (onLogin) {
-                onLogin(studentUser, auth.accessToken);
+                onLogin(authenticatedUser, auth.accessToken, targetRole);
               }
+              const targetRoute = getDashboardRouteForRole(targetRole);
+              window.location.hash = `#${targetRoute}`;
             }
-            // Auto login website workstation to scholar profile
-            window.location.hash = '#/scholar/profile';
           } catch (consumeErr) {
             console.error('Failed to consume QR login token:', consumeErr);
+            clearAllAuthStores({ reason: 'qr_consume_error' });
             setStatus('error');
             setError(consumeErr.message || 'Login approval could not be finalized. Please re-scan.');
           }

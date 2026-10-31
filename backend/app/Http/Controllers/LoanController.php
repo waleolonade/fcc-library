@@ -41,8 +41,17 @@ class LoanController extends Controller
             return response()->json(['error' => "All copies of '{$book->title}' are currently on loan"], 400);
         }
 
-        $patron = Patron::where('matric', $matric)->first();
-        $patronName = $patron ? $patron->name : ($request->input('patronName') ?? 'Patron Scholar');
+        $patron = Patron::where('matric', $matric)
+            ->orWhere('barcode', $matric)
+            ->orWhere('library_id', $matric)
+            ->orWhere('id', $matric)
+            ->first();
+        if ($patron) {
+            $matric = $patron->matric ?: $matric;
+            $patronName = $patron->name;
+        } else {
+            $patronName = $request->input('patronName') ?? 'Patron Scholar';
+        }
 
         $loanId = 'LN-' . rand(1000, 9999);
         $issueDate = Carbon::now()->toDateString();
@@ -72,6 +81,32 @@ class LoanController extends Controller
         if ($patron) {
             $patron->increment('active_loans_count');
         }
+
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("
+                    INSERT INTO loans (id, matric, patron_name, book_id, book_title, author, call_number, branch, borrow_date, due_date, status, renewal_count, fine_amount, rfid_tag)
+                    VALUES (:id, :matric, :patron_name, :book_id, :book_title, :author, :call_number, :branch, :borrow_date, :due_date, 'Active', 0, 0.00, :rfid_tag)
+                    ON DUPLICATE KEY UPDATE status = 'Active', due_date = VALUES(due_date)
+                ");
+                $st->execute([
+                    ':id' => $loanId,
+                    ':matric' => $matric,
+                    ':patron_name' => $patronName,
+                    ':book_id' => $book->id,
+                    ':book_title' => $book->title,
+                    ':author' => $book->author,
+                    ':call_number' => $book->call_number,
+                    ':branch' => $book->branch ?? 'Main Campus Library',
+                    ':borrow_date' => $issueDate,
+                    ':due_date' => $dueDate,
+                    ':rfid_tag' => 'FCC-RFID-' . rand(10000, 99990)
+                ]);
+                $stBook = $pdo->prepare("UPDATE books SET copies_available = GREATEST(0, copies_available - 1) WHERE id = :id");
+                $stBook->execute([':id' => $book->id]);
+            }
+        } catch (\Throwable $e) {}
 
         // Log transaction
         AuditLog::create([
@@ -116,6 +151,18 @@ class LoanController extends Controller
             $patron->decrement('active_loans_count');
         }
 
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("UPDATE loans SET status = 'Returned', return_date = NOW() WHERE id = :id OR book_id = :bid");
+                $st->execute([':id' => $loan->id, ':bid' => $loan->book_id]);
+                if ($book) {
+                    $stBook = $pdo->prepare("UPDATE books SET copies_available = copies_available + 1 WHERE id = :id");
+                    $stBook->execute([':id' => $book->id]);
+                }
+            }
+        } catch (\Throwable $e) {}
+
         AuditLog::create([
             'id' => 'AUD-' . rand(10000, 99999),
             'action' => 'RETURN_BOOK',
@@ -145,6 +192,14 @@ class LoanController extends Controller
         $loan->due_date = $newDueDate;
         $loan->renewal_count = ($loan->renewal_count ?? 0) + 1;
         $loan->save();
+
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("UPDATE loans SET due_date = :due, renewal_count = renewal_count + 1 WHERE id = :id");
+                $st->execute([':due' => $newDueDate, ':id' => $loan->id]);
+            }
+        } catch (\Throwable $e) {}
 
         AuditLog::create([
             'id' => 'AUD-' . rand(10000, 99999),

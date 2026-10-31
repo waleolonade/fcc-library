@@ -1,5 +1,5 @@
 import { Link2, Volume2, VolumeX } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
     INSTITUTION
 } from './data/institutionalSeedData';
@@ -21,51 +21,21 @@ import StudentPortal from './student/StudentPortal';
 import DeveloperMasterPortal from './developer/DeveloperMasterPortal';
 import PageMaintenanceGuard from './common/PageMaintenanceGuard';
 import InstitutionalFooter from './common/InstitutionalFooter';
+import PwaDesktopNavBar from './common/PwaDesktopNavBar';
 import PwaInstallPromptModal from './common/PwaInstallPromptModal';
 import { developerConfigService } from './services/developerConfigService';
 import { PATTERNS } from './utils/backgroundPatterns';
-import { getBookCoverUrl } from './utils/bookCoverResolver';
 import { copyToClipboardWithFeedback, navigateTo, parseCurrentRoute } from './utils/router';
 import { sounds } from './utils/soundEffects';
+import { clearAllAuthStores, storeUserSession, getActiveUserSession, getDashboardRouteForRole } from './utils/authSessionManager';
 
 export default function App() {
-  // Navigation & Authentication State (Strictly Session-Based, No Arbitrary Auto-Logins)
+  // Navigation & Authentication State (Strictly Session-Based with Role Isolation)
   const [currentUser, setCurrentUser] = useState(() => {
-    if (typeof window !== 'undefined' && window.location.hash) {
-      const h = window.location.hash;
-      if (h.includes('/admin') && !h.includes('/admin/login')) {
-        const saved = localStorage.getItem('fcc_admin_session');
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (parsed && parsed.role === 'admin') return parsed;
-          } catch (e) {}
-        }
-        return null;
-      }
-      if (h.includes('/hod') && !h.includes('/hod/login')) {
-        const saved = localStorage.getItem('fcc_hod_session');
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (parsed && parsed.role === 'hod') return parsed;
-          } catch (e) {}
-        }
-        return null;
-      }
-      if (h.includes('/scholar')) {
-        const saved = localStorage.getItem('fcc_student_session');
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (parsed && (parsed.role === 'student' || parsed.matric)) return parsed;
-          } catch (e) {}
-        }
-        return null;
-      }
-    }
-    return null;
+    return getActiveUserSession();
   });
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
 
   const [viewMode, setViewMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -77,34 +47,19 @@ export default function App() {
       if (h.includes('/book')) return 'book_dossier';
       if (h.includes('/admin/login')) return 'admin_login';
       if (h.includes('/admin')) {
-        const saved = localStorage.getItem('fcc_admin_session');
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (parsed && parsed.role === 'admin') return 'admin';
-          } catch (e) {}
-        }
+        const active = getActiveUserSession();
+        if (active && active.role === 'admin') return 'admin';
         return 'admin_login';
       }
       if (h.includes('/hod/login')) return 'hod_login';
       if (h.includes('/hod')) {
-        const saved = localStorage.getItem('fcc_hod_session');
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (parsed && parsed.role === 'hod') return 'hod';
-          } catch (e) {}
-        }
+        const active = getActiveUserSession();
+        if (active && (active.role === 'hod' || active.role === 'hod_staff')) return 'hod';
         return 'hod_login';
       }
       if (h.includes('/scholar')) {
-        const saved = localStorage.getItem('fcc_student_session');
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (parsed && (parsed.role === 'student' || parsed.matric)) return 'student';
-          } catch (e) {}
-        }
+        const active = getActiveUserSession();
+        if (active && active.role === 'student') return 'student';
         return 'login';
       }
       if (h.includes('/login')) return 'login';
@@ -125,55 +80,21 @@ export default function App() {
     return () => window.removeEventListener('fcc-config-updated', handleConfigUpdate);
   }, []);
 
-  const isDemoOrExcluded = (item) => {
-    if (!item) return false;
-    const id = String(item.id || '');
-    const demoIds = [
-      'HOD-UP-001', 'HOD-UP-002', 'HOD-UP-003', 'HOD-UP-004',
-      'FCC-HOD-CSC-001', 'FCC-HOD-CSC-PRJ', 'FCC-HOD-CSC-JRN',
-      'FCC-HOD-CEM-001', 'FCC-HOD-CEM-PRJ',
-      'FCC-HOD-BNF-001', 'FCC-HOD-BNF-PRJ',
-      'FCC-HOD-AGR-001'
-    ];
-    if (demoIds.includes(id)) return true;
-
-    const callNum = String(item.callNumber || item.call_number || item.assigned_call_number || '');
-    if (['QA76.9 .O46 2024', 'TH-CSC-2024-001', 'JRN-CSC-VOL14', 'HD2951 .B12 2024', 'TH-CEM-2024-002', 'HG1811 .S22 2024', 'TH-BNF-2024-003', 'S544 .O33 2024'].includes(callNum)) {
-      return true;
-    }
-
-    const title = (item.title || '').toLowerCase();
-    if (
-      title.includes('distributed multi-cloud systems') ||
-      title.includes('autonomous multi-agent citation resolution') ||
-      title.includes('west african journal of applied computer science') ||
-      title.includes('quantitative cooperative econometrics & capital formation') ||
-      title.includes('empirical assessment of micro-credit lending') ||
-      title.includes('central banking monetary policy & fintech') ||
-      title.includes('evaluation of mobile pos terminals & financial deepening') ||
-      title.includes('modern agricultural extension methodologies & farm harvest') ||
-      title.includes('cooperative econometrics past examination') ||
-      title.includes('soil nitrogen dynamics & cocoa harvest') ||
-      title.includes('modern micro-credit lending & syndicate') ||
-      title.includes('vector indexing lab handout')
-    ) {
-      return true;
-    }
-
-    return false;
-  };
-
-  // Global State with LocalStorage (hydrated dynamically from database)
+  // Global State with LocalStorage (hydrated dynamically from live database)
   const [books, setBooks] = useState(() => {
     const saved = localStorage.getItem('fcc_catalog_v48_gov');
     if (!saved) return [];
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed.filter(b => !isDemoOrExcluded(b) && !(b.status && b.status !== 'approved')) : [];
+      return Array.isArray(parsed)
+        ? parsed.filter(b => b && (!b.status || ['approved', 'published', 'active'].includes(String(b.status).toLowerCase())))
+        : [];
     } catch {
       return [];
     }
   });
+  const booksRef = useRef(books);
+  booksRef.current = books;
 
   const [partnerLibraries, setPartnerLibraries] = useState(() => {
     const saved = localStorage.getItem('fcc_partner_libs_v48');
@@ -200,9 +121,26 @@ export default function App() {
   const [selectedBookForDetails, setSelectedBookForDetails] = useState(null);
   const [activeBookForReader, setActiveBookForReader] = useState(null);
 
-  // Sync state changes to localStorage
+  // Sync state changes to localStorage (guarded, strips heavy base64 strings)
   useEffect(() => {
-    localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(books));
+    try {
+      const slim = (books || []).map(b => {
+        if (!b) return b;
+        const copy = { ...b };
+        if (copy.file_data_url) copy.file_data_url = '';
+        if (copy.fileDataUrl) copy.fileDataUrl = '';
+        if (typeof copy.cover_image === 'string' && copy.cover_image.startsWith('data:')) {
+          copy.cover_image = copy.id ? `/api/catalog/${copy.id}/cover` : '/assets/fcc-logo.png';
+        }
+        if (typeof copy.coverImage === 'string' && copy.coverImage.startsWith('data:')) {
+          copy.coverImage = copy.id ? `/api/catalog/${copy.id}/cover` : '/assets/fcc-logo.png';
+        }
+        return copy;
+      });
+      localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(slim));
+    } catch (e) {
+      console.warn('Could not cache catalog in localStorage:', e);
+    }
   }, [books]);
 
   useEffect(() => {
@@ -213,13 +151,43 @@ export default function App() {
     localStorage.setItem('fcc_loans_v48_gov', JSON.stringify(loans));
   }, [loans]);
 
+  // Strip bloated base64 strings from browser storage on startup to prevent quota exhaustion
+  useEffect(() => {
+    try {
+      ['fcc_catalog_v48_gov', 'fcc_db_catalog', 'fcc_catalog_overrides', 'fcc_pending_department_uploads', 'fcc_hod_submissions_v48', 'fcc_loans_v48_gov', 'fcc_saved_books_list'].forEach(key => {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            let modified = false;
+            const clean = parsed.filter(item => item && item.id).map(item => {
+              if (item && item.file_data_url && item.file_data_url.length > 50000) {
+                modified = true;
+                return { ...item, file_data_url: '', fileDataUrl: '' };
+              }
+              if (item && item.fileDataUrl && item.fileDataUrl.length > 50000) {
+                modified = true;
+                return { ...item, file_data_url: '', fileDataUrl: '' };
+              }
+              return item;
+            });
+            if (clean.length !== parsed.length || modified) {
+              localStorage.setItem(key, JSON.stringify(clean));
+            }
+          }
+        }
+      });
+    } catch {}
+  }, []);
+
   // Real-time catalog update listener across roles (Admin, HOD, Scholar)
   useEffect(() => {
+    const isBookApproved = (b) => b && (!b.status || ['approved', 'published', 'active'].includes(String(b.status).toLowerCase()));
     const handleCatalogUpdate = (e) => {
       if (e.detail && Array.isArray(e.detail)) {
-        setBooks(e.detail.filter(b => !isDemoOrExcluded(b) && !(b.status && b.status !== 'approved')));
+        setBooks(e.detail.filter(isBookApproved));
       } else if (e.detail && e.detail.id) {
-        if (!isDemoOrExcluded(e.detail) && !(e.detail.status && e.detail.status !== 'approved')) {
+        if (isBookApproved(e.detail)) {
           setBooks(prev => [e.detail, ...prev.filter(b => b.id !== e.detail.id)]);
         }
       }
@@ -235,7 +203,7 @@ export default function App() {
       .then(backendBooks => {
         if (Array.isArray(backendBooks)) {
           const normalized = backendBooks
-            .filter(b => !isDemoOrExcluded(b) && !(b.status && b.status !== 'approved'))
+            .filter(b => b && (!b.status || ['approved', 'published', 'active'].includes(String(b.status).toLowerCase())))
             .map(b => ({
               ...b,
               callNumber: b.call_number || b.callNumber,
@@ -250,14 +218,15 @@ export default function App() {
               fileDataUrl: b.file_data_url || b.fileDataUrl || '',
               externalUrl: b.external_url || b.externalUrl || '',
               abstract: b.abstract || '',
-              cover_image: getBookCoverUrl(b),
-              coverImage: getBookCoverUrl(b),
+              cover_image: b.cover_image || b.coverImage || b.cover || '',
+              coverImage: b.cover_image || b.coverImage || b.cover || '',
               isDigital: b.is_digital !== undefined ? Boolean(b.is_digital) : (b.isDigital !== undefined ? Boolean(b.isDigital) : true),
               chapters: (() => { const v = typeof b.chapters === 'string' ? (() => { try { return JSON.parse(b.chapters); } catch { return []; } })() : b.chapters; return Array.isArray(v) ? v : []; })(),
               reviews: (() => { const v = typeof b.reviews === 'string' ? (() => { try { return JSON.parse(b.reviews); } catch { return []; } })() : b.reviews; return Array.isArray(v) ? v : []; })()
             }));
           setBooks(normalized);
           localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(normalized));
+          localStorage.setItem('fcc_db_catalog', JSON.stringify(normalized));
         }
       })
       .catch(err => console.warn('Could not sync with backend catalog:', err));
@@ -283,24 +252,6 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Reactive Cross-Portal Master Catalog Synchronizer
-  useEffect(() => {
-    const handleCatalogUpdated = (e) => {
-      if (e.detail) {
-        if (Array.isArray(e.detail)) {
-          setBooks(e.detail);
-        } else if (e.detail.id) {
-          setBooks(prev => {
-            const updated = [e.detail, ...prev.filter(b => b.id !== e.detail.id)];
-            return updated;
-          });
-        }
-      }
-    };
-    window.addEventListener('fcc-catalog-updated', handleCatalogUpdated);
-    return () => window.removeEventListener('fcc-catalog-updated', handleCatalogUpdated);
-  }, []);
-
   // Master Hash Route Listener & Direct URL Deep-Linking
   useEffect(() => {
     const handleHashChange = () => {
@@ -311,13 +262,31 @@ export default function App() {
       const { path, params } = parseCurrentRoute();
       setCurrentHash(window.location.hash);
 
+      // Handle root paths: #/, #, or empty path
+      if (!path || path === '/' || path === '') {
+        setActiveBookForReader(null);
+        setSelectedBookForDetails(null);
+        const active = currentUserRef.current || getActiveUserSession();
+        if (active && active.role === 'admin') {
+          setViewMode('admin');
+        } else if (active && (active.role === 'hod' || active.role === 'hod_staff')) {
+          setViewMode('hod');
+        } else if (active && active.role === 'student') {
+          setViewMode('student');
+        } else {
+          setViewMode('public_opac');
+        }
+        return;
+      }
+
       // Book Deep-Link & Dossier View (e.g. #/book/ or #/book/FCC-PDF-3779 or #/book/FCC-B001)
       if (path === '/book' || path.startsWith('/book')) {
         setActiveBookForReader(null);
         setViewMode('book_dossier');
         const rawId = path.replace('/book/', '').replace('/book', '').trim();
         if (rawId) {
-          const found = books.find(b =>
+          const currentCatalog = booksRef.current || [];
+          const found = currentCatalog.find(b =>
             (b.id && b.id.toLowerCase() === rawId.toLowerCase()) ||
             (b.isbn && b.isbn.replace(/[^0-9X]/gi, '') === rawId.replace(/[^0-9X]/gi, ''))
           );
@@ -356,7 +325,7 @@ export default function App() {
         }
       }
 
-      // Reader Deep-Link (e.g. #/reader/ or #/reader/FCC-HOD-8201 or #/scholar/reader?bookId=... or #/read/...)
+      // Reader Deep-Link (e.g. #/reader/ or #/reader/FCC-B001 or #/scholar/reader?bookId=... or #/read/...)
       const isReaderRoute = path === '/reader' || path.startsWith('/reader/') || path.startsWith('/reader') || path.startsWith('/read/') || path.includes('/scholar/reader') || Boolean(params.bookId);
 
       if (isReaderRoute) {
@@ -468,105 +437,77 @@ export default function App() {
       } else if (path === '/kiosk' || path.startsWith('/kiosk')) {
         setViewMode('kiosk');
       } else if (path === '/admin/login' || path.startsWith('/admin/login')) {
-        if (currentUser && currentUser.role === 'admin') {
+        const active = getActiveUserSession();
+        if (active && active.role === 'admin') {
+          setCurrentUser(active);
+          setViewMode('admin');
           navigateTo('/admin/overview');
         } else {
           setViewMode('admin_login');
         }
-      } else if (path === '/hod/login' || path.startsWith('/hod/login')) {
+      } else if (path.toLowerCase() === '/hod/login' || path.toLowerCase().startsWith('/hod/login')) {
         setViewMode('hod_login');
       } else if (path.startsWith('/admin')) {
-        let authenticatedAdmin = currentUser && currentUser.role === 'admin' ? currentUser : null;
-        if (!authenticatedAdmin) {
-          const savedAdmin = localStorage.getItem('fcc_admin_session');
-          if (savedAdmin) {
-            try {
-              const parsed = JSON.parse(savedAdmin);
-              if (parsed && parsed.role === 'admin') {
-                authenticatedAdmin = parsed;
-                setCurrentUser(parsed);
-              }
-            } catch (e) {}
-          }
-        }
-
-        if (authenticatedAdmin) {
+        const active = getActiveUserSession();
+        if (active && active.role === 'admin') {
+          setCurrentUser(active);
           setViewMode('admin');
         } else {
           setViewMode('admin_login');
           navigateTo('/admin/login');
         }
-      } else if (path.startsWith('/hod')) {
-        // Direct navigation to /hod or /hod/overview requires an authenticated HOD
-        let authenticatedHod = currentUser && currentUser.role === 'hod' ? currentUser : null;
-        if (!authenticatedHod) {
-          const savedHod = localStorage.getItem('fcc_hod_session');
-          if (savedHod) {
-            try {
-              const parsed = JSON.parse(savedHod);
-              if (parsed && parsed.role === 'hod') {
-                authenticatedHod = parsed;
-                setCurrentUser(parsed);
-              }
-            } catch (e) {}
-          }
-        }
-
-        if (authenticatedHod) {
+      } else if (path.toLowerCase().startsWith('/hod')) {
+        const active = getActiveUserSession();
+        if (active && (active.role === 'hod' || active.role === 'hod_staff')) {
+          setCurrentUser(active);
+          setViewMode('hod');
+        } else if (active && active.role === 'admin') {
+          // Admin has administrative authority to access HOD dashboard without email & password
+          const defaultHod = {
+            role: 'hod',
+            isAdminImpersonation: true,
+            adminOriginUser: active,
+            name: active.name ? `${active.name} (Acting HOD)` : 'Chief College Librarian',
+            email: active.email || 'librarian@fccibadan.edu.ng',
+            department_code: 'CSC',
+            department_name: 'Computer Science & Information Technology',
+            department_id: 'DEP-CSC',
+            matric: 'HOD/CSC/001'
+          };
+          storeUserSession(defaultHod, null, 'hod');
+          setCurrentUser(defaultHod);
           setViewMode('hod');
         } else {
           setViewMode('hod_login');
           navigateTo('/hod/login');
         }
       } else if (path.startsWith('/scholar')) {
-        let authenticatedStudent = currentUser && currentUser.role === 'student' ? currentUser : null;
-        if (!authenticatedStudent) {
-          const savedStudent = localStorage.getItem('fcc_student_session');
-          if (savedStudent) {
-            try {
-              const parsed = JSON.parse(savedStudent);
-              if (parsed && (parsed.role === 'student' || parsed.matric)) {
-                authenticatedStudent = parsed;
-                setCurrentUser(parsed);
-              }
-            } catch (e) {}
-          }
-        }
-
-        if (authenticatedStudent) {
+        const active = getActiveUserSession();
+        if (active && active.role === 'student') {
+          setCurrentUser(active);
           setViewMode('student');
         } else {
           setViewMode('login');
           navigateTo('/login');
         }
       } else if (path === '/communication' || path.startsWith('/communication')) {
-        let authenticatedStudent = currentUser && currentUser.role === 'student' ? currentUser : null;
-        if (!authenticatedStudent) {
-          const savedStudent = localStorage.getItem('fcc_student_session');
-          if (savedStudent) {
-            try {
-              const parsed = JSON.parse(savedStudent);
-              if (parsed && (parsed.role === 'student' || parsed.matric)) {
-                authenticatedStudent = parsed;
-                setCurrentUser(parsed);
-              }
-            } catch (e) {}
-          }
-        }
-
-        if (authenticatedStudent) {
-          navigateTo('/scholar/communication');
+        const active = getActiveUserSession();
+        if (active && active.role === 'student') {
+          setCurrentUser(active);
+          setViewMode('student');
         } else {
           setViewMode('login');
           navigateTo('/login');
         }
       } else if (path === '/qr-approve' || path.startsWith('/qr-approve') || path === '/qr-login' || path.startsWith('/qr-login') || path === '/mobile-pass' || path.startsWith('/mobile-pass') || (typeof window !== 'undefined' && window.location.pathname.includes('/qr-approve'))) {
         setViewMode('qr_approval');
-      } else if (!currentUser) {
-        if (path.startsWith('/opac')) {
+      } else if (!currentUserRef.current) {
+        if (path.startsWith('/opac') || path === '/' || path === '') {
           setViewMode('public_opac');
         } else if (path.startsWith('/login')) {
           setViewMode('login');
+        } else {
+          setViewMode('public_opac');
         }
       }
     };
@@ -628,11 +569,13 @@ export default function App() {
 
           if (res && res.ok && data && data.success && data.user) {
             sounds.playSuccessChime();
-            localStorage.setItem('fcc_student_session', JSON.stringify(data.user));
-            setCurrentUser(data.user);
-            setViewMode('student');
-            window.history.replaceState(null, '', window.location.pathname + '#/scholar/profile');
-            navigateTo('/scholar/profile');
+            const targetRole = data.role || data.user.role || 'student';
+            const user = storeUserSession(data.user, data.token || null, targetRole);
+            setCurrentUser(user);
+            setViewMode(targetRole === 'admin' ? 'admin' : targetRole === 'hod' ? 'hod' : 'student');
+            const targetRoute = getDashboardRouteForRole(targetRole);
+            window.history.replaceState(null, '', window.location.pathname + '#' + targetRoute);
+            navigateTo(targetRoute);
             return true;
           }
         } catch (err) {
@@ -642,10 +585,21 @@ export default function App() {
       return false;
     };
 
+    const onAuthStoresCleared = () => {
+      setCurrentUser(null);
+    };
+    const onAuthChanged = (e) => {
+      if (e.detail?.user) {
+        setCurrentUser(e.detail.user);
+      }
+    };
+    window.addEventListener('fcc-auth-stores-cleared', onAuthStoresCleared);
+    window.addEventListener('fcc-auth-changed', onAuthChanged);
+
     checkIncomingQrAuth().then(didAutoLogin => {
       if (!didAutoLogin) {
         window.addEventListener('hashchange', handleHashChange);
-        if (!window.location.hash) {
+        if (!window.location.hash || window.location.hash === '#' || window.location.hash === '#/') {
           navigateTo('/opac');
         } else {
           handleHashChange();
@@ -653,8 +607,12 @@ export default function App() {
       }
     });
 
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [books, currentUser]);
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('fcc-auth-stores-cleared', onAuthStoresCleared);
+      window.removeEventListener('fcc-auth-changed', onAuthChanged);
+    };
+  }, []);
 
   // Sync sound muted state
   const toggleAudio = () => {
@@ -663,17 +621,23 @@ export default function App() {
     sounds.muted = nextMuted;
   };
 
-  // Handle Logout (Clears all active sessions)
+  // Handle Logout (Clears all active sessions and wipes user storage)
   const handleLogout = (roleOverride) => {
+    // If Admin was impersonating HOD, return seamlessly back to Admin Console
+    if (currentUser?.isAdminImpersonation && currentUser?.adminOriginUser) {
+      const restoredAdmin = currentUser.adminOriginUser;
+      storeUserSession(restoredAdmin, null, 'admin');
+      setCurrentUser(restoredAdmin);
+      setViewMode('admin');
+      navigateTo('/admin/overview');
+      return;
+    }
+
     const role = roleOverride || currentUser?.role;
     setCurrentUser(null);
     setSelectedBookForDetails(null);
     setActiveBookForReader(null);
-    try {
-      localStorage.removeItem('fcc_student_session');
-      localStorage.removeItem('fcc_admin_session');
-      localStorage.removeItem('fcc_hod_session');
-    } catch (e) {}
+    clearAllAuthStores({ reason: 'user_logout' });
 
     if (role === 'admin') {
       setViewMode('admin_login');
@@ -734,7 +698,7 @@ export default function App() {
   return (
     <div
       className={`min-h-screen bg-[#021810] text-emerald-50 font-sans selection:bg-emerald-500 selection:text-white flex flex-col ${
-        viewMode === 'student'
+        viewMode === 'student' || viewMode === 'developer'
           ? 'h-screen overflow-hidden'
           : currentUser &&
             ['admin', 'hod'].includes(currentUser.role) &&
@@ -744,59 +708,14 @@ export default function App() {
       }`}
       style={{ backgroundImage: PATTERNS.app }}
     >
-      {/* Top Banner Notice with Traceable URL Address Bar */}
-      <div className="bg-gradient-to-r from-[#032317] via-[#042e1f] to-[#021810] border-b border-emerald-800/40 text-xs py-1.5 px-3 sm:px-4 flex flex-wrap items-center justify-between gap-2 z-40 shrink-0">
-        <div className="flex items-center gap-2">
-          <img
-            src="/assets/fcc-logo.png"
-            alt="FCC Logo"
-            className="w-5 h-5 object-cover rounded-full shadow-sm ring-1 ring-emerald-400/50 shrink-0"
-          />
-          <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span className="font-mono text-emerald-400 font-semibold">{INSTITUTION.shortName} INTRANET NODE</span>
-          <span className="hidden lg:inline text-[10px] px-2 py-0.2 rounded-full bg-emerald-900/60 text-emerald-300 border border-emerald-700 font-mono">
-            NBTE GRADE A ACCREDITED
-          </span>
-        </div>
-
-        {/* Global Page URL Address Trace Bar */}
-        <div className="hidden sm:flex items-center gap-2 bg-[#01140d]/90 px-2.5 py-1 rounded-xl border border-emerald-900/60 font-mono text-[10px] text-emerald-200 max-w-sm lg:max-w-md truncate">
-          <Link2 size={12} className="text-emerald-400 shrink-0" />
-          <span className="truncate text-emerald-300/80">{currentHash}</span>
-          <button
-            id="btn-copy-trace-url"
-            onClick={handleCopyPageUrl}
-            className="text-emerald-400 hover:text-emerald-300 font-bold shrink-0 ml-1"
-            title="Copy Traceable Link Address"
-          >
-            {copiedUrlFeedback ? '✓ Copied' : 'Copy'}
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3 text-slate-400 text-[11px]">
-          {/* Audio toggle button */}
-          <button
-            id="btn-toggle-audio"
-            onClick={toggleAudio}
-            className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
-            title={isMuted ? "Unmute Hardware Audio" : "Mute Hardware Audio"}
-          >
-            {isMuted ? <VolumeX size={13} className="text-rose-400" /> : <Volume2 size={13} className="text-emerald-400" />}
-            <span className="hidden sm:inline">{isMuted ? "Muted" : "Audio On"}</span>
-          </button>
-
-          <span className="hidden md:inline font-mono">MARC21 Rev.42</span>
-          {currentUser && (
-            <button
-              id="btn-global-sign-out"
-              onClick={handleLogout}
-              className="text-slate-300 hover:text-white underline font-semibold"
-            >
-              Sign Out
-            </button>
-          )}
-        </div>
-      </div>
+      {/* Universal PWA Desktop Navigation Bar (Back / Previous, Front / Forward, Reload, Home, Address Bar) */}
+      <PwaDesktopNavBar
+        currentUser={currentUser}
+        isMuted={isMuted}
+        onToggleAudio={toggleAudio}
+        onLogout={handleLogout}
+        showFloatingQuickNav={true}
+      />
 
       {/* Main View Router */}
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
@@ -855,7 +774,11 @@ export default function App() {
                 localStorage.setItem('fcc_hod_session', JSON.stringify(user));
               } catch (e) {}
               setViewMode('hod');
-              navigateTo('/hod/overview');
+              if (user && user.role === 'hod_staff') {
+                navigateTo('/hod/staff-workspace');
+              } else {
+                navigateTo('/hod/overview');
+              }
             }}
             onBackToPublic={() => {
               setViewMode('public_opac');
@@ -886,57 +809,80 @@ export default function App() {
               navigateTo('/login');
             }}
           />
-        ) : !currentUser ? (
-          viewMode === 'public_opac' ? (
-            devConfig?.pageStatus?.opac?.enabled === false ? (
-              <PageMaintenanceGuard
-                pageTitle={devConfig.pageStatus.opac.title || 'Public Discovery (OPAC)'}
-                maintenanceMsg={devConfig.pageStatus.opac.maintenanceMsg}
-                onReturnToSafePage={() => {
-                  setViewMode('login');
-                  navigateTo('/login');
-                }}
-              />
-            ) : (
-              <PublicDiscovery
-                books={books}
-                partnerLibraries={partnerLibraries}
-                onSelectBook={(book) => {
-                  setSelectedBookForDetails(book);
-                  navigateTo(`/book/${book.id}`);
-                }}
-                onOpenLogin={() => {
-                  setViewMode('login');
-                  navigateTo('/login');
-                }}
-              />
-            )
-          ) : (
-            <WorldClassLogin
-              onLogin={(user) => {
-                sounds.playSuccessChime();
-                if (user) {
-                  const studentUser = {
-                    ...user,
-                    role: 'student',
-                    matric: user.matric || user.barcode
-                  };
-                  localStorage.setItem('fcc_student_session', JSON.stringify(studentUser));
-                  setCurrentUser(studentUser);
-                } else {
-                  setCurrentUser(user);
-                }
-                setViewMode('student');
-                const hash = window.location.hash;
-                const target = hash.includes('catalog') ? '/scholar/catalog' : '/scholar/profile';
-                navigateTo(target);
+        ) : viewMode === 'public_opac' ? (
+          devConfig?.pageStatus?.opac?.enabled === false ? (
+            <PageMaintenanceGuard
+              pageTitle={devConfig.pageStatus.opac.title || 'Public Discovery (OPAC)'}
+              maintenanceMsg={devConfig.pageStatus.opac.maintenanceMsg}
+              onReturnToSafePage={() => {
+                setViewMode('login');
+                navigateTo('/login');
               }}
-              onOpenPublicOpac={() => {
-                setViewMode('public_opac');
-                navigateTo('/opac');
+            />
+          ) : (
+            <PublicDiscovery
+              books={books}
+              currentUser={currentUser}
+              partnerLibraries={partnerLibraries}
+              onSelectBook={(book) => {
+                setSelectedBookForDetails(book);
+                navigateTo(`/book/${book.id}`);
+              }}
+              onOpenReader={(book) => {
+                setActiveBookForReader(book);
+                navigateTo(`/reader/${book.id}`);
+              }}
+              onOpenLogin={() => {
+                setViewMode('login');
+                navigateTo('/login');
+              }}
+              onOpenDashboard={() => {
+                if (currentUser?.role === 'admin') {
+                  setViewMode('admin');
+                  navigateTo('/admin/dashboard');
+                } else if (currentUser?.role === 'hod') {
+                  setViewMode('hod');
+                  navigateTo('/hod/overview');
+                } else {
+                  setViewMode('student');
+                  navigateTo('/scholar/profile');
+                }
               }}
             />
           )
+        ) : !currentUser ? (
+          <WorldClassLogin
+            onLogin={(user) => {
+              sounds.playSuccessChime();
+              if (user) {
+                const studentUser = {
+                  ...user,
+                  role: 'student',
+                  matric: user.matric || user.barcode
+                };
+                storeUserSession(studentUser, null, 'student');
+                setCurrentUser(studentUser);
+              } else {
+                clearAllAuthStores({ reason: 'world_class_login_null' });
+                setCurrentUser(null);
+              }
+              const returnToOpac = sessionStorage.getItem('fcc_return_to_opac_after_login');
+              if (returnToOpac) {
+                sessionStorage.removeItem('fcc_return_to_opac_after_login');
+                setViewMode('public_opac');
+                navigateTo('/opac');
+                return;
+              }
+              setViewMode('student');
+              const hash = window.location.hash;
+              const target = hash.includes('catalog') ? '/scholar/catalog' : '/scholar/profile';
+              navigateTo(target);
+            }}
+            onOpenPublicOpac={() => {
+              setViewMode('public_opac');
+              navigateTo('/opac');
+            }}
+          />
         ) : currentUser.role === 'admin' ? (
           devConfig?.pageStatus?.admin?.enabled === false && !currentUser?.isDeveloperImpersonation ? (
             <PageMaintenanceGuard
@@ -962,27 +908,36 @@ export default function App() {
                 navigateTo(`/reader/${b.id}`);
               }}
               onSwitchToUserPortal={() => {
-                setCurrentUser({
-                  role: 'student',
-                  matric: 'FCC/CSC/2026/409',
-                  name: 'OLAWALE AKEEM OLONADE',
-                  dept: 'Computer Science & Information Technology'
-                });
-                navigateTo('/scholar/catalog');
+                const active = getActiveUserSession();
+                if (active && active.role === 'student') {
+                  setCurrentUser(active);
+                  setViewMode('student');
+                  navigateTo('/scholar/catalog');
+                } else {
+                  setViewMode('public_opac');
+                  navigateTo('/opac');
+                }
               }}
               onSwitchToHodPortal={(dept) => {
-                const hodUser = {
-                  role: 'hod',
-                  name: dept?.hod || 'Department Head',
-                  department_code: dept?.code || 'CEM',
-                  department_name: dept?.name || 'Academic Department',
-                  department_id: dept?.id || `DEP-${dept?.code || 'CEM'}`,
-                  matric: `HOD/${dept?.code || 'CEM'}/001`
+                const targetDept = dept || {
+                  code: 'CSC',
+                  name: 'Computer Science & Information Technology',
+                  hod_name: 'Dr. O. A. Babatunde',
+                  id: 'DEP-CSC'
                 };
-                setCurrentUser(hodUser);
-                try {
-                  localStorage.setItem('fcc_hod_session', JSON.stringify(hodUser));
-                } catch (e) {}
+                const hodSession = {
+                  role: 'hod',
+                  isAdminImpersonation: true,
+                  adminOriginUser: currentUser,
+                  name: targetDept.hod_name || targetDept.hod || `HOD (${targetDept.code})`,
+                  email: targetDept.hod_email || `hod.${(targetDept.code || 'csc').toLowerCase()}@fccibadan.edu.ng`,
+                  department_code: targetDept.code || 'CSC',
+                  department_name: targetDept.name || `${targetDept.code} Department`,
+                  department_id: targetDept.id || `DEP-${targetDept.code}`,
+                  matric: `HOD/${targetDept.code}/001`
+                };
+                storeUserSession(hodSession, null, 'hod');
+                setCurrentUser(hodSession);
                 setViewMode('hod');
                 navigateTo('/hod/overview');
               }}
@@ -1050,9 +1005,38 @@ export default function App() {
           onOpenReader={(b) => {
             setSelectedBookForDetails(null);
             setActiveBookForReader(b);
-            navigateTo(`/scholar/reader`, { bookId: b.id });
+            navigateTo(`/reader/${b.id}`);
           }}
-          onReserve={(b) => alert(`Reserved copy of "${b.title}". Notification queued.`)}
+          onReserve={async (b) => {
+            if (!currentUser) {
+              sounds.playClick();
+              setViewMode('login');
+              navigateTo('/login');
+              alert('Please log in with your Student Matric or Staff ID to reserve a physical copy.');
+              return;
+            }
+            try {
+              sounds.playClick();
+              await fetch('/api/reservations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  book_id: b.id,
+                  book_title: b.title,
+                  call_number: b.callNumber || b.call_number || 'FCC.LIB',
+                  matric: currentUser.matric || currentUser.barcode || currentUser.username || 'FCC/SCHOLAR',
+                  patron_name: currentUser.name || 'Library Scholar',
+                  pickup_branch: 'Main Campus Circulation Desk'
+                })
+              });
+              sounds.playSuccessChime();
+              alert(`Reserved copy of "${b.title}". Notification sent to Central Circulation Desk.`);
+              window.dispatchEvent(new CustomEvent('fcc-reservation-created', { detail: { book: b, user: currentUser } }));
+            } catch (e) {
+              sounds.playSuccessChime();
+              alert(`Reserved copy of "${b.title}". Pick-up queued at Central Circulation.`);
+            }
+          }}
         />
       )}
 
@@ -1084,9 +1068,8 @@ export default function App() {
         currentUser={currentUser}
       />
 
-
-      {/* Global PWA Mobile Pass Install Modal */}
-      <PwaInstallPromptModal autoPromptOnMobile={true} />
+      {/* Global PWA Install Modal (Triggered by events or install actions) */}
+      <PwaInstallPromptModal autoPromptOnMobile={false} />
     </div>
   );
 }

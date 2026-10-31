@@ -587,8 +587,24 @@ class PolicyController extends Controller
             }
         } catch (\Throwable $e) {}
 
-        // If patron role (student or faculty), also register in patrons table
-        if (in_array($role, ['student', 'faculty'])) {
+        // If student role, register authoritatively in MySQL users table and mirrors
+        if ($role === 'student') {
+            $year = date('Y');
+            $deptCode = strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $dept), 0, 3)) ?: 'GEN';
+            $num = rand(100, 999);
+            $matric = $request->input('id', $request->input('matric', "FCC/{$deptCode}/{$year}/{$num}"));
+
+            \App\Services\StudentUserService::saveStudent([
+                'name' => $name,
+                'email' => $email,
+                'matric' => $matric,
+                'phone' => $phone,
+                'department' => $dept,
+                'pin' => $pin,
+                'status' => 'active',
+                'level' => 'ND I'
+            ]);
+        } elseif ($role === 'faculty') {
             $year = date('Y');
             $deptCode = strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $dept), 0, 3)) ?: 'GEN';
             $num = rand(100, 999);
@@ -602,10 +618,10 @@ class PolicyController extends Controller
                     'name' => $name,
                     'email' => $email,
                     'role' => $role,
-                    'category' => $role === 'faculty' ? 'Faculty Staff' : 'Undergraduate',
+                    'category' => 'Faculty Staff',
                     'department' => $dept,
-                    'level' => $role === 'faculty' ? 'Academic Faculty' : 'ND I',
-                    'borrow_quota' => $role === 'faculty' ? 10 : 5,
+                    'level' => 'Academic Faculty',
+                    'borrow_quota' => 10,
                     'status' => 'Active',
                     'pin' => $pin
                 ]

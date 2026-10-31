@@ -34,9 +34,14 @@ class Patron extends Model
         'registeredBranch',
         'validUntil',
         'photoUrl',
+        'photoUpdatedAt',
         'researchInterests',
         'profileCompletion'
     ];
+
+    public function getPhotoUpdatedAtAttribute() {
+        return $this->attributes['photo_updated_at'] ?? null;
+    }
 
     public function getBarcodeAttribute() {
         if (!empty($this->attributes['barcode'])) {
