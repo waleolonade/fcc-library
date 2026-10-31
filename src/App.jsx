@@ -1058,7 +1058,7 @@ export default function App() {
 
 
       {/* Global E-Book Reader Modal */}
-      {(activeBookForReader || (currentRoute && (currentRoute.path === '/reader' || currentRoute.path.startsWith('/reader')))) && (
+      {(activeBookForReader || (typeof currentHash === 'string' && (currentHash.startsWith('#/reader') || currentHash.startsWith('#/read')))) && (
         <div className="fixed inset-0 z-50 bg-slate-950 p-2 sm:p-6 overflow-y-auto">
           <DigitalBookReader
             book={activeBookForReader}
