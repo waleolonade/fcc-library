@@ -1082,7 +1082,8 @@ class CatalogController extends Controller
             $bookCols = $describe->fetchAll(\PDO::FETCH_COLUMN);
 
             $fileData = $book->file_data_url;
-            if (strlen((string)$fileData) > 200000) {
+            // Guard against extreme payload exceeding 25MB while preserving full authentic academic PDFs
+            if (strlen((string)$fileData) > 25000000) {
                 $fileData = '';
             }
             $coverData = $book->cover_image;

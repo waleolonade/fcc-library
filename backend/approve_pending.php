@@ -195,7 +195,7 @@ foreach ($allPending as $upload) {
                 ':publisher' => "FCC Department of {$upload->department_name} Press",
                 ':year' => (int) date('Y'),
                 ':file_name' => $upload->file_name ?: 'document.pdf',
-                ':file_data_url' => (strlen((string)$upload->file_data_url) < 1500000) ? (string)$upload->file_data_url : '',
+                ':file_data_url' => (strlen((string)$upload->file_data_url) < 25000000) ? (string)$upload->file_data_url : '',
                 ':cover_image' => (strlen((string)$upload->cover_image) < 800000) ? (string)$upload->cover_image : '',
                 ':uploaded_by' => $upload->hod_name ?: 'HOD'
             ]);

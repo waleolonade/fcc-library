@@ -3,7 +3,7 @@
 -- PRODUCTION CPANEL DATABASE MIGRATION & SYSTEM UPDATE SCRIPT
 -- Target Database: gsashtub_brainfeels_library
 -- Server: as124.truehost.cloud (cPanel phpMyAdmin)
--- Generated: 2026-11-03
+-- Generated: 2026-11-04
 -- =========================================================================
 
 SET SQL_MODE = 'NO_AUTO_VALUE_ON_ZERO';
@@ -46,52 +46,7 @@ CREATE TABLE IF NOT EXISTS `audit_logs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -------------------------------------------------------------------------
--- STEP 3: ENSURE SAFE COLUMNS IN `books`, `department_uploads`, AND `departments`
--- -------------------------------------------------------------------------
-SET @dbname = DATABASE();
-
--- 3A. `books`.`file_path`
-SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'books' AND COLUMN_NAME = 'file_path');
-SET @query = IF(@col_exists = 0, 'ALTER TABLE `books` ADD COLUMN `file_path` varchar(500) DEFAULT NULL AFTER `file_name`', 'SELECT 1');
-PREPARE stmt FROM @query; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
--- 3B. `books`.`file_data_url`
-SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'books' AND COLUMN_NAME = 'file_data_url');
-SET @query = IF(@col_exists = 0, 'ALTER TABLE `books` ADD COLUMN `file_data_url` longtext DEFAULT NULL AFTER `file_path`', 'SELECT 1');
-PREPARE stmt FROM @query; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
--- 3C. `books`.`cover_data_url`
-SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'books' AND COLUMN_NAME = 'cover_data_url');
-SET @query = IF(@col_exists = 0, 'ALTER TABLE `books` ADD COLUMN `cover_data_url` longtext DEFAULT NULL AFTER `cover_image`', 'SELECT 1');
-PREPARE stmt FROM @query; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
--- 3D. `department_uploads`.`file_path`
-SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'department_uploads' AND COLUMN_NAME = 'file_path');
-SET @query = IF(@col_exists = 0, 'ALTER TABLE `department_uploads` ADD COLUMN `file_path` varchar(500) DEFAULT NULL AFTER `file_name`', 'SELECT 1');
-PREPARE stmt FROM @query; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
--- 3E. `department_uploads`.`file_data_url`
-SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'department_uploads' AND COLUMN_NAME = 'file_data_url');
-SET @query = IF(@col_exists = 0, 'ALTER TABLE `department_uploads` ADD COLUMN `file_data_url` longtext DEFAULT NULL AFTER `file_path`', 'SELECT 1');
-PREPARE stmt FROM @query; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
--- 3F. `department_uploads`.`book_id`
-SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'department_uploads' AND COLUMN_NAME = 'book_id');
-SET @query = IF(@col_exists = 0, 'ALTER TABLE `department_uploads` ADD COLUMN `book_id` varchar(50) DEFAULT NULL AFTER `assigned_shelf`', 'SELECT 1');
-PREPARE stmt FROM @query; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
--- 3G. `department_uploads`.`cover_data_url`
-SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'department_uploads' AND COLUMN_NAME = 'cover_data_url');
-SET @query = IF(@col_exists = 0, 'ALTER TABLE `department_uploads` ADD COLUMN `cover_data_url` longtext DEFAULT NULL AFTER `file_data_url`', 'SELECT 1');
-PREPARE stmt FROM @query; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
--- 3H. `departments`.`color`
-SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'departments' AND COLUMN_NAME = 'color');
-SET @query = IF(@col_exists = 0, 'ALTER TABLE `departments` ADD COLUMN `color` varchar(50) DEFAULT "blue" AFTER `faculty_count`', 'SELECT 1');
-PREPARE stmt FROM @query; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
--- -------------------------------------------------------------------------
--- STEP 4: SEED MASTER DEVELOPER CONFIG & 14 EXTERNAL LIBRARY APIS
+-- STEP 3: SEED MASTER DEVELOPER CONFIG & 14 EXTERNAL LIBRARY APIS
 -- -------------------------------------------------------------------------
 INSERT INTO `library_settings` (`setting_key`, `setting_value`, `setting_group`, `value_type`, `is_public`, `description`, `created_at`, `updated_at`)
 VALUES
@@ -274,7 +229,7 @@ ON DUPLICATE KEY UPDATE
   `updated_at` = NOW();
 
 -- -------------------------------------------------------------------------
--- STEP 5: REPAIR BOOK FCC-HOD-9314 & FIX INCORRECT IMPRINT TITLES
+-- STEP 4: REPAIR BOOK FCC-HOD-9314 & FIX INCORRECT IMPRINT TITLES
 -- -------------------------------------------------------------------------
 UPDATE `books` 
 SET `title` = 'Basics of Finance',
@@ -283,8 +238,7 @@ SET `title` = 'Basics of Finance',
     `department` = 'Banking and Finance',
     `is_digital` = 1,
     `copies_available` = 10,
-    `copies_total` = 10,
-    `file_path` = 'FCC-HOD-9314.pdf'
+    `copies_total` = 10
 WHERE `id` = 'FCC-HOD-9314';
 
 UPDATE `department_uploads` 
@@ -311,61 +265,85 @@ SET `book_id` = 'FCC-HOD-9314',
 WHERE `file_name` LIKE '%Basics-of-Finance%';
 
 -- -------------------------------------------------------------------------
--- STEP 6: BIDIRECTIONAL REPAIR OF FILE DATA URLS BETWEEN `books` & `department_uploads`
+-- STEP 5: BIDIRECTIONAL REPAIR OF FILE DATA URLS BETWEEN `books` & `department_uploads`
 -- -------------------------------------------------------------------------
 UPDATE `books` b
-INNER JOIN `department_uploads` u ON (b.id = u.book_id OR b.id = u.id)
+INNER JOIN `department_uploads` u ON (
+  b.id = u.book_id 
+  OR b.id = u.id 
+  OR b.id = REPLACE(u.id, 'HOD-UP-', 'FCC-HOD-') 
+  OR u.id = REPLACE(b.id, 'FCC-HOD-', 'HOD-UP-')
+  OR (b.file_name = u.file_name AND b.file_name IS NOT NULL AND b.file_name != '')
+)
 SET b.file_data_url = u.file_data_url
 WHERE (b.file_data_url IS NULL OR b.file_data_url = '') 
   AND (u.file_data_url IS NOT NULL AND u.file_data_url != '');
 
 UPDATE `department_uploads` u
-INNER JOIN `books` b ON (b.id = u.book_id OR b.id = u.id)
+INNER JOIN `books` b ON (
+  b.id = u.book_id 
+  OR b.id = u.id 
+  OR b.id = REPLACE(u.id, 'HOD-UP-', 'FCC-HOD-') 
+  OR u.id = REPLACE(b.id, 'FCC-HOD-', 'HOD-UP-')
+  OR (b.file_name = u.file_name AND b.file_name IS NOT NULL AND b.file_name != '')
+)
 SET u.file_data_url = b.file_data_url
 WHERE (u.file_data_url IS NULL OR u.file_data_url = '') 
   AND (b.file_data_url IS NOT NULL AND b.file_data_url != '');
 
 -- -------------------------------------------------------------------------
--- STEP 7: SYNC APPROVED `department_uploads` INTO `books` TABLE
--- (Ensures all books and journals uploaded by HODs immediately display on OPAC and Student search)
+-- STEP 6: SYNC APPROVED `department_uploads` INTO `books` TABLE
+-- (Uses ONLY universally present columns in both tables so it never fails)
 -- -------------------------------------------------------------------------
 INSERT INTO `books` (
-  `id`, `title`, `author`, `department`, `course_code`, 
-  `target_level`, `file_name`, `file_path`, `file_data_url`, 
-  `is_digital`, `copies_total`, `copies_available`, `access_level`, `created_at`, `updated_at`
+  `id`,
+  `title`,
+  `author`,
+  `department`,
+  `course_code`,
+  `target_level`,
+  `file_name`,
+  `file_data_url`,
+  `is_digital`,
+  `copies_total`,
+  `copies_available`,
+  `access_level`,
+  `uploaded_at`,
+  `uploaded_by`
 )
 SELECT 
-  COALESCE(u.book_id, u.id) AS id,
+  COALESCE(NULLIF(u.book_id, ''), u.id) AS id,
   u.title,
   u.author,
   u.department_name AS department,
   u.course_code,
   u.target_level,
   u.file_name,
-  COALESCE(u.file_path, CONCAT(COALESCE(u.book_id, u.id), '.pdf')) AS file_path,
   u.file_data_url,
   1 AS is_digital,
   10 AS copies_total,
   10 AS copies_available,
   'Open Access Full-Text' AS access_level,
-  u.created_at,
-  NOW() AS updated_at
+  COALESCE(u.created_at, NOW()) AS uploaded_at,
+  COALESCE(u.hod_name, 'HOD / Department Faculty') AS uploaded_by
 FROM `department_uploads` u
 WHERE u.status = 'approved'
 ON DUPLICATE KEY UPDATE
   `title` = VALUES(`title`),
   `author` = VALUES(`author`),
   `department` = VALUES(`department`),
-  `file_path` = COALESCE(VALUES(`file_path`), `books`.`file_path`),
-  `file_data_url` = COALESCE(VALUES(`file_data_url`), `books`.`file_data_url`),
-  `is_digital` = 1,
-  `updated_at` = NOW();
+  `course_code` = COALESCE(VALUES(`course_code`), `books`.`course_code`),
+  `target_level` = COALESCE(VALUES(`target_level`), `books`.`target_level`),
+  `file_name` = COALESCE(VALUES(`file_name`), `books`.`file_name`),
+  `file_data_url` = IF(VALUES(`file_data_url`) IS NOT NULL AND VALUES(`file_data_url`) != '', VALUES(`file_data_url`), `books`.`file_data_url`),
+  `is_digital` = 1;
 
 -- -------------------------------------------------------------------------
--- STEP 8: VERIFICATION SELECT (Run to verify database state)
+-- STEP 7: VERIFICATION SELECT (Run to verify database state)
 -- -------------------------------------------------------------------------
 SELECT 
   (SELECT COUNT(*) FROM `books`) AS total_books_in_catalog,
   (SELECT COUNT(*) FROM `department_uploads` WHERE `status` = 'approved') AS approved_hod_uploads,
   (SELECT COUNT(*) FROM `library_settings` WHERE `setting_key` = 'fcc_developer_master_config') AS developer_config_active,
-  (SELECT `title` FROM `books` WHERE `id` = 'FCC-HOD-9314') AS book_9314_repaired_title;
+  (SELECT `title` FROM `books` WHERE `id` = 'FCC-HOD-9314') AS book_9314_repaired_title,
+  (SELECT LENGTH(`file_data_url`) FROM `books` WHERE `id` = 'FCC-HOD-9314') AS book_9314_pdf_data_bytes;
