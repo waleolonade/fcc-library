@@ -283,12 +283,13 @@ export default function PublicDiscovery({
   const [activeDetectedBadge, setActiveDetectedBadge] = useState(null); // 'isbn' | 'doi' | 'synonym'
 
   // Live External Repository Integration State (Public Access without login)
-  const [searchTarget, setSearchTarget] = useState('all'); // 'all' | 'stacks' | 'openlibrary' | 'gutenberg' | 'trove'
+  const [searchTarget, setSearchTarget] = useState('all'); // 'all' | 'stacks' | 'openlibrary' | 'gutenberg' | 'trove' | 'scholarly'
   const [liveFederatedLoading, setLiveFederatedLoading] = useState(false);
   const [liveOpenLibraryResults, setLiveOpenLibraryResults] = useState([]);
   const [liveGutenbergResults, setLiveGutenbergResults] = useState([]);
   const [liveInternetArchiveResults, setLiveInternetArchiveResults] = useState([]);
   const [liveGoogleBooksResults, setLiveGoogleBooksResults] = useState([]);
+  const [liveScholarlyResults, setLiveScholarlyResults] = useState([]);
   const [hasQueriedLiveApi, setHasQueriedLiveApi] = useState(false);
   const [activeLiveReader, setActiveLiveReader] = useState(null); // { url, directUrl, title, source }
   const [savedBooks, setSavedBooks] = useState(() => {
@@ -606,11 +607,20 @@ export default function PublicDiscovery({
         .then(data => (data.books || []).slice(0, 6))
         .catch(() => []);
 
-      const [olDocs, gutResults, iaResults, gbResults] = await Promise.all([olPromise, gutPromise, iaPromise, gbPromise]);
+      // 5. Fetch from World Scholarly E-Resources (AGORA • JSTOR • ScienceDirect • EBSCOhost)
+      const scholarlyPromise = fetch(`/api/scholarly/search?query=${encodeURIComponent(term)}&per_page=6`)
+        .then(res => res.ok ? res.json() : { results: [] })
+        .then(data => data.results || [])
+        .catch(() => []);
+
+      const [olDocs, gutResults, iaResults, gbResults, scholarlyResults] = await Promise.all([
+        olPromise, gutPromise, iaPromise, gbPromise, scholarlyPromise
+      ]);
       setLiveOpenLibraryResults(olDocs);
       setLiveGutenbergResults(gutResults);
       setLiveInternetArchiveResults(iaResults);
       setLiveGoogleBooksResults(gbResults);
+      setLiveScholarlyResults(scholarlyResults);
     } catch (err) {
       console.error('Error fetching live federated resources:', err);
     } finally {
@@ -1398,6 +1408,7 @@ export default function PublicDiscovery({
                   {[
                     { id: 'stacks', label: `College Stacks (${books.length})`, icon: BookOpen, badge: 'On-Campus' },
                     { id: 'all', label: 'All Sources (Federated)', icon: Sparkles, badge: 'Multi-API' },
+                    { id: 'scholarly', label: 'E-Resources (AGORA • JSTOR • ScienceDirect • EBSCO)', icon: Layers, badge: 'Peer-Reviewed' },
                     { id: 'google_books', label: 'Google Books', icon: Sparkles, badge: 'Previews' },
                     { id: 'openlibrary', label: 'Open Library', icon: Globe, badge: '30M+ Items' },
                     { id: 'gutenberg', label: 'Project Gutenberg', icon: BookMarked, badge: '70k+ E-Books' },
@@ -2448,6 +2459,86 @@ export default function PublicDiscovery({
                   </div>
                 ) : (
                   <div className="space-y-6">
+                    {/* World Scholarly E-Resources (AGORA • JSTOR • ScienceDirect • EBSCO) */}
+                    {liveScholarlyResults.length > 0 && (
+                      <div className="space-y-3 pb-3 border-b border-emerald-500/30">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-white flex items-center gap-1.5">
+                            <Sparkles size={14} className="text-teal-400" />
+                            <span>Major Academic E-Resources (AGORA • JSTOR • ScienceDirect • EBSCOhost)</span>
+                          </span>
+                          <span className="text-[10px] font-mono text-emerald-400 font-bold">
+                            {liveScholarlyResults.length} Peer-Reviewed Matches
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {liveScholarlyResults.map((item, idx) => (
+                            <div key={idx} className="p-4 rounded-2xl bg-[#032317] border border-emerald-700/60 hover:border-teal-400 transition flex flex-col justify-between shadow-lg group">
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between gap-1.5">
+                                  <span
+                                    className="px-2 py-0.5 rounded-md text-[10px] font-bold font-mono text-white flex items-center gap-1"
+                                    style={{ backgroundColor: item.platform_color || '#10b981' }}
+                                  >
+                                    {item.platform_badge}
+                                  </span>
+                                  {item.is_open_access ? (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono font-bold">
+                                      🔓 Open Access
+                                    </span>
+                                  ) : (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono">
+                                      Institutional Gate
+                                    </span>
+                                  )}
+                                </div>
+
+                                <h4 className="text-xs font-bold text-white line-clamp-2 group-hover:text-teal-300 transition" title={item.title}>
+                                  {item.title}
+                                </h4>
+
+                                <div className="text-[11px] text-slate-300 line-clamp-1">
+                                  <span>By {item.author}</span>
+                                </div>
+
+                                <div className="text-[10px] text-emerald-400/90 font-mono flex items-center gap-2">
+                                  <span>{item.source}</span>
+                                  <span>•</span>
+                                  <span>{item.year}</span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 pt-3 mt-2 border-t border-emerald-900/60">
+                                {item.url && (
+                                  <a
+                                    href={item.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex-1 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-[11px] text-center transition flex items-center justify-center gap-1"
+                                  >
+                                    <span>{item.is_open_access ? 'Read Full Article' : 'Access via Gateway'}</span>
+                                    <ExternalLink size={11} />
+                                  </a>
+                                )}
+                                {item.portal_url && item.portal_url !== item.url && (
+                                  <a
+                                    href={item.portal_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white text-[10px] font-mono border border-slate-700 transition"
+                                    title="Open Institutional Portal"
+                                  >
+                                    Portal
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Google Books Recommended Live Grid */}
                     {liveGoogleBooksResults.length > 0 && (
                       <div className="space-y-3 pb-2 border-b border-amber-500/30">

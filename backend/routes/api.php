@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\BookPdfController;
 // Institutional Book PDF Delivery Engine (Streaming & Attachment Download)
 Route::get('/books/{id}/pdf', [BookPdfController::class, 'show']);
 Route::get('/books/{id}/pdf/download', [BookPdfController::class, 'download']);
+Route::post('/books/{id}/attach-pdf', [BookPdfController::class, 'attachPdf']);
 
 // Institutional Courses & Curriculum Syllabus API (Fetched from database)
 Route::get('/courses', [CourseController::class, 'index']);
@@ -686,4 +687,12 @@ Route::prefix('ebsco')->group(function () {
     Route::get('/status', [\App\Http\Controllers\EbscoController::class, 'testConnection']);
     Route::get('/search', [\App\Http\Controllers\EbscoController::class, 'search']);
 });
+
+// =========================================================================
+// FEDERATED SCHOLARLY E-RESOURCES: AGORA, JSTOR, SCIENCEDIRECT, EBSCOHOST
+// =========================================================================
+Route::prefix('scholarly')->group(function () {
+    Route::get('/search', [\App\Http\Controllers\Api\ScholarlyResourcesController::class, 'search']);
+});
+
 

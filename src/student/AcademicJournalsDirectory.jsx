@@ -113,6 +113,11 @@ export default function AcademicJournalsDirectory({
   const [openAlexPage, setOpenAlexPage] = useState(1);
   const [openAlexError, setOpenAlexError] = useState(null);
 
+  // Federated Major E-Resources (AGORA • JSTOR • ScienceDirect • EBSCO)
+  const [scholarlyJournals, setScholarlyJournals] = useState([]);
+  const [scholarlyLoading, setScholarlyLoading] = useState(false);
+  const [scholarlyPlatform, setScholarlyPlatform] = useState('all');
+
   // Citation copying notification state
   const [copiedId, setCopiedId] = useState(null);
 
@@ -213,14 +218,31 @@ export default function AcademicJournalsDirectory({
     }
   };
 
-  // Initial & Debounced Search for OpenAlex Journals
+  const fetchScholarlyJournals = async (query = searchQuery, platform = scholarlyPlatform) => {
+    setScholarlyLoading(true);
+    try {
+      const q = (query || '').trim() || 'cooperative agriculture economics business finance';
+      const res = await fetch(`/api/scholarly/search?query=${encodeURIComponent(q)}&platform=${platform}&per_page=12`);
+      if (res.ok) {
+        const data = await res.json();
+        setScholarlyJournals(data.results || []);
+      }
+    } catch (e) {
+      console.warn('Error fetching scholarly journals:', e);
+    } finally {
+      setScholarlyLoading(false);
+    }
+  };
+
+  // Initial & Debounced Search for OpenAlex Journals and Federated E-Resources
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchOpenAlexJournals(searchQuery, 1);
+      fetchScholarlyJournals(searchQuery, scholarlyPlatform);
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [searchQuery, openAccessOnly]);
+  }, [searchQuery, openAccessOnly, scholarlyPlatform]);
 
   // Normalized Institutional Journals (FCC Flagship + HOD Uploaded Local Journals)
   const normalizedInstitutionalJournals = useMemo(() => {
@@ -386,6 +408,22 @@ export default function AcademicJournalsDirectory({
 
           <button
             type="button"
+            onClick={() => {
+              setActiveSourceTab('scholarly');
+              fetchScholarlyJournals(searchQuery, scholarlyPlatform);
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+              activeSourceTab === 'scholarly'
+                ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-lg shadow-amber-950 ring-1 ring-amber-400'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Sparkles size={14} className="text-amber-400" />
+            <span>🎓 Major Databases (AGORA • JSTOR • ScienceDirect • EBSCO) ({scholarlyJournals.length})</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveSourceTab('trove')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
               activeSourceTab === 'trove'
@@ -467,6 +505,128 @@ export default function AcademicJournalsDirectory({
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* 5b. MAJOR SCHOLARLY E-RESOURCE DATABASES (AGORA • JSTOR • SCIENCEDIRECT • EBSCOHOST) */}
+      {(activeSourceTab === 'all' || activeSourceTab === 'scholarly') && (
+        <div className="space-y-4 pt-4">
+          <div className="flex flex-wrap items-center justify-between border-b border-amber-900/60 pb-3 gap-2">
+            <div className="flex items-center gap-2.5 text-white font-serif font-bold text-base sm:text-lg">
+              <Sparkles size={20} className="text-amber-400" />
+              <span>Major Academic E-Resources: AGORA • JSTOR • ScienceDirect • EBSCOhost</span>
+              <span className="text-xs font-mono font-normal text-amber-400/80">
+                ({scholarlyJournals.length} Matches)
+              </span>
+            </div>
+
+            {/* Platform Sub-Filters */}
+            <div className="flex flex-wrap items-center gap-1.5 text-xs font-mono">
+              {[
+                { id: 'all', label: 'All Databases' },
+                { id: 'sciencedirect', label: '🔬 ScienceDirect' },
+                { id: 'agora', label: '🌾 AGORA / FAO' },
+                { id: 'jstor', label: '🏛️ JSTOR' },
+                { id: 'ebsco', label: '📚 EBSCOhost' }
+              ].map(p => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => {
+                    setScholarlyPlatform(p.id);
+                    fetchScholarlyJournals(searchQuery, p.id);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+                    scholarlyPlatform === p.id
+                      ? 'bg-amber-500 text-slate-950 shadow'
+                      : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {scholarlyLoading ? (
+            <div className="py-14 text-center space-y-3 bg-slate-900/40 rounded-3xl border border-slate-800">
+              <Loader2 size={32} className="animate-spin text-amber-400 mx-auto" />
+              <p className="text-slate-300 font-serif text-sm">Querying AGORA, JSTOR, ScienceDirect, and EBSCOhost APIs...</p>
+            </div>
+          ) : scholarlyJournals.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {scholarlyJournals.map((item, idx) => (
+                <div
+                  key={item.id || idx}
+                  className="bg-slate-900/90 border border-slate-800 hover:border-amber-500/60 rounded-3xl p-5 space-y-3 shadow-lg flex flex-col justify-between transition group"
+                >
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-1.5 text-xs">
+                      <span
+                        className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold text-white shadow-sm"
+                        style={{ backgroundColor: item.platform_color || '#d97706' }}
+                      >
+                        {item.platform_badge}
+                      </span>
+                      {item.is_open_access ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono font-bold">
+                          🔓 Open Access
+                        </span>
+                      ) : (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-950 text-amber-300 border border-amber-900 font-mono">
+                          Institutional Gate
+                        </span>
+                      )}
+                    </div>
+
+                    <h4 className="text-sm font-bold text-white line-clamp-2 group-hover:text-amber-300 transition leading-snug">
+                      {item.title}
+                    </h4>
+
+                    <div className="text-xs text-slate-300 line-clamp-1">
+                      <span>Authors: <strong className="text-white">{item.author}</strong></span>
+                    </div>
+
+                    <div className="text-[11px] text-slate-400 bg-slate-950/80 p-3 rounded-2xl border border-slate-800 space-y-1">
+                      <div className="text-slate-200"><strong>Source:</strong> {item.source}</div>
+                      {item.doi && <div className="font-mono text-amber-300/80 truncate">DOI: {item.doi}</div>}
+                      {item.discipline && <div className="text-slate-400 font-mono text-[10px]">{item.discipline}</div>}
+                      <div className="text-emerald-400 font-mono text-[10px]">{item.access_type}</div>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-2 mt-2">
+                    {item.url && (
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex-1 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs text-center transition flex items-center justify-center gap-1.5 shadow"
+                      >
+                        <span>{item.is_open_access ? 'Read Full Article' : 'Access Gateway'}</span>
+                        <ExternalLink size={12} />
+                      </a>
+                    )}
+                    {item.portal_url && (
+                      <a
+                        href={item.portal_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono border border-slate-700 transition"
+                        title="Open Institutional Research Portal"
+                      >
+                        Portal
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-8 text-center text-xs text-slate-400 bg-slate-900/30 rounded-2xl border border-slate-800">
+              No direct matches found in selected platform for "{searchQuery}". Try selecting "All Databases" or broadening terms.
+            </div>
+          )}
         </div>
       )}
 
@@ -580,6 +740,128 @@ export default function AcademicJournalsDirectory({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* 5b. MAJOR SCHOLARLY E-RESOURCE DATABASES (AGORA • JSTOR • SCIENCEDIRECT • EBSCOHOST) */}
+      {(activeSourceTab === 'all' || activeSourceTab === 'scholarly') && (
+        <div className="space-y-4 pt-4">
+          <div className="flex flex-wrap items-center justify-between border-b border-amber-900/60 pb-3 gap-2">
+            <div className="flex items-center gap-2.5 text-white font-serif font-bold text-base sm:text-lg">
+              <Sparkles size={20} className="text-amber-400" />
+              <span>Major Academic E-Resources: AGORA • JSTOR • ScienceDirect • EBSCOhost</span>
+              <span className="text-xs font-mono font-normal text-amber-400/80">
+                ({scholarlyJournals.length} Matches)
+              </span>
+            </div>
+
+            {/* Platform Sub-Filters */}
+            <div className="flex flex-wrap items-center gap-1.5 text-xs font-mono">
+              {[
+                { id: 'all', label: 'All Databases' },
+                { id: 'sciencedirect', label: '🔬 ScienceDirect' },
+                { id: 'agora', label: '🌾 AGORA / FAO' },
+                { id: 'jstor', label: '🏛️ JSTOR' },
+                { id: 'ebsco', label: '📚 EBSCOhost' }
+              ].map(p => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => {
+                    setScholarlyPlatform(p.id);
+                    fetchScholarlyJournals(searchQuery, p.id);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+                    scholarlyPlatform === p.id
+                      ? 'bg-amber-500 text-slate-950 shadow'
+                      : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {scholarlyLoading ? (
+            <div className="py-14 text-center space-y-3 bg-slate-900/40 rounded-3xl border border-slate-800">
+              <Loader2 size={32} className="animate-spin text-amber-400 mx-auto" />
+              <p className="text-slate-300 font-serif text-sm">Querying AGORA, JSTOR, ScienceDirect, and EBSCOhost APIs...</p>
+            </div>
+          ) : scholarlyJournals.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {scholarlyJournals.map((item, idx) => (
+                <div
+                  key={item.id || idx}
+                  className="bg-slate-900/90 border border-slate-800 hover:border-amber-500/60 rounded-3xl p-5 space-y-3 shadow-lg flex flex-col justify-between transition group"
+                >
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-1.5 text-xs">
+                      <span
+                        className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold text-white shadow-sm"
+                        style={{ backgroundColor: item.platform_color || '#d97706' }}
+                      >
+                        {item.platform_badge}
+                      </span>
+                      {item.is_open_access ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono font-bold">
+                          🔓 Open Access
+                        </span>
+                      ) : (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-950 text-amber-300 border border-amber-900 font-mono">
+                          Institutional Gate
+                        </span>
+                      )}
+                    </div>
+
+                    <h4 className="text-sm font-bold text-white line-clamp-2 group-hover:text-amber-300 transition leading-snug">
+                      {item.title}
+                    </h4>
+
+                    <div className="text-xs text-slate-300 line-clamp-1">
+                      <span>Authors: <strong className="text-white">{item.author}</strong></span>
+                    </div>
+
+                    <div className="text-[11px] text-slate-400 bg-slate-950/80 p-3 rounded-2xl border border-slate-800 space-y-1">
+                      <div className="text-slate-200"><strong>Source:</strong> {item.source}</div>
+                      {item.doi && <div className="font-mono text-amber-300/80 truncate">DOI: {item.doi}</div>}
+                      {item.discipline && <div className="text-slate-400 font-mono text-[10px]">{item.discipline}</div>}
+                      <div className="text-emerald-400 font-mono text-[10px]">{item.access_type}</div>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-2 mt-2">
+                    {item.url && (
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex-1 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs text-center transition flex items-center justify-center gap-1.5 shadow"
+                      >
+                        <span>{item.is_open_access ? 'Read Full Article' : 'Access Gateway'}</span>
+                        <ExternalLink size={12} />
+                      </a>
+                    )}
+                    {item.portal_url && (
+                      <a
+                        href={item.portal_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono border border-slate-700 transition"
+                        title="Open Institutional Research Portal"
+                      >
+                        Portal
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-8 text-center text-xs text-slate-400 bg-slate-900/30 rounded-2xl border border-slate-800">
+              No direct matches found in selected platform for "{searchQuery}". Try selecting "All Databases" or broadening terms.
+            </div>
+          )}
         </div>
       )}
 

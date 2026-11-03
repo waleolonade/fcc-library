@@ -71,6 +71,7 @@ class BookPdfController extends Controller
         $mysqlFileName = null;
         $mysqlTitle = null;
         $mysqlDataUrl = null;
+        $mysqlUploadId = null;
         try {
             $pdo = \App\Services\DatabaseService::getPdo();
             if ($pdo) {
@@ -89,15 +90,46 @@ class BookPdfController extends Controller
                     $mysqlDataUrl = $mBook['file_data_url'] ?? null;
                 }
 
-                $sqlUp = "SELECT file_name, title, file_data_url FROM department_uploads WHERE id = :id OR book_id = :id";
+                $sqlUp = "SELECT id, book_id, file_name, title, file_data_url FROM department_uploads WHERE id = :id OR book_id = :id";
                 if ($altId) $sqlUp .= " OR id = :altId OR book_id = :altId";
                 $stUp = $pdo->prepare($sqlUp);
                 $stUp->execute($p);
                 $mUp = $stUp->fetch(\PDO::FETCH_ASSOC);
                 if ($mUp) {
+                    $mysqlUploadId = $mUp['id'] ?? null;
                     if (!$mysqlFileName) $mysqlFileName = $mUp['file_name'] ?? null;
                     if (!$mysqlTitle) $mysqlTitle = $mUp['title'] ?? null;
                     if (!$mysqlDataUrl) $mysqlDataUrl = $mUp['file_data_url'] ?? null;
+                }
+
+                // If file_name exists, search for any department_uploads row with that filename to find upload ID
+                if ($mysqlFileName && !$mysqlUploadId) {
+                    $stFn = $pdo->prepare("SELECT id, file_data_url FROM department_uploads WHERE file_name = :fn OR file_name LIKE :fnLike LIMIT 1");
+                    $stFn->execute([':fn' => $mysqlFileName, ':fnLike' => '%' . basename($mysqlFileName) . '%']);
+                    $mFn = $stFn->fetch(\PDO::FETCH_ASSOC);
+                    if ($mFn) {
+                        $mysqlUploadId = $mFn['id'] ?? null;
+                        if (!$mysqlDataUrl) $mysqlDataUrl = $mFn['file_data_url'] ?? null;
+                    }
+                }
+
+                // Automatic Title Auto-Repair: Fix publisher city/year imprint mistakenly stored as title (e.g. "Budapest, 2018.")
+                if ($mysqlTitle && preg_match('/^[A-Za-z\s.-]+,\s*(?:19|20)\d{2}\.?$/i', trim($mysqlTitle)) && $mysqlFileName) {
+                    $cleanFn = pathinfo($mysqlFileName, PATHINFO_FILENAME);
+                    $cleanFn = preg_replace('/^\d+[\s._-]+/', '', $cleanFn);
+                    $cleanFn = preg_replace('/[-_.]+/', ' ', $cleanFn);
+                    $cleanFn = trim(preg_replace('/\s+/', ' ', $cleanFn));
+                    if (preg_match('/^(.*?)(?:\s+Authors|\s+by|\s+edition)/i', $cleanFn, $match)) {
+                        $cleanFn = trim($match[1]);
+                    }
+                    if (strlen($cleanFn) >= 3) {
+                        $repairedTitle = ucwords($cleanFn);
+                        $mysqlTitle = $repairedTitle;
+                        try {
+                            $pdo->prepare("UPDATE books SET title = :t WHERE id = :id")->execute([':t' => $repairedTitle, ':id' => $id]);
+                            $pdo->prepare("UPDATE department_uploads SET title = :t WHERE id = :id OR book_id = :id")->execute([':t' => $repairedTitle, ':id' => $id]);
+                        } catch (\Throwable $te) {}
+                    }
                 }
             }
         } catch (\Throwable $e) {}
@@ -131,6 +163,8 @@ class BookPdfController extends Controller
             $mysqlFileName,
             $mysqlFileName ? basename($mysqlFileName) : null,
             $mysqlFileName ? (basename($mysqlFileName) . '.pdf') : null,
+            $mysqlUploadId ? ($mysqlUploadId . '.pdf') : null,
+            $mysqlUploadId ? preg_replace('/[^a-zA-Z0-9_-]/', '_', $mysqlUploadId) . '.pdf' : null,
             $safeId . '.pdf',
             $id . '.pdf',
             $altId ? ($altId . '.pdf') : null,
@@ -217,6 +251,20 @@ class BookPdfController extends Controller
 
         // If file found and valid on disk
         if ($foundAbsolutePath && is_readable($foundAbsolutePath)) {
+            // Mirror to safeId.pdf and altId.pdf across storage for zero-latency lookups
+            try {
+                $libDir = storage_path('app/library-books');
+                if (!is_dir($libDir)) @mkdir($libDir, 0755, true);
+                $mirrorPath = $libDir . '/' . $safeId . '.pdf';
+                if (!file_exists($mirrorPath)) {
+                    @copy($foundAbsolutePath, $mirrorPath);
+                }
+                if ($altId) {
+                    $altMirrorPath = $libDir . '/' . $altId . '.pdf';
+                    if (!file_exists($altMirrorPath)) @copy($foundAbsolutePath, $altMirrorPath);
+                }
+            } catch (\Throwable $e) {}
+
             return response()->file($foundAbsolutePath, $headers);
         }
 
@@ -293,5 +341,51 @@ class BookPdfController extends Controller
             'title' => $title,
             'has_pdf' => false
         ], 404);
+    }
+
+    public function attachPdf(Request $request, $id)
+    {
+        if (!$request->hasFile('file') || !$request->file('file')->isValid()) {
+            return response()->json(['success' => false, 'error' => 'No valid PDF file uploaded.'], 422);
+        }
+
+        $file = $request->file('file');
+        $rawBinary = @file_get_contents($file->getRealPath());
+        if (!$rawBinary || strlen($rawBinary) < 100 || !str_contains(substr($rawBinary, 0, 128), '%PDF-')) {
+            return response()->json(['success' => false, 'error' => 'Uploaded file is not a valid PDF manuscript.'], 422);
+        }
+
+        $origName = $file->getClientOriginalName();
+        $altId = str_starts_with($id, 'FCC-HOD-')
+            ? str_replace('FCC-HOD-', 'HOD-UP-', $id)
+            : (str_starts_with($id, 'HOD-UP-') ? str_replace('HOD-UP-', 'FCC-HOD-', $id) : null);
+
+        // 1. Mirror binary to all physical storage directories
+        $deptUp = app(\App\Http\Controllers\DepartmentUploadController::class);
+        $deptUp->persistPdfManuscriptToAllDisks($rawBinary, $id, $altId, $origName);
+
+        // 2. Mirror Base64 to MySQL & SQLite databases
+        $b64 = 'data:application/pdf;base64,' . base64_encode($rawBinary);
+        try {
+            $pdo = \App\Services\DatabaseService::getPdo();
+            if ($pdo) {
+                $p = [':b' => $b64, ':fn' => $origName, ':id' => $id];
+                $pdo->prepare("UPDATE books SET file_data_url = :b, file_name = :fn WHERE id = :id")->execute($p);
+                $pdo->prepare("UPDATE department_uploads SET file_data_url = :b, file_name = :fn WHERE id = :id OR book_id = :id")->execute($p);
+                if ($altId) {
+                    $pAlt = [':b' => $b64, ':fn' => $origName, ':id' => $altId];
+                    $pdo->prepare("UPDATE books SET file_data_url = :b, file_name = :fn WHERE id = :id")->execute($pAlt);
+                    $pdo->prepare("UPDATE department_uploads SET file_data_url = :b, file_name = :fn WHERE id = :id OR book_id = :id")->execute($pAlt);
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => true,
+            'message' => 'PDF manuscript successfully attached, mirrored to storage and database synchronized.',
+            'book_id' => $id,
+            'file_name' => $origName,
+            'has_pdf' => true
+        ]);
     }
 }

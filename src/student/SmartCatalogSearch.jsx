@@ -375,6 +375,7 @@ export default function SmartCatalogSearch({
     { id: 'Journals', label: 'Academic Journals', icon: Layers },
     { id: 'Theses & Projects', label: 'Student Projects & Theses', icon: GraduationCap },
     { id: 'Course Materials', label: 'Course Materials', icon: FileText },
+    { id: 'Scholarly', label: 'E-Resources (AGORA • JSTOR • ScienceDirect • EBSCO)', icon: Globe },
     { id: 'Bookmarked', label: `Bookmarked (${savedBooks.length})`, icon: Bookmark }
   ];
 
@@ -384,17 +385,21 @@ export default function SmartCatalogSearch({
   const [backendTheses, setBackendTheses] = useState([]);
   const [liveDeptJournals, setLiveDeptJournals] = useState([]);
   const [liveDeptProjects, setLiveDeptProjects] = useState([]);
+  const [liveScholarlyItems, setLiveScholarlyItems] = useState([]);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
 
-  // Fetch real Open-Access Academic Journals & Dissertations for the student's department
+  // Fetch real Open-Access Academic Journals, Dissertations & Federated E-Resources (AGORA • JSTOR • ScienceDirect • EBSCO)
   useEffect(() => {
     let isMounted = true;
     const deptTopic = currentStudentDept?.name || 'computer science cooperative economics agriculture';
     const q = searchQuery.trim() ? `${searchQuery.trim()} ${deptTopic}` : deptTopic;
     Promise.all([
       fetchLiveAcademicJournals({ query: q, perPage: 12 }),
-      fetchLiveDissertationsAndProjects({ query: q, perPage: 8 })
-    ]).then(([journals, projects]) => {
+      fetchLiveDissertationsAndProjects({ query: q, perPage: 8 }),
+      fetch(`/api/scholarly/search?query=${encodeURIComponent(q)}&per_page=8`)
+        .then(r => r.ok ? r.json() : null)
+        .catch(() => null)
+    ]).then(([journals, projects, scholarlyData]) => {
       if (!isMounted) return;
       if (Array.isArray(journals)) {
         setLiveDeptJournals(journals.map(j => ({
@@ -414,9 +419,41 @@ export default function SmartCatalogSearch({
           targetLevel: normalizedStudentLevel
         })));
       }
+      if (scholarlyData?.results && Array.isArray(scholarlyData.results)) {
+        setLiveScholarlyItems(scholarlyData.results.map(s => ({
+          id: s.id,
+          title: s.title,
+          subtitle: `${s.platform_badge} • ${s.source} (${s.year})`,
+          author: s.author,
+          authorCredentials: `${s.platform} Peer-Reviewed Author`,
+          authorAffiliation: s.platform,
+          subject: s.discipline || currentStudentDept?.name || 'Academic Research',
+          department: currentStudentDept?.name || 'Central Library Directorate',
+          format: 'E-Resource',
+          category: 'Scholarly',
+          year: s.year,
+          isDigital: true,
+          isOnline: true,
+          isLiveExternalJournal: true,
+          sourceApi: s.platform,
+          platformBadge: s.platform_badge,
+          platformColor: s.platform_color,
+          isOpenAccess: s.is_open_access,
+          accessType: s.access_type,
+          externalUrl: s.url,
+          portalUrl: s.portal_url,
+          pdfUrl: s.pdf_url || s.url,
+          coverImage: '/assets/no-cover.png',
+          callNumber: s.doi ? `DOI: ${s.doi}` : (s.issn ? `ISSN: ${s.issn}` : `${s.platform.toUpperCase()}-HOLDING`),
+          rating: 5.0,
+          copiesAvailable: 1,
+          copiesTotal: 1,
+          abstract: `Scholarly peer-reviewed literature indexed across ${s.platform} research portal.`
+        })));
+      }
     }).catch(() => {});
     return () => { isMounted = false; };
-  }, [currentStudentDept?.name, normalizedStudentLevel]);
+  }, [currentStudentDept?.name, normalizedStudentLevel, searchQuery]);
 
   // Synchronize strictly with the backend database
   const refreshCatalogFromDatabase = useCallback(async () => {
@@ -583,7 +620,7 @@ export default function SmartCatalogSearch({
       .filter(b => b && !isPendingOrUnapproved(b));
 
     const seenMap = new Map();
-    const allItems = [...sourceBooks, ...approvedHOD, ...formattedTheses, ...liveDeptJournals, ...liveDeptProjects];
+    const allItems = [...sourceBooks, ...approvedHOD, ...formattedTheses, ...liveDeptJournals, ...liveDeptProjects, ...liveScholarlyItems];
 
     for (const b of allItems) {
       if (!b || !b.title) continue;
@@ -598,7 +635,7 @@ export default function SmartCatalogSearch({
     }
 
     return Array.from(seenMap.values());
-  }, [backendBooks, backendApprovedUploads, backendTheses, books, theses, departmentsList, liveDeptJournals, liveDeptProjects]);
+  }, [backendBooks, backendApprovedUploads, backendTheses, books, theses, departmentsList, liveDeptJournals, liveDeptProjects, liveScholarlyItems]);
 
   // Dynamic list of unique authors across combined catalog for current student department
   const uniqueAuthors = useMemo(() => {
@@ -791,6 +828,8 @@ export default function SmartCatalogSearch({
       );
     } else if (activeCategory === 'Course Materials') {
       results = results.filter(b => Boolean(b.courseCode) || b.format === 'Course Material');
+    } else if (activeCategory === 'Scholarly') {
+      results = results.filter(b => b.category === 'Scholarly' || b.sourceApi || b.platformBadge);
     } else if (activeCategory === 'Bookmarked') {
       results = results.filter(b => savedBooks.includes(b.id));
     }

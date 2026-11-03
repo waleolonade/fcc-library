@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2, Minimize2,
   RotateCw, Download, ExternalLink, RefreshCw, AlertTriangle, FileText,
-  ChevronsLeft, ChevronsRight, Eye
+  ChevronsLeft, ChevronsRight, Eye, Upload
 } from 'lucide-react';
 
 /**
@@ -96,6 +96,7 @@ export default function PdfCanvasViewer({
   const canvasRef = useRef(null);
   const renderTaskRef = useRef(null);
   const pdfBytesRef = useRef(null);
+  const attachInputRef = useRef(null);
 
   const [pdfDoc, setPdfDoc] = useState(null);
   const [numPages, setNumPages] = useState(0);
@@ -104,8 +105,58 @@ export default function PdfCanvasViewer({
   const [loading, setLoading] = useState(true);
   const [rendering, setRendering] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [attachingPdf, setAttachingPdf] = useState(false);
   const [error, setError] = useState(null);
   const [fitWidth, setFitWidth] = useState(true);
+
+  const handleAttachPdfFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setAttachingPdf(true);
+      const effectiveId = propBookId || (window.location.hash || '').match(/#\/(?:reader|book)\/([^\/\?#]+)/)?.[1];
+
+      // 1. Instant Cache to memory & render immediately
+      const bUrl = URL.createObjectURL(file);
+      if (typeof window !== 'undefined') {
+        window.__fccPdfBlobMap = window.__fccPdfBlobMap || {};
+        if (effectiveId) {
+          window.__fccPdfBlobMap[effectiveId] = bUrl;
+          if (String(effectiveId).startsWith('FCC-HOD-')) {
+            window.__fccPdfBlobMap[String(effectiveId).replace('FCC-HOD-', 'HOD-UP-')] = bUrl;
+          }
+          if (String(effectiveId).startsWith('HOD-UP-')) {
+            window.__fccPdfBlobMap[String(effectiveId).replace('HOD-UP-', 'FCC-HOD-')] = bUrl;
+          }
+        }
+      }
+
+      // Read buffer & initialize viewer
+      const buf = await file.arrayBuffer();
+      pdfBytesRef.current = buf;
+      const pdfjs = await getPdfJs();
+      const doc = await pdfjs.getDocument({ data: buf }).promise;
+      setPdfDoc(doc);
+      setNumPages(doc.numPages);
+      if (onTotalPages) onTotalPages(doc.numPages);
+      setError(null);
+      setLoading(false);
+
+      // 2. Persist to backend server
+      if (effectiveId) {
+        const fd = new FormData();
+        fd.append('file', file);
+        await fetch(`/api/books/${encodeURIComponent(effectiveId)}/attach-pdf`, {
+          method: 'POST',
+          body: fd
+        }).catch(() => {});
+      }
+    } catch (err) {
+      console.error('Error attaching PDF:', err);
+    } finally {
+      setAttachingPdf(false);
+    }
+  };
 
   // Load PDF document from url
   useEffect(() => {
@@ -614,10 +665,27 @@ export default function PdfCanvasViewer({
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+              <input
+                type="file"
+                ref={attachInputRef}
+                accept=".pdf"
+                className="hidden"
+                onChange={handleAttachPdfFile}
+              />
+              <button
+                type="button"
+                onClick={() => attachInputRef.current?.click()}
+                disabled={attachingPdf}
+                className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs shadow-lg transition flex items-center gap-1.5"
+                title="Upload and permanently attach the local PDF manuscript file to this book record"
+              >
+                {attachingPdf ? <RefreshCw size={13} className="animate-spin" /> : <Upload size={13} />}
+                <span>{attachingPdf ? 'Attaching Manuscript...' : 'Upload & Attach PDF Manuscript'}</span>
+              </button>
               {onSwitchToInteractive && (
                 <button
                   onClick={onSwitchToInteractive}
-                  className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow-lg transition"
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-teal-300 font-bold text-xs border border-slate-700 shadow-lg transition"
                 >
                   Read in Interactive Text View
                 </button>

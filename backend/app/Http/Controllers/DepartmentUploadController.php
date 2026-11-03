@@ -1691,7 +1691,8 @@ class DepartmentUploadController extends Controller
         $deptName = $dept ? $dept->name : ($request->input('department_name') ?: 'General Department');
         $deptCode = $dept ? $dept->code : $cleanCode;
 
-        $id = 'HOD-UP-' . rand(1000, 9999);
+        $uniqueNum = rand(1000, 9999);
+        $id = 'HOD-UP-' . $uniqueNum;
         $callNumber = 'QA76.9 .' . strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $validated['author']), 0, 3) ?: 'HOD') . ' 2026';
         $shelf = 'Digital E-Library • ' . $deptName;
 
@@ -1710,10 +1711,10 @@ class DepartmentUploadController extends Controller
         if ($request->hasFile('file') && $request->file('file')->isValid()) {
             try {
                 $uploadedFile = $request->file('file');
+                $rawBinary = @file_get_contents($uploadedFile->getRealPath());
                 $uploadedFile->move($storageDir, $safeId . '.pdf');
                 @copy($diskPath, $booksDir . '/' . $safeId . '.pdf');
                 @copy($diskPath, $libDir . '/' . $safeId . '.pdf');
-                $rawBinary = @file_get_contents($diskPath);
                 if (empty($validated['file_name'])) {
                     $validated['file_name'] = $uploadedFile->getClientOriginalName();
                 }
@@ -1732,6 +1733,25 @@ class DepartmentUploadController extends Controller
                     @file_put_contents($libDir . '/' . $safeId . '.pdf', $rawBinary);
                 }
             } catch (\Throwable $fileErr) {}
+        }
+
+        // Automatic Base64 database preservation for guaranteed zero 404s
+        if ($rawBinary && strlen($rawBinary) < 25 * 1024 * 1024 && empty($validated['file_data_url'])) {
+            $validated['file_data_url'] = 'data:application/pdf;base64,' . base64_encode($rawBinary);
+        }
+
+        // Automatic title cleanup if scanned as a city/year imprint (e.g. "Budapest, 2018.")
+        if (!empty($validated['title']) && preg_match('/^[A-Za-z\s.-]+,\s*(?:19|20)\d{2}\.?$/i', trim($validated['title'])) && !empty($validated['file_name'])) {
+            $cleanFn = pathinfo($validated['file_name'], PATHINFO_FILENAME);
+            $cleanFn = preg_replace('/^\d+[\s._-]+/', '', $cleanFn);
+            $cleanFn = preg_replace('/[-_.]+/', ' ', $cleanFn);
+            $cleanFn = trim(preg_replace('/\s+/', ' ', $cleanFn));
+            if (preg_match('/^(.*?)(?:\s+Authors|\s+by|\s+edition)/i', $cleanFn, $match)) {
+                $cleanFn = trim($match[1]);
+            }
+            if (strlen($cleanFn) >= 3) {
+                $validated['title'] = ucwords($cleanFn);
+            }
         }
 
         // Check if Developer configured Direct Instant Publish to students or Wait for Admin Approval
@@ -1804,7 +1824,7 @@ class DepartmentUploadController extends Controller
         if ($isDirect) {
             $rightsStatus = $isProject ? 'Student Capstone Project / Thesis' : ($isJournal ? 'Academic Research Journal' : 'Approved Academic Book');
             $prefix = $isProject ? 'FCC-PRJ-' : ($isJournal ? 'FCC-JRN-' : 'FCC-HOD-');
-            $bookId = $prefix . rand(1000, 9999);
+            $bookId = $prefix . ($uniqueNum ?? rand(1000, 9999));
 
             $journalTitle = $extraMeta['journal_name'] ?? "Scholarly Journal • Department of {$deptName}";
             $volIssue = !empty($extraMeta['volume_issue']) ? " ({$extraMeta['volume_issue']})" : '';
@@ -2423,8 +2443,23 @@ class DepartmentUploadController extends Controller
                 $prefix = $isProject ? 'FCC-PRJ-' : ($isJournal ? 'FCC-JRN-' : 'FCC-HOD-');
                 $rightsStatus = $isProject ? 'Student Capstone Project / Thesis' : ($isJournal ? 'Academic Research Journal' : 'Approved Academic Book');
 
-                $uploadId = 'HOD-UP-' . strtoupper(Str::random(10));
-                $bookId = $prefix . rand(1000, 9999);
+                $bNum = rand(1000, 9999);
+                $uploadId = 'HOD-UP-' . $bNum;
+                $bookId = $prefix . $bNum;
+
+                // Automatic title cleanup if scanned as a city/year imprint (e.g. "Budapest, 2018.")
+                if (!empty($title) && preg_match('/^[A-Za-z\s.-]+,\s*(?:19|20)\d{2}\.?$/i', trim($title)) && !empty($fileName)) {
+                    $cleanFn = pathinfo($fileName, PATHINFO_FILENAME);
+                    $cleanFn = preg_replace('/^\d+[\s._-]+/', '', $cleanFn);
+                    $cleanFn = preg_replace('/[-_.]+/', ' ', $cleanFn);
+                    $cleanFn = trim(preg_replace('/\s+/', ' ', $cleanFn));
+                    if (preg_match('/^(.*?)(?:\s+Authors|\s+by|\s+edition)/i', $cleanFn, $match)) {
+                        $cleanFn = trim($match[1]);
+                    }
+                    if (strlen($cleanFn) >= 3) {
+                        $title = ucwords($cleanFn);
+                    }
+                }
 
                 $reviewNotes = is_array($item['review_notes'] ?? null) 
                     ? json_encode($item['review_notes']) 

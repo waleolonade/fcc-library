@@ -14,6 +14,21 @@ import PdfCanvasViewer from './PdfCanvasViewer';
 import { fetchLiveAcademicJournals } from '../services/openSourceJournalsApi';
 import { subscribeRealtimeEvents } from '../services/realtimeSync';
 
+export function getEffectiveBookTitle(b) {
+  if (!b) return 'Document';
+  const rawTitle = (b.title || '').trim();
+  if (/^[A-Za-z\s.-]+,\s*(?:19|20)\d{2}\.?$/i.test(rawTitle) && (b.fileName || b.file_name)) {
+    const rawFn = b.fileName || b.file_name;
+    const cleanFn = rawFn.replace(/\.pdf$/i, '').replace(/^\d+[\s._-]+/, '').replace(/[-_.]+/g, ' ').trim();
+    const cleanMatch = cleanFn.match(/^(.*?)(?:\s+Authors|\s+by|\s+edition)/i);
+    const stem = cleanMatch ? cleanMatch[1].trim() : cleanFn;
+    if (stem.length >= 3) {
+      return stem.replace(/\b\w/g, c => c.toUpperCase());
+    }
+  }
+  return rawTitle || 'Academic Document';
+}
+
 export default function DigitalBookReader({ book: initialBook, onClose, user, onSelectBook }) {
   const [currentBook, setCurrentBook] = useState(() => initialBook || null);
   const [isDocumentDeletedNotice, setIsDocumentDeletedNotice] = useState(false);
@@ -496,7 +511,7 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
               return (
                 <>
                   <div className="text-xs sm:text-sm font-bold text-white flex flex-wrap items-center gap-2">
-                    <span className="line-clamp-1 max-w-sm sm:max-w-md">{currentBook.title}</span>
+                    <span className="line-clamp-1 max-w-sm sm:max-w-md">{getEffectiveBookTitle(currentBook)}</span>
                     {isOnlineCurrent ? (
                       <span className="text-[10px] px-2 py-0.5 rounded-md bg-sky-950 text-sky-300 border border-sky-600 font-mono font-black shrink-0 flex items-center gap-1 shadow-sm">
                         🌐 ONLINE SCHOLARLY JOURNAL (API)
@@ -889,7 +904,7 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
                   ) : (
                     <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-center space-y-2">
                       <div className="text-xs text-white font-semibold line-clamp-2">
-                        {currentBook.title}
+                        {getEffectiveBookTitle(currentBook)}
                       </div>
                       <div className="text-[11px] text-slate-400">
                         {totalPages > 1 ? `Full Document (${totalPages} Pages)` : 'Full Document'}
@@ -1246,7 +1261,7 @@ export default function DigitalBookReader({ book: initialBook, onClose, user, on
               {/* Book / Journal Title & Bibliographic Heading */}
               <div>
                 <h2 className="text-2xl sm:text-3xl font-bold font-sans tracking-tight">
-                  {currentBook.title}
+                  {getEffectiveBookTitle(currentBook)}
                 </h2>
                 <div className="text-xs font-sans text-slate-400 mt-2 flex flex-wrap items-center gap-2">
                   {currentBook.author && <span>Author: <strong className="text-white">{currentBook.author}</strong></span>}

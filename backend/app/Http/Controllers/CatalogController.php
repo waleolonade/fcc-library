@@ -376,17 +376,48 @@ class CatalogController extends Controller
                     $mysqlDataUrl = $mBook['file_data_url'] ?? null;
                 }
 
-                $sqlUp = "SELECT file_name, title, file_data_url FROM department_uploads WHERE id = :id OR book_id = :id";
+                $sqlUp = "SELECT id, book_id, file_name, title, file_data_url FROM department_uploads WHERE id = :id OR book_id = :id";
                 if ($altBookId) $sqlUp .= " OR id = :altId OR book_id = :altId";
                 if ($upload) $sqlUp .= " OR id = :uid";
                 if ($upload) $p[':uid'] = $upload->id;
                 $stUp = $pdo->prepare($sqlUp);
                 $stUp->execute($p);
                 $mUp = $stUp->fetch(\PDO::FETCH_ASSOC);
+                $mysqlUploadId = null;
                 if ($mUp) {
+                    $mysqlUploadId = $mUp['id'] ?? null;
                     if (!$mysqlFileName) $mysqlFileName = $mUp['file_name'] ?? null;
                     if (!$mysqlTitle) $mysqlTitle = $mUp['title'] ?? null;
                     if (!$mysqlDataUrl) $mysqlDataUrl = $mUp['file_data_url'] ?? null;
+                }
+
+                if ($mysqlFileName && !$mysqlUploadId) {
+                    $stFn = $pdo->prepare("SELECT id, file_data_url FROM department_uploads WHERE file_name = :fn OR file_name LIKE :fnLike LIMIT 1");
+                    $stFn->execute([':fn' => $mysqlFileName, ':fnLike' => '%' . basename($mysqlFileName) . '%']);
+                    $mFn = $stFn->fetch(\PDO::FETCH_ASSOC);
+                    if ($mFn) {
+                        $mysqlUploadId = $mFn['id'] ?? null;
+                        if (!$mysqlDataUrl) $mysqlDataUrl = $mFn['file_data_url'] ?? null;
+                    }
+                }
+
+                // Automatic Title Auto-Repair for city/year imprint mistakenly stored as title
+                if ($mysqlTitle && preg_match('/^[A-Za-z\s.-]+,\s*(?:19|20)\d{2}\.?$/i', trim($mysqlTitle)) && $mysqlFileName) {
+                    $cleanFn = pathinfo($mysqlFileName, PATHINFO_FILENAME);
+                    $cleanFn = preg_replace('/^\d+[\s._-]+/', '', $cleanFn);
+                    $cleanFn = preg_replace('/[-_.]+/', ' ', $cleanFn);
+                    $cleanFn = trim(preg_replace('/\s+/', ' ', $cleanFn));
+                    if (preg_match('/^(.*?)(?:\s+Authors|\s+by|\s+edition)/i', $cleanFn, $match)) {
+                        $cleanFn = trim($match[1]);
+                    }
+                    if (strlen($cleanFn) >= 3) {
+                        $repairedTitle = ucwords($cleanFn);
+                        $mysqlTitle = $repairedTitle;
+                        try {
+                            $pdo->prepare("UPDATE books SET title = :t WHERE id = :id")->execute([':t' => $repairedTitle, ':id' => $id]);
+                            $pdo->prepare("UPDATE department_uploads SET title = :t WHERE id = :id OR book_id = :id")->execute([':t' => $repairedTitle, ':id' => $id]);
+                        } catch (\Throwable $te) {}
+                    }
                 }
             }
         } catch (\Throwable $e) {}
@@ -419,6 +450,8 @@ class CatalogController extends Controller
             $mysqlFileName,
             $mysqlFileName ? basename($mysqlFileName) : null,
             $mysqlFileName ? (basename($mysqlFileName) . '.pdf') : null,
+            $mysqlUploadId ? ($mysqlUploadId . '.pdf') : null,
+            $mysqlUploadId ? preg_replace('/[^a-zA-Z0-9_-]/', '_', $mysqlUploadId) . '.pdf' : null,
             $safeId . '.pdf',
             $id . '.pdf',
             $altBookId ? ($altBookId . '.pdf') : null,
