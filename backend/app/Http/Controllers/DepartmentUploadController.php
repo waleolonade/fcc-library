@@ -1924,15 +1924,10 @@ class DepartmentUploadController extends Controller
             if (!is_dir($lDir)) @mkdir($lDir, 0755, true);
 
             if (isset($diskPath) && file_exists($diskPath)) {
-                @copy($diskPath, $sDir . '/' . $bookId . '.pdf');
-                @copy($diskPath, $bDir . '/' . $bookId . '.pdf');
-                @copy($diskPath, $lDir . '/' . $bookId . '.pdf');
-                @copy($diskPath, $bDir . '/' . $safeId . '.pdf');
-                @copy($diskPath, $lDir . '/' . $safeId . '.pdf');
+                $fileBinary = @file_get_contents($diskPath);
+                $this->persistPdfManuscriptToAllDisks($fileBinary, $id, $bookId, $validated['file_name'] ?? null);
             } elseif ($rawBinary) {
-                @file_put_contents($sDir . '/' . $bookId . '.pdf', $rawBinary);
-                @file_put_contents($bDir . '/' . $bookId . '.pdf', $rawBinary);
-                @file_put_contents($lDir . '/' . $bookId . '.pdf', $rawBinary);
+                $this->persistPdfManuscriptToAllDisks($rawBinary, $id, $bookId, $validated['file_name'] ?? null);
             }
 
             $this->syncBookToMysql($book);
@@ -2476,26 +2471,10 @@ class DepartmentUploadController extends Controller
                 $storedPath = null;
                 if (!empty($fileDataUrl)) {
                     try {
-                        $libDir = storage_path('app/library-books');
-                        $sDir = storage_path('app/public/department_uploads');
-                        $bDir = storage_path('app/public/books');
-                        if (!is_dir($libDir)) @mkdir($libDir, 0755, true);
-                        if (!is_dir($sDir)) @mkdir($sDir, 0755, true);
-                        if (!is_dir($bDir)) @mkdir($bDir, 0755, true);
-                        $rawBinary = str_starts_with($fileDataUrl, 'data:') ? base64_decode(explode(',', $fileDataUrl, 2)[1] ?? '') : base64_decode($fileDataUrl);
-                        if ($rawBinary && strlen($rawBinary) > 100) {
-                            $storedPath = $uploadId . '.pdf';
-                            @file_put_contents($libDir . '/' . $uploadId . '.pdf', $rawBinary);
-                            @file_put_contents($sDir . '/' . $uploadId . '.pdf', $rawBinary);
-                            @file_put_contents($bDir . '/' . $uploadId . '.pdf', $rawBinary);
-                            if ($directPublish) {
-                                @file_put_contents($libDir . '/' . $bookId . '.pdf', $rawBinary);
-                                @file_put_contents($sDir . '/' . $bookId . '.pdf', $rawBinary);
-                                @file_put_contents($bDir . '/' . $bookId . '.pdf', $rawBinary);
-                            }
-                            $upload->file_path = $storedPath;
-                            $upload->save();
-                        }
+                        $this->persistPdfManuscriptToAllDisks($fileDataUrl, $uploadId, $directPublish ? $bookId : null, $fileName);
+                        $storedPath = $uploadId . '.pdf';
+                        $upload->file_path = $storedPath;
+                        $upload->save();
                     } catch (\Throwable $be) {}
                 }
 
@@ -3517,6 +3496,72 @@ class DepartmentUploadController extends Controller
                 'success' => false,
                 'error' => 'Metadata extraction error: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Persist binary PDF manuscript across all local, cPanel, and public storage directories under multiple aliases
+     */
+    private function persistPdfManuscriptToAllDisks(?string $binary, string $uploadId, ?string $bookId = null, ?string $originalFileName = null): void
+    {
+        if (empty($binary) || strlen($binary) < 50) return;
+
+        if (str_starts_with($binary, 'data:')) {
+            $parts = explode(',', $binary, 2);
+            $binary = base64_decode($parts[1] ?? '');
+        } elseif (preg_match('/^[A-Za-z0-9+\/=\s]{200,}$/', $binary) && !str_contains(substr($binary, 0, 10), '%PDF')) {
+            $binary = base64_decode(preg_replace('/\s+/', '', $binary));
+        }
+
+        if (empty($binary) || strlen($binary) < 50) return;
+
+        $targetDirs = array_unique(array_filter([
+            storage_path('app/library-books'),
+            storage_path('app/public/department_uploads'),
+            storage_path('app/public/books'),
+            storage_path('app/public/theses'),
+            storage_path('app/department_uploads'),
+            storage_path('app/books'),
+            public_path('storage/department_uploads'),
+            public_path('storage/books'),
+            public_path('uploads'),
+            base_path('../public_html/storage/department_uploads'),
+            base_path('../public_html/storage/books'),
+            base_path('../public_html/uploads'),
+            base_path('../public_html/backend/storage/app/library-books'),
+            base_path('../public_html/backend/storage/app/public/department_uploads'),
+            base_path('../storage/app/library-books'),
+            base_path('../storage/app/public/department_uploads'),
+        ]));
+
+        $safeUpId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $uploadId);
+        $cleanSuffix = preg_replace('/^.*-/', '', $uploadId);
+        $bookSuffix = $bookId ? preg_replace('/^.*-/', '', $bookId) : null;
+
+        $candidateFileNames = array_unique(array_filter([
+            $safeUpId . '.pdf',
+            $uploadId . '.pdf',
+            $bookId ? ($bookId . '.pdf') : null,
+            $bookId ? (preg_replace('/[^a-zA-Z0-9_-]/', '_', $bookId) . '.pdf') : null,
+            $cleanSuffix ? 'FCC-HOD-' . $cleanSuffix . '.pdf' : null,
+            $cleanSuffix ? 'HOD-UP-' . $cleanSuffix . '.pdf' : null,
+            $bookSuffix ? 'FCC-HOD-' . $bookSuffix . '.pdf' : null,
+            $bookSuffix ? 'HOD-UP-' . $bookSuffix . '.pdf' : null,
+            $originalFileName ? basename($originalFileName) : null,
+            $originalFileName ? (basename($originalFileName) . '.pdf') : null,
+        ]));
+
+        foreach ($targetDirs as $dir) {
+            try {
+                if (!is_dir($dir)) {
+                    @mkdir($dir, 0755, true);
+                }
+                if (is_dir($dir) && is_writable($dir)) {
+                    foreach ($candidateFileNames as $fn) {
+                        @file_put_contents($dir . '/' . $fn, $binary);
+                    }
+                }
+            } catch (\Throwable $e) {}
         }
     }
 }

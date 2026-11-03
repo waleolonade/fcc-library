@@ -14,8 +14,8 @@
  * - Scholarly Abstract / Synopsis
  */
 
-export const GEMINI_PRIMARY_MODEL = 'gemini-flash-latest';
-export const GEMINI_FALLBACK_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
+export const GEMINI_PRIMARY_MODEL = 'gemini-3.5-flash';
+export const GEMINI_FALLBACK_MODELS = ['gemini-3.5-flash-lite', 'gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-3.6-flash'];
 
 /**
  * Retrieve active Gemini API Key
@@ -174,7 +174,7 @@ ${cleanSnippet || '(No text available, infer from filename)'}
 """
 
 Instructions:
-1. "title": The official, complete title of the book, monograph, or journal paper. Do NOT include generic headers like "FEDERAL CO-OPERATIVE COLLEGE" unless it is literally part of the title.
+1. "title": The official, complete title of the book, monograph, or journal paper. Do NOT include generic headers like "FEDERAL CO-OPERATIVE COLLEGE" unless it is literally part of the title. NEVER use publication place and year (e.g. "Budapest, 2018", "London, 2020", "Ibadan, 2024") or publisher imprint as the title. Infer from the filename if the title text is ambiguous.
 2. "author": Author(s), Lead Researcher(s), or Lecturer(s). Clean names (e.g. "Dr. Babatunde Adeleke & Prof. C. O. Okonjo").
 3. "faculty_unit": Faculty Unit, Department, or Institutional Affiliation (e.g. "Department of Co-operative Economics & Management" or "School of Applied Sciences").
 4. "journal_name": For journal papers, the official Journal Name (e.g. "Annals of Co-operative Economics and Rural Development"). If this is a textbook/book, set to null.

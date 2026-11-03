@@ -21,7 +21,7 @@ class LibraryApiController extends Controller
     }
 
     /**
-     * Ensure Gora Network Off-Chain Computation API and InneAI API are seeded in the library_apis registry
+     * Ensure Gora Network, InneAI, Elsevier, and EBSCO APIs are seeded in the library_apis registry
      */
     private function ensureGoraAndInneAiSeeded(): void
     {
@@ -60,6 +60,42 @@ class LibraryApiController extends Controller
                     'is_preset' => true,
                 ]);
                 $this->syncToMysql($inneAi, 'save');
+            }
+
+            $elsevierExists = LibraryApi::where('id', 'API-ELSEVIER')->exists();
+            if (!$elsevierExists) {
+                $elsevier = LibraryApi::create([
+                    'id' => 'API-ELSEVIER',
+                    'name' => 'Elsevier ScienceDirect & Scopus Research API',
+                    'provider' => 'Elsevier BV (Scopus, ScienceDirect & SciVal)',
+                    'category' => 'Scholarly Citation & Peer-Reviewed Journal Discovery',
+                    'endpoint_template' => '/api/elsevier/search?query={query}',
+                    'auth_type' => 'API Key Header',
+                    'api_key' => 'bf3c85cf8f30e3518e1f3ce95244187c',
+                    'description' => 'Registered institutional Elsevier API key (Label: Fccibadan). Integrates ScienceDirect article search, Scopus multi-million citation index, Serial Title ISSN directory, and DOI metadata retrieval.',
+                    'docs_url' => 'https://dev.elsevier.com/api_docs.html',
+                    'status' => 'Active',
+                    'is_preset' => true,
+                ]);
+                $this->syncToMysql($elsevier, 'save');
+            }
+
+            $ebscoExists = LibraryApi::where('id', 'API-EBSCO')->exists();
+            if (!$ebscoExists) {
+                $ebsco = LibraryApi::create([
+                    'id' => 'API-EBSCO',
+                    'name' => 'EBSCO Discovery Service & HoldingsIQ API',
+                    'provider' => 'EBSCO Information Services (EDS / HoldingsIQ / PublicationIQ)',
+                    'category' => 'Academic Research Databases & Institutional Holdings',
+                    'endpoint_template' => '/api/ebsco/search?query={query}',
+                    'auth_type' => 'Bearer / Session Token',
+                    'api_key' => null,
+                    'description' => 'EBSCO Discovery Service (EDS), HoldingsIQ, LinkIQ, and PublicationIQ APIs. Provides unified institutional search across multidisciplinary journals, full-text bibliographic indexes, and entitlement management.',
+                    'docs_url' => 'https://developer.ebsco.com/home/docs/available-apis-and-requirements',
+                    'status' => 'Active',
+                    'is_preset' => true,
+                ]);
+                $this->syncToMysql($ebsco, 'save');
             }
         } catch (\Throwable $e) {
             // Non-blocking fallback
@@ -209,6 +245,16 @@ class LibraryApiController extends Controller
                 'itemsDiscovered' => $count,
                 'message' => "Connection Verified: InneAI Scholarly Intelligence API (inneai-scholar-pro-v2) is online and grounded to {$count} institutional holdings."
             ]);
+        }
+
+        if ($api->id === 'API-ELSEVIER' || str_contains(strtolower($api->name), 'elsevier') || str_contains($api->endpoint_template, 'elsevier')) {
+            $controller = app(\App\Http\Controllers\ElsevierController::class);
+            return $controller->testConnection($request);
+        }
+
+        if ($api->id === 'API-EBSCO' || str_contains(strtolower($api->name), 'ebsco') || str_contains($api->endpoint_template, 'ebsco')) {
+            $controller = app(\App\Http\Controllers\EbscoController::class);
+            return $controller->testConnection($request);
         }
 
         $testQuery = urlencode($request->query('query', 'cooperative'));
@@ -397,6 +443,70 @@ class LibraryApiController extends Controller
                     'isDigital' => true,
                     'format' => 'InneAI Research Synthesis'
                 ];
+                continue;
+            }
+
+            // Direct native query for Elsevier ScienceDirect & Scopus Research API
+            if ($api->id === 'API-ELSEVIER' || str_contains(strtolower($api->name), 'elsevier') || str_contains($api->endpoint_template, 'elsevier')) {
+                try {
+                    $elsevierCtrl = app(\App\Http\Controllers\ElsevierController::class);
+                    $subReq = Request::create('/api/elsevier/search', 'GET', ['query' => $rawQuery, 'count' => 6]);
+                    $elsRes = $elsevierCtrl->search($subReq);
+                    $elsData = $elsRes->getData(true);
+                    if (!empty($elsData['results']) && is_array($elsData['results'])) {
+                        foreach ($elsData['results'] as $er) {
+                            $results[] = [
+                                'id' => $er['id'],
+                                'title' => $er['title'],
+                                'author' => $er['author'],
+                                'year' => $er['year'],
+                                'isbn' => $er['issn'] ? "ISSN {$er['issn']}" : null,
+                                'doi' => $er['doi'],
+                                'coverUrl' => null,
+                                'publisher' => $er['journal'] ?: 'Elsevier BV',
+                                'abstract' => "{$er['journal']} {$er['volume_issue']} • Affiliation: {$er['affiliation']} • Cited by: {$er['citations']}",
+                                'sourceApi' => 'Elsevier ScienceDirect / Scopus API',
+                                'sourceId' => 'API-ELSEVIER',
+                                'externalUrl' => $er['url'],
+                                'subject' => ucwords($rawQuery),
+                                'isDigital' => true,
+                                'format' => 'Scopus Indexed Article'
+                            ];
+                        }
+                    }
+                } catch (\Throwable $e) {}
+                continue;
+            }
+
+            // Direct native query for EBSCO Discovery Service & HoldingsIQ API
+            if ($api->id === 'API-EBSCO' || str_contains(strtolower($api->name), 'ebsco') || str_contains($api->endpoint_template, 'ebsco')) {
+                try {
+                    $ebscoCtrl = app(\App\Http\Controllers\EbscoController::class);
+                    $subReq = Request::create('/api/ebsco/search', 'GET', ['query' => $rawQuery, 'count' => 4]);
+                    $ebRes = $ebscoCtrl->search($subReq);
+                    $ebData = $ebRes->getData(true);
+                    if (!empty($ebData['results']) && is_array($ebData['results'])) {
+                        foreach ($ebData['results'] as $ebr) {
+                            $results[] = [
+                                'id' => $ebr['id'],
+                                'title' => $ebr['title'],
+                                'author' => $ebr['author'],
+                                'year' => $ebr['publication_year'],
+                                'isbn' => $ebr['issn'] ? "ISSN {$ebr['issn']}" : null,
+                                'doi' => $ebr['doi'],
+                                'coverUrl' => null,
+                                'publisher' => $ebr['journal'] ?: 'EBSCO Publishing',
+                                'abstract' => $ebr['abstract'],
+                                'sourceApi' => 'EBSCO Discovery Service & HoldingsIQ',
+                                'sourceId' => 'API-EBSCO',
+                                'externalUrl' => "https://doi.org/{$ebr['doi']}",
+                                'subject' => ucwords($rawQuery),
+                                'isDigital' => true,
+                                'format' => 'EBSCO EDS Record'
+                            ];
+                        }
+                    }
+                } catch (\Throwable $e) {}
                 continue;
             }
 

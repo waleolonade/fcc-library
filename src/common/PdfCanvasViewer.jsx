@@ -120,14 +120,39 @@ export default function PdfCanvasViewer({
 
         let arrayBuffer = null;
 
+        // 0. Instant In-Memory / Blob Cache Check (Zero latency, instant opening)
+        if (typeof window !== 'undefined' && window.__fccPdfBlobMap) {
+          const testIds = [propBookId, (pdfUrl || '').match(/\/books\/([^\/\?#]+)/)?.[1], (window.location.hash || '').match(/#\/(?:reader|book)\/([^\/\?#]+)/)?.[1]].filter(Boolean);
+          for (const tid of testIds) {
+            const cachedBlobUrl = window.__fccPdfBlobMap[tid] || window.__fccPdfBlobMap[String(tid).replace('FCC-HOD-', 'HOD-UP-')] || window.__fccPdfBlobMap[String(tid).replace('HOD-UP-', 'FCC-HOD-')];
+            if (cachedBlobUrl) {
+              try {
+                const bRes = await fetch(cachedBlobUrl);
+                if (bRes.ok) {
+                  const bBuf = await bRes.arrayBuffer();
+                  if (bBuf && bBuf.byteLength > 100) {
+                    arrayBuffer = bBuf;
+                    break;
+                  }
+                }
+              } catch {}
+            }
+          }
+        }
+
         // 1. Direct Base64 Data URL Handling (instant, 0 network requests)
-        if (typeof pdfUrl === 'string' && (pdfUrl.startsWith('data:') || pdfUrl.startsWith('blob:'))) {
+        if (!arrayBuffer && typeof pdfUrl === 'string' && (pdfUrl.startsWith('data:') || pdfUrl.startsWith('blob:'))) {
           if (pdfUrl.startsWith('data:')) {
             try {
               arrayBuffer = dataUrlToArrayBuffer(pdfUrl);
             } catch (convErr) {
               console.warn('Could not decode data URL directly, attempting fetch fallback:', convErr);
             }
+          } else if (pdfUrl.startsWith('blob:')) {
+            try {
+              const bRes = await fetch(pdfUrl);
+              if (bRes.ok) arrayBuffer = await bRes.arrayBuffer();
+            } catch {}
           }
         }
 
@@ -193,7 +218,7 @@ export default function PdfCanvasViewer({
                 const buf = await res.arrayBuffer();
                 if (buf && buf.byteLength > 100) {
                   // Verify magic bytes: PDF must contain %PDF in head
-                  const head = new Uint8Array(buf.slice(0, 128));
+                  const head = new Uint8Array(buf.slice(0, 1024));
                   const headStr = String.fromCharCode(...head);
                   if (headStr.includes('%PDF')) {
                     arrayBuffer = buf;

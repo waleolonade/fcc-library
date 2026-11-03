@@ -1403,17 +1403,47 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
           const targetEndpoint = item.existing_id
             ? `${getApiBase()}/department-uploads/${encodeURIComponent(item.existing_id)}/update`
             : singleEndpoint;
-          const sRes = await fetch(targetEndpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body: JSON.stringify(singlePayload)
-          });
+
+          let sRes = null;
+          const rawItemObj = batchItems[i];
+
+          // High-Performance Streaming: Prefer multipart FormData when original File object is present
+          if (rawItemObj?.file && (rawItemObj.file instanceof File || rawItemObj.file instanceof Blob)) {
+            const fd = new FormData();
+            fd.append('file', rawItemObj.file);
+            Object.entries(singlePayload).forEach(([k, v]) => {
+              if (k !== 'file_data_url' && v !== undefined && v !== null) {
+                fd.append(k, typeof v === 'object' ? JSON.stringify(v) : v);
+              }
+            });
+            sRes = await fetch(targetEndpoint, {
+              method: 'POST',
+              body: fd
+            });
+          } else {
+            sRes = await fetch(targetEndpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+              body: JSON.stringify(singlePayload)
+            });
+          }
+
           if (sRes.ok) {
             const sData = await sRes.json();
             if (sData.upload) processed.push(sData.upload);
             if (sData.book) booksCreated.push(sData.book);
             if (sData.published_books && Array.isArray(sData.published_books)) {
               booksCreated.push(...sData.published_books);
+            }
+
+            // In-Memory Real-Time Reader Acceleration Cache
+            if (typeof window !== 'undefined' && rawItemObj?.file && (rawItemObj.file instanceof File || rawItemObj.file instanceof Blob)) {
+              window.__fccPdfBlobMap = window.__fccPdfBlobMap || {};
+              try {
+                const bUrl = URL.createObjectURL(rawItemObj.file);
+                if (sData.book?.id) window.__fccPdfBlobMap[sData.book.id] = bUrl;
+                if (sData.upload?.id) window.__fccPdfBlobMap[sData.upload.id] = bUrl;
+              } catch {}
             }
           } else {
             processed.push({

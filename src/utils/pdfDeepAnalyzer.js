@@ -139,7 +139,17 @@ function isCleanBookTitle(candidate, fileName = '') {
     /^binder\d*$/i,
     /\.(pdf|docx?|pptx?|xlsx?|txt|ind[db]|ps|dvi)$/i,
     /^[a-f0-9-]{16,}$/i,
-    /^http[s]?:\/\//i
+    /^http[s]?:\/\//i,
+    // Reject City, Year imprint lines (e.g. "Budapest, 2018.", "London, 2021", "Ibadan, 2024")
+    /^[A-Za-z\s.-]+,\s*(?:19|20)\d{2}\.?$/i,
+    // Reject Month Year or standalone dates
+    /^(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:19|20)\d{2}\.?$/i,
+    /^(?:19|20)\d{2}\.?$/,
+    // Reject editorial section headings
+    /^(?:table of contents|contents|preface|foreword|acknowledgements?|index|references|bibliography|abstract|appendix)$/i,
+    // Reject publisher/printer lines
+    /^(?:printed in|published in|published by|first published|all rights reserved|typeset by)/i,
+    /^(?:copyright|©|\(c\))\s+/i
   ];
 
   for (const pat of junkPatterns) {
@@ -221,11 +231,24 @@ export function parseTitleAndAuthorFromFilename(filename = '') {
     .replace(/\(z-lib\.org\)|\(annas-archive[^)]*\)|\(pdfdrive[^)]*\)|\[[^\]]*\]/gi, '')
     .trim();
 
-  // Remove trailing year or edition parens if noisy
+  // Strip leading numbering like "01.-", "02. ", "1 - "
+  raw = raw.replace(/^(\d+[\.\-_]+\s*)/, '').trim();
+
   let extractedAuthor = '';
 
+  // Check if filename contains explicit "-Authors-" or "_Authors_" or " by " separator
+  const authorPatternMatch = raw.match(/^(.*?)(?:[-_]+authors?[-_]+|[-_]+by[-_]+|\s+by\s+)(.*)$/i);
+  if (authorPatternMatch) {
+    const rawTitle = authorPatternMatch[1].trim();
+    const rawAuth = authorPatternMatch[2].trim();
+    if (rawTitle.length >= 3) {
+      raw = rawTitle;
+      extractedAuthor = rawAuth.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+  }
+
   // Check if filename uses "Title - Author" or "Author - Title" separator
-  if (raw.includes(' - ')) {
+  if (!extractedAuthor && raw.includes(' - ')) {
     const parts = raw.split(' - ').map(p => p.replace(/[_]+/g, ' ').trim()).filter(Boolean);
     if (parts.length >= 2) {
       const first = parts[0];
@@ -1131,13 +1154,17 @@ export async function analyzeUploadedPdf(file, options = {}) {
   const filenameParsed = parseTitleAndAuthorFromFilename(file.name);
 
   // 12. Final Book / Journal Article Title Synthesis (Priority: Gemini AI -> Crossref/OpenAlex DOI -> OpenLibrary/GoogleBooks -> Typography Page 1/2 -> PDF Info/XMP -> Clean Filename)
+  const validTypoTitle = isCleanBookTitle(typographyTitle, file.name) ? typographyTitle : '';
+  const validPdfInfoTitle = isCleanBookTitle(pdfInfoTitle, file.name) ? pdfInfoTitle : '';
+  const validDictTitle = isCleanBookTitle(dictTitle, file.name) ? dictTitle : '';
+
   let detectedTitle =
     geminiBiblio?.metadata?.title ||
     openSourceJournalMeta?.title ||
     openSourceBiblio?.title ||
-    typographyTitle ||
-    pdfInfoTitle ||
-    dictTitle ||
+    validTypoTitle ||
+    validPdfInfoTitle ||
+    validDictTitle ||
     filenameParsed.title ||
     'Academic Course Monograph';
 
@@ -1147,9 +1174,9 @@ export async function analyzeUploadedPdf(file, options = {}) {
     ? (openSourceJournalMeta.source || 'OpenAlex / Crossref DOI Registry')
     : openSourceBiblio?.title
     ? openSourceBiblio.source
-    : typographyTitle
+    : validTypoTitle
     ? 'PDF Page 1 Typography Analysis'
-    : pdfInfoTitle || dictTitle
+    : validPdfInfoTitle || validDictTitle
     ? 'PDF Embedded Info/XMP Metadata'
     : 'Intelligent Filename Parser';
 

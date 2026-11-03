@@ -100,6 +100,20 @@ export default function ApiConfigurationManager({
   const [inneAiAnalyzeResult, setInneAiAnalyzeResult] = useState(null);
   const [isAnalyzingInneAi, setIsAnalyzingInneAi] = useState(false);
 
+  // Elsevier ScienceDirect & Scopus Research API State (Key: bf3c85cf8f30e3518e1f3ce95244187c)
+  const [elsevierStatus, setElsevierStatus] = useState(null);
+  const [isTestingElsevier, setIsTestingElsevier] = useState(false);
+  const [elsevierQuery, setElsevierQuery] = useState('cooperative banking');
+  const [elsevierSearchResults, setElsevierSearchResults] = useState([]);
+  const [isSearchingElsevier, setIsSearchingElsevier] = useState(false);
+
+  // EBSCO Discovery Service & HoldingsIQ API State
+  const [ebscoStatus, setEbscoStatus] = useState(null);
+  const [isTestingEbsco, setIsTestingEbsco] = useState(false);
+  const [ebscoQuery, setEbscoQuery] = useState('agricultural co-operatives');
+  const [ebscoSearchResults, setEbscoSearchResults] = useState([]);
+  const [isSearchingEbsco, setIsSearchingEbsco] = useState(false);
+
   // Ensure Gora Off-Chain Computation API & InneAI API are always present in the list
   const effectiveApis = useMemo(() => {
     const list = Array.isArray(apis) ? [...apis] : [];
@@ -131,6 +145,38 @@ export default function ApiConfigurationManager({
         api_key: '',
         description: 'InneAI Multi-Model Scholarly API for academic journal synthesis, literature review generation, manuscript deep analysis, APA 7th citation engine, and semantic catalog discovery.',
         docs_url: 'https://app.innerai.com',
+        status: 'Active',
+        is_preset: true
+      });
+    }
+    const hasElsevier = list.some(a => a.id === 'API-ELSEVIER' || (a.name || '').toLowerCase().includes('elsevier'));
+    if (!hasElsevier) {
+      list.unshift({
+        id: 'API-ELSEVIER',
+        name: 'Elsevier ScienceDirect & Scopus Research API',
+        provider: 'Elsevier BV (Scopus & ScienceDirect)',
+        category: 'Scholarly Citation & Peer-Reviewed Journal Discovery',
+        endpoint_template: '/api/elsevier/search?query={query}',
+        auth_type: 'API Key Header',
+        api_key: 'bf3c85cf8f30e3518e1f3ce95244187c',
+        description: 'Registered institutional Elsevier API key for https://fccibadanlibrary.com.ng/. Provides high-speed Scopus citation queries, ScienceDirect metadata, and DOI resolution.',
+        docs_url: 'https://dev.elsevier.com/api_docs.html',
+        status: 'Active',
+        is_preset: true
+      });
+    }
+    const hasEbsco = list.some(a => a.id === 'API-EBSCO' || (a.name || '').toLowerCase().includes('ebsco'));
+    if (!hasEbsco) {
+      list.unshift({
+        id: 'API-EBSCO',
+        name: 'EBSCO Discovery Service & HoldingsIQ API',
+        provider: 'EBSCO Information Services (EDS / HoldingsIQ / PublicationIQ)',
+        category: 'Academic Research Databases & Institutional Holdings',
+        endpoint_template: '/api/ebsco/search?query={query}',
+        auth_type: 'Bearer / Session Token',
+        api_key: '',
+        description: 'EBSCO Discovery Service (EDS), HoldingsIQ, LinkIQ, and PublicationIQ APIs. Provides unified institutional search across multidisciplinary journals and entitlement management.',
+        docs_url: 'https://developer.ebsco.com/home/docs/available-apis-and-requirements',
         status: 'Active',
         is_preset: true
       });
@@ -216,6 +262,78 @@ export default function ApiConfigurationManager({
     }
   };
 
+  // Elsevier ScienceDirect & Scopus Handlers
+  const handleTestElsevier = async () => {
+    setIsTestingElsevier(true);
+    if (soundEnabled && sounds?.playScannerBeep) sounds.playScannerBeep();
+    try {
+      const res = await fetch('/api/elsevier/test?query=' + encodeURIComponent(elsevierQuery || 'cooperative'));
+      const data = await res.json();
+      setElsevierStatus(data);
+      if (soundEnabled && sounds?.playSuccessChime) sounds.playSuccessChime();
+    } catch (e) {
+      setElsevierStatus({ success: false, error: e.message });
+      if (soundEnabled && sounds?.playErrorBuzz) sounds.playErrorBuzz();
+    } finally {
+      setIsTestingElsevier(false);
+    }
+  };
+
+  const handleSearchElsevier = async (e) => {
+    if (e) e.preventDefault();
+    if (!elsevierQuery.trim()) return;
+    setIsSearchingElsevier(true);
+    if (soundEnabled && sounds?.playScannerBeep) sounds.playScannerBeep();
+    try {
+      const res = await fetch('/api/elsevier/search?query=' + encodeURIComponent(elsevierQuery.trim()) + '&count=12');
+      const data = await res.json();
+      if (data && data.results) {
+        setElsevierSearchResults(data.results);
+        if (soundEnabled && sounds?.playSuccessChime) sounds.playSuccessChime();
+      }
+    } catch (e) {
+      console.error('Elsevier search error:', e);
+    } finally {
+      setIsSearchingElsevier(false);
+    }
+  };
+
+  // EBSCO Handlers
+  const handleTestEbsco = async () => {
+    setIsTestingEbsco(true);
+    if (soundEnabled && sounds?.playScannerBeep) sounds.playScannerBeep();
+    try {
+      const res = await fetch('/api/ebsco/test?query=' + encodeURIComponent(ebscoQuery || 'cooperative'));
+      const data = await res.json();
+      setEbscoStatus(data);
+      if (soundEnabled && sounds?.playSuccessChime) sounds.playSuccessChime();
+    } catch (e) {
+      setEbscoStatus({ success: false, error: e.message });
+      if (soundEnabled && sounds?.playErrorBuzz) sounds.playErrorBuzz();
+    } finally {
+      setIsTestingEbsco(false);
+    }
+  };
+
+  const handleSearchEbsco = async (e) => {
+    if (e) e.preventDefault();
+    if (!ebscoQuery.trim()) return;
+    setIsSearchingEbsco(true);
+    if (soundEnabled && sounds?.playScannerBeep) sounds.playScannerBeep();
+    try {
+      const res = await fetch('/api/ebsco/search?query=' + encodeURIComponent(ebscoQuery.trim()) + '&count=8');
+      const data = await res.json();
+      if (data && data.results) {
+        setEbscoSearchResults(data.results);
+        if (soundEnabled && sounds?.playSuccessChime) sounds.playSuccessChime();
+      }
+    } catch (e) {
+      console.error('EBSCO search error:', e);
+    } finally {
+      setIsSearchingEbsco(false);
+    }
+  };
+
   useEffect(() => {
     if (activeSubTab === 'gora') {
       libraryApi.gora.getStatus().then(s => { if (s) setGoraStatus(s); }).catch(() => {});
@@ -223,6 +341,12 @@ export default function ApiConfigurationManager({
     } else if (activeSubTab === 'inneai') {
       libraryApi.inneai.getStatus().then(s => { if (s) setInneAiStatus(s); }).catch(() => {});
       if (!inneAiChatResult) handleRunInneAiChat();
+    } else if (activeSubTab === 'elsevier') {
+      if (!elsevierStatus) handleTestElsevier();
+      if (elsevierSearchResults.length === 0) handleSearchElsevier();
+    } else if (activeSubTab === 'ebsco') {
+      if (!ebscoStatus) handleTestEbsco();
+      if (ebscoSearchResults.length === 0) handleSearchEbsco();
     }
   }, [activeSubTab]);
 
@@ -596,6 +720,8 @@ export default function ApiConfigurationManager({
         <div className="flex flex-wrap items-center gap-2 pt-5 mt-4 border-t border-slate-800/80">
           {[
             { id: 'all', label: `Configured APIs (${effectiveApis.length})`, icon: Sliders },
+            { id: 'elsevier', label: 'Elsevier Research API (Scopus)', icon: Globe, badge: 'Live Key' },
+            { id: 'ebsco', label: 'EBSCO Discovery & HoldingsIQ API', icon: Database, badge: 'EDS Gateway' },
             { id: 'gora', label: 'Gora Off-Chain Computation API', icon: Server, badge: 'WASM Oracle' },
             { id: 'inneai', label: 'InneAI Scholarly API', icon: Sparkles, badge: 'AI Synthesis' },
             { id: 'simplelib', label: 'SimpleLib API (BassemGhoniem)', icon: BookOpen },
@@ -1551,6 +1677,396 @@ export default function ApiConfigurationManager({
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          TAB 5: ELSEVIER RESEARCH API (SCIENCEDIRECT & SCOPUS)
+      ========================================================================= */}
+      {activeSubTab === 'elsevier' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Header Banner */}
+          <div className="p-6 rounded-2xl bg-gradient-to-r from-[#1c1917] via-[#291b12] to-[#0c0a09] border-2 border-orange-500/50 shadow-2xl space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-1.5 max-w-3xl">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-orange-950 border border-orange-500 text-orange-300 text-[10px] font-mono font-bold">
+                    API-ELSEVIER • Elsevier Research Platform
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-950 border border-emerald-500 text-emerald-300 text-[10px] font-mono font-bold">
+                    Key Registered for fccibadanlibrary.com.ng
+                  </span>
+                </div>
+                <h3 className="text-lg font-black text-white">
+                  Elsevier ScienceDirect, Scopus & Serial Title Metadata API
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Institutional discovery integration powered by your registered Elsevier developer credentials. Grants high-speed federated access to Scopus citation indices, peer-reviewed journal articles, Serial Title ISSN directory, and DOI metadata.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleTestElsevier}
+                  disabled={isTestingElsevier}
+                  className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg transition cursor-pointer"
+                >
+                  <Zap size={14} className={isTestingElsevier ? 'animate-spin' : ''} />
+                  <span>{isTestingElsevier ? 'Testing Connectivity...' : 'Ping Live Elsevier API'}</span>
+                </button>
+                <a
+                  href="https://dev.elsevier.com/api_docs.html"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-orange-300 border border-orange-500/40 text-xs font-semibold flex items-center gap-1.5 transition"
+                >
+                  <ExternalLink size={13} />
+                  <span>Elsevier API Docs</span>
+                </a>
+              </div>
+            </div>
+
+            {/* Registered Credentials Pill Bar */}
+            <div className="p-3.5 rounded-xl bg-black/40 border border-orange-900/60 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div>
+                <span className="text-[10px] text-slate-400 block font-mono">Website URL</span>
+                <span className="font-bold text-white font-mono">https://fccibadanlibrary.com.ng/</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 block font-mono">Key Label</span>
+                <span className="font-bold text-orange-300 font-mono">Fccibadan (Registered)</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 block font-mono">API Key Token</span>
+                <span className="font-bold text-emerald-400 font-mono">bf3c85cf...187c</span>
+              </div>
+            </div>
+
+            {/* Test Results Banner */}
+            {elsevierStatus && (
+              <div className={`p-4 rounded-xl border text-xs space-y-1.5 ${
+                elsevierStatus.success
+                  ? 'bg-emerald-950/70 border-emerald-600 text-emerald-200'
+                  : 'bg-rose-950/70 border-rose-600 text-rose-200'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-bold">
+                    {elsevierStatus.success ? <CheckCircle2 size={16} className="text-emerald-400" /> : <XCircle size={16} className="text-rose-400" />}
+                    <span>{elsevierStatus.status || (elsevierStatus.success ? 'Online & Authenticated' : 'Error')}</span>
+                  </div>
+                  {elsevierStatus.latencyMs && (
+                    <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-black/40">
+                      Response: {elsevierStatus.latencyMs}ms
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] leading-relaxed opacity-90">{elsevierStatus.message || elsevierStatus.error}</p>
+                {elsevierStatus.totalResults && (
+                  <div className="font-mono text-[10px] text-emerald-300">
+                    Total Indexed Works: <strong className="text-white">{Number(elsevierStatus.totalResults).toLocaleString()}</strong>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Interactive Search Tool */}
+          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Search size={16} className="text-orange-400" />
+                  <span>Live Elsevier Scopus & ScienceDirect Query Console</span>
+                </h4>
+                <p className="text-xs text-slate-400">
+                  Search across millions of peer-reviewed articles, citations, authors, and books via official Elsevier API
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSearchElsevier} className="flex flex-wrap items-center gap-2.5">
+              <div className="relative flex-1 min-w-[260px]">
+                <Search size={15} className="absolute left-3 top-3 text-slate-500" />
+                <input
+                  type="text"
+                  value={elsevierQuery}
+                  onChange={e => setElsevierQuery(e.target.value)}
+                  placeholder="Enter keyword, subject, author, or DOI (e.g. cooperative economics, agricultural finance)..."
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isSearchingElsevier}
+                className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg transition cursor-pointer"
+              >
+                <Play size={13} className={isSearchingElsevier ? 'animate-spin' : ''} />
+                <span>{isSearchingElsevier ? 'Querying Elsevier...' : 'Run Scopus Search'}</span>
+              </button>
+            </form>
+
+            {/* Results Grid */}
+            {isSearchingElsevier && (
+              <div className="p-8 text-center space-y-2">
+                <RefreshCw size={24} className="animate-spin text-orange-400 mx-auto" />
+                <p className="text-xs text-slate-400">Querying Elsevier Scopus API in real-time...</p>
+              </div>
+            )}
+
+            {!isSearchingElsevier && elsevierSearchResults.length > 0 && (
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between text-xs text-slate-400">
+                  <span>Found <strong>{elsevierSearchResults.length}</strong> research works for query "{elsevierQuery}":</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {elsevierSearchResults.map(item => (
+                    <div
+                      key={item.id}
+                      className="p-4 rounded-xl bg-slate-950 border border-slate-800 hover:border-orange-500/40 transition space-y-2.5 flex flex-col justify-between"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="px-2 py-0.5 rounded text-[9.5px] font-mono bg-orange-950 text-orange-300 border border-orange-800">
+                            {item.journal || 'Elsevier Scopus'}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400">{item.year}</span>
+                        </div>
+                        <h5 className="font-bold text-white text-xs leading-snug line-clamp-2">
+                          {item.title}
+                        </h5>
+                        <p className="text-[11px] text-slate-300 font-mono">
+                          Author: <span className="text-orange-200">{item.author}</span>
+                        </p>
+                        {item.affiliation && (
+                          <p className="text-[10px] text-slate-400 line-clamp-1">
+                            Affiliation: {item.affiliation}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-slate-400 pt-1">
+                          {item.volume_issue && <span>{item.volume_issue}</span>}
+                          {item.issn && <span>ISSN: {item.issn}</span>}
+                          {item.citations !== undefined && (
+                            <span className="text-emerald-400 font-bold">Cited by: {item.citations}</span>
+                          )}
+                          {item.doi && <span>DOI: {item.doi}</span>}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-900">
+                        {item.url && (
+                          <a
+                            href={item.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] font-semibold text-orange-400 hover:text-orange-300 flex items-center gap-1 transition"
+                          >
+                            <ExternalLink size={12} />
+                            <span>View on Scopus / Publisher</span>
+                          </a>
+                        )}
+                        {onIngestBook && (
+                          <button
+                            onClick={() => onIngestBook({
+                              id: item.id,
+                              title: item.title,
+                              author: item.author,
+                              publisher: item.journal,
+                              year: item.year,
+                              isbn: item.issn ? `ISSN ${item.issn}` : null,
+                              doi: item.doi,
+                              department: 'Co-operative Economics & Management',
+                              is_digital: true
+                            })}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] transition cursor-pointer"
+                          >
+                            Ingest to Catalog
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          TAB 6: EBSCO DISCOVERY SERVICE & HOLDINGSIQ API
+      ========================================================================= */}
+      {activeSubTab === 'ebsco' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Header Banner */}
+          <div className="p-6 rounded-2xl bg-gradient-to-r from-[#0c1e34] via-[#0f2847] to-[#081525] border-2 border-blue-500/50 shadow-2xl space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-1.5 max-w-3xl">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-blue-950 border border-blue-500 text-blue-300 text-[10px] font-mono font-bold">
+                    API-EBSCO • Institutional Discovery Gateway
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-indigo-950 border border-indigo-500 text-indigo-300 text-[10px] font-mono font-bold">
+                    EDS, HoldingsIQ, LinkIQ, PublicationIQ & Entitlement
+                  </span>
+                </div>
+                <h3 className="text-lg font-black text-white">
+                  EBSCO Discovery Service (EDS) & Knowledge Services API
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Connects the FCC Library to the complete EBSCO Knowledge Services API suite. Supports unified discovery searches, knowledge base holdings management (HoldingsIQ), full-text linking (LinkIQ), and publication title verification (PublicationIQ).
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleTestEbsco}
+                  disabled={isTestingEbsco}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg transition cursor-pointer"
+                >
+                  <Zap size={14} className={isTestingEbsco ? 'animate-spin' : ''} />
+                  <span>{isTestingEbsco ? 'Checking Gateway...' : 'Ping EBSCO Discovery'}</span>
+                </button>
+                <a
+                  href="https://developer.ebsco.com/home/docs/available-apis-and-requirements"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-blue-300 border border-blue-500/40 text-xs font-semibold flex items-center gap-1.5 transition"
+                >
+                  <ExternalLink size={13} />
+                  <span>EBSCO Developer Docs</span>
+                </a>
+              </div>
+            </div>
+
+            {/* Test Results Banner */}
+            {ebscoStatus && (
+              <div className="p-4 rounded-xl bg-blue-950/70 border border-blue-600 text-blue-200 text-xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-bold">
+                    <CheckCircle2 size={16} className="text-blue-400" />
+                    <span>{ebscoStatus.status || 'Online'}</span>
+                  </div>
+                  {ebscoStatus.latencyMs && (
+                    <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-black/40">
+                      Response: {ebscoStatus.latencyMs}ms
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] leading-relaxed opacity-90">{ebscoStatus.message}</p>
+                {ebscoStatus.services && (
+                  <div className="flex flex-wrap gap-2 pt-1 font-mono text-[10px]">
+                    {Object.entries(ebscoStatus.services).map(([k, v]) => (
+                      <span key={k} className="px-2 py-0.5 rounded bg-black/40 text-blue-300">
+                        {k.replace('_', ' ').toUpperCase()}: {v}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Interactive Search Tool */}
+          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <Search size={16} className="text-blue-400" />
+                <span>EBSCO Discovery Service Search Console</span>
+              </h4>
+              <p className="text-xs text-slate-400">
+                Execute cross-database searches across Academic Search Premier, Business Source Complete, and Library & Information Science Source
+              </p>
+            </div>
+
+            <form onSubmit={handleSearchEbsco} className="flex flex-wrap items-center gap-2.5">
+              <div className="relative flex-1 min-w-[260px]">
+                <Search size={15} className="absolute left-3 top-3 text-slate-500" />
+                <input
+                  type="text"
+                  value={ebscoQuery}
+                  onChange={e => setEbscoQuery(e.target.value)}
+                  placeholder="Query EBSCO EDS database (e.g. agricultural co-operatives, economic diversification)..."
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isSearchingEbsco}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg transition cursor-pointer"
+              >
+                <Play size={13} className={isSearchingEbsco ? 'animate-spin' : ''} />
+                <span>{isSearchingEbsco ? 'Searching EBSCO...' : 'Query EDS'}</span>
+              </button>
+            </form>
+
+            {/* Results Grid */}
+            {!isSearchingEbsco && ebscoSearchResults.length > 0 && (
+              <div className="space-y-3 pt-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {ebscoSearchResults.map(item => (
+                    <div
+                      key={item.id}
+                      className="p-4 rounded-xl bg-slate-950 border border-slate-800 hover:border-blue-500/40 transition space-y-2.5 flex flex-col justify-between"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="px-2 py-0.5 rounded text-[9.5px] font-mono bg-blue-950 text-blue-300 border border-blue-800">
+                            {item.database || 'EBSCO EDS'}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400">{item.publication_year}</span>
+                        </div>
+                        <h5 className="font-bold text-white text-xs leading-snug line-clamp-2">
+                          {item.title}
+                        </h5>
+                        <p className="text-[11px] text-slate-300 font-mono">
+                          Author: <span className="text-blue-200">{item.author}</span>
+                        </p>
+                        <p className="text-[10px] text-slate-400 line-clamp-2">
+                          {item.abstract}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-slate-400 pt-1">
+                          {item.volume_issue && <span>{item.volume_issue}</span>}
+                          {item.issn && <span>ISSN: {item.issn}</span>}
+                          {item.doi && <span>DOI: {item.doi}</span>}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-900">
+                        <a
+                          href={`https://doi.org/${item.doi}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1 transition"
+                        >
+                          <ExternalLink size={12} />
+                          <span>View Resource DOI</span>
+                        </a>
+                        {onIngestBook && (
+                          <button
+                            onClick={() => onIngestBook({
+                              id: item.id,
+                              title: item.title,
+                              author: item.author,
+                              publisher: item.journal,
+                              year: item.publication_year,
+                              isbn: item.issn ? `ISSN ${item.issn}` : null,
+                              doi: item.doi,
+                              department: 'Co-operative Economics & Management',
+                              is_digital: true
+                            })}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] transition cursor-pointer"
+                          >
+                            Ingest to Catalog
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

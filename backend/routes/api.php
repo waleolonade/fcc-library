@@ -664,3 +664,26 @@ Route::prefix('inneai')->group(function () {
     Route::match(['get', 'post'], '/analyze', [\App\Http\Controllers\Api\GoraAndInneAiController::class, 'inneAiAnalyze']);
     Route::get('/search', [\App\Http\Controllers\Api\GoraAndInneAiController::class, 'inneAiSearch']);
 });
+
+// =========================================================================
+// ELSEVIER SCIENCEDIRECT & SCOPUS API (Fccibadan Registered Key: bf3c85cf8f30e3518e1f3ce95244187c)
+// Specification: https://dev.elsevier.com/api_docs.html
+// =========================================================================
+Route::prefix('elsevier')->group(function () {
+    Route::get('/test', [\App\Http\Controllers\ElsevierController::class, 'testConnection']);
+    Route::get('/status', [\App\Http\Controllers\ElsevierController::class, 'testConnection']);
+    Route::get('/search', [\App\Http\Controllers\ElsevierController::class, 'search']);
+    Route::get('/serial', [\App\Http\Controllers\ElsevierController::class, 'serialTitle']);
+    Route::get('/serial-title', [\App\Http\Controllers\ElsevierController::class, 'serialTitle']);
+});
+
+// =========================================================================
+// EBSCO DISCOVERY SERVICE (EDS), HOLDINGSIQ & PUBLICATIONIQ API
+// Specification: https://developer.ebsco.com/home/docs/available-apis-and-requirements
+// =========================================================================
+Route::prefix('ebsco')->group(function () {
+    Route::get('/test', [\App\Http\Controllers\EbscoController::class, 'testConnection']);
+    Route::get('/status', [\App\Http\Controllers\EbscoController::class, 'testConnection']);
+    Route::get('/search', [\App\Http\Controllers\EbscoController::class, 'search']);
+});
+
