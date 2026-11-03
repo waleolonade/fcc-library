@@ -17,6 +17,7 @@ import {
     ExternalLink,
     Eye, EyeOff,
     Flame,
+    Globe,
     HardDrive,
     Key,
     Layers,
@@ -66,6 +67,7 @@ import DeveloperAuditTrail from './DeveloperAuditTrail';
 import DeveloperBookStudio from './DeveloperBookStudio';
 import DeveloperHodStaffController from './DeveloperHodStaffController';
 import DeveloperMaintenanceBroadcastController from './DeveloperMaintenanceBroadcastController';
+import { EXTERNAL_API_METADATA, testExternalApi } from '../services/federatedLibrarySearchService';
 import TwoFactorOtpModal from '../common/TwoFactorOtpModal';
 import ForgotPasswordModal from '../common/ForgotPasswordModal';
 import { getApiBase } from '../api/libraryApi';
@@ -163,6 +165,12 @@ export default function DeveloperMasterPortal({ onImpersonate, onLogout }) {
   // Master Configuration State
   const [config, setConfig] = useState(() => developerConfigService.getConfig());
   const [toastMessage, setToastMessage] = useState('');
+
+  // External Library APIs & Federated Search Engine State
+  const [testingApiId, setTestingApiId] = useState(null);
+  const [apiTestResults, setApiTestResults] = useState({});
+  const [externalApiSearch, setExternalApiSearch] = useState('');
+  const [isTestingAllApis, setIsTestingAllApis] = useState(false);
 
   // Security Prompt Modal for High-Impact Actions
   const [pendingAction, setPendingAction] = useState(null); // { type, payload, callback, description }
@@ -1448,6 +1456,89 @@ export default function DeveloperMasterPortal({ onImpersonate, onLogout }) {
     });
   };
 
+  // External Library APIs & Federated Search Engine Toggle Controls
+  const toggleExternalApiItem = (apiId) => {
+    const apis = config.externalLibraryApis || {};
+    const item = apis[apiId] || { id: apiId, name: apiId, enabled: true };
+    const nextState = !item.enabled;
+    const actionDesc = `${nextState ? 'ACTIVATE' : 'DEACTIVATE'} External Library API "${item.name || apiId}"`;
+
+    executeWithSecurityCheck(actionDesc, async () => {
+      const updatedApis = {
+        ...apis,
+        [apiId]: {
+          ...item,
+          enabled: nextState
+        }
+      };
+      const updatedConfig = {
+        ...config,
+        externalLibraryApis: updatedApis
+      };
+      setConfig(updatedConfig);
+      await developerConfigService.saveConfig(updatedConfig);
+      await apiCall('/api/developer/external-apis/toggle', {
+        method: 'POST',
+        body: JSON.stringify({ api_id: apiId, enabled: nextState })
+      }).catch(() => {});
+
+      sounds.playClick();
+      showToast(`External API "${item.name || apiId}" is now ${nextState ? 'ONLINE' : 'OFFLINE'} across all portals.`);
+    });
+  };
+
+  const handleBulkExternalApis = (enableAll) => {
+    const actionDesc = `${enableAll ? 'ACTIVATE' : 'DEACTIVATE'} ALL 14 External Library APIs simultaneously`;
+    executeWithSecurityCheck(actionDesc, async () => {
+      const current = config.externalLibraryApis || {};
+      const updatedApis = {};
+      Object.keys(current).forEach(k => {
+        updatedApis[k] = { ...current[k], enabled: enableAll };
+      });
+      const updatedConfig = { ...config, externalLibraryApis: updatedApis };
+      setConfig(updatedConfig);
+      await developerConfigService.saveConfig(updatedConfig);
+      await apiCall('/api/developer/external-apis/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ enable_all: enableAll })
+      }).catch(() => {});
+
+      sounds.playSuccessChime();
+      showToast(`All 14 External Library APIs are now ${enableAll ? 'ONLINE' : 'OFFLINE'}!`);
+    });
+  };
+
+  const handleRunApiTest = async (apiId) => {
+    setTestingApiId(apiId);
+    sounds.playClick();
+    const res = await testExternalApi(apiId, 'cooperative economics');
+    setApiTestResults(prev => ({ ...prev, [apiId]: res }));
+    setTestingApiId(null);
+    if (res.success) {
+      sounds.playSuccessChime();
+      showToast(`Ping OK [${apiId}]: HTTP 200 • ${res.latencyMs}ms • ${res.matchCount} records`);
+    } else {
+      sounds.playBeep();
+      showToast(`Ping failed [${apiId}]: ${res.error || 'Connection failed'}`);
+    }
+  };
+
+  const handleTestAllApis = async () => {
+    setIsTestingAllApis(true);
+    sounds.playClick();
+    showToast('Running diagnostic ping across all 14 external library APIs...');
+    const allApis = Object.keys(EXTERNAL_API_METADATA);
+    const results = {};
+    for (const id of allApis) {
+      const res = await testExternalApi(id, 'cooperative economics');
+      results[id] = res;
+    }
+    setApiTestResults(results);
+    setIsTestingAllApis(false);
+    sounds.playSuccessChime();
+    showToast('All 14 external library APIs tested successfully.');
+  };
+
   // Page Kill-Switch / Maintenance Mode Toggle
   const togglePageStatus = (pageKey) => {
     const page = config.pageStatus?.[pageKey];
@@ -2023,6 +2114,7 @@ export default function DeveloperMasterPortal({ onImpersonate, onLogout }) {
       items: [
         { id: 'impersonator', label: '1-Click Impersonator', icon: Play, badge: 'OMNI', desc: 'Jump into any page/role' },
         { id: 'maintenance_broadcast', label: 'Broadcast & Upgrade Matrix', icon: Radio, badge: 'TARGETED', desc: 'Broadcast to Students, Admins, HODs & Staff + Maintenance Locks' },
+        { id: 'external_apis', label: 'External Library APIs Matrix', icon: Globe, badge: '14 FEDERATED', desc: 'Toggle & Test 14 Global Library APIs' },
         { id: 'features', label: 'Feature Flag Matrix', icon: ToggleRight, badge: 'ONLINE', desc: 'Activate E-Library features' },
         { id: 'pages', label: 'Kill-Switch Director', icon: Power, badge: 'EMERGENCY', desc: 'Disable/shut down pages' },
       ]
@@ -4990,6 +5082,229 @@ export default function DeveloperMasterPortal({ onImpersonate, onLogout }) {
         {activeTab === 'maintenance_broadcast' && (
           <div className="space-y-6 animate-fadeIn font-mono">
             <DeveloperMaintenanceBroadcastController showToast={showToast} />
+          </div>
+        )}
+
+        {/* ==============================================================
+            TAB: EXTERNAL LIBRARY APIS & FEDERATED SEARCH ENGINE MATRIX
+        ============================================================== */}
+        {activeTab === 'external_apis' && (
+          <div className="space-y-6 animate-fadeIn font-mono">
+            {/* Header / Hero Banner */}
+            <section className="bg-gradient-to-br from-[#061427]/90 via-[#07101f]/95 to-[#021810]/90 border border-cyan-800/60 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-cyan-900/60 pb-6 relative z-10">
+                <div className="space-y-2 max-w-2xl">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/80 border border-cyan-500/50 text-cyan-300 text-[11px] font-black uppercase tracking-wider">
+                    <Globe size={13} className="text-cyan-400 animate-spin-slow" />
+                    <span>Global Federated Scholarly Engine • 14 External World Libraries</span>
+                  </div>
+                  <h1 className="text-xl sm:text-2xl font-black text-white tracking-wide flex items-center gap-2">
+                    <span>External Library APIs Master Matrix &amp; Kill-Switch Controls</span>
+                  </h1>
+                  <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-sans">
+                    Full developer authority to toggle individual external library APIs ON/OFF in real-time. When toggled OFF,
+                    the search engine skips that API globally across the Public OPAC, Student Scholar Portal, and Journal Directories.
+                  </p>
+                </div>
+
+                {/* Status Summary Counters */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="bg-[#030a16] border border-cyan-700/60 rounded-2xl px-4 py-3 text-center min-w-[100px]">
+                    <div className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider">Total APIs</div>
+                    <div className="text-2xl font-black text-white mt-0.5">14</div>
+                    <div className="text-[9px] text-slate-400">Integrated</div>
+                  </div>
+                  <div className="bg-[#032217] border border-emerald-500/60 rounded-2xl px-4 py-3 text-center min-w-[100px]">
+                    <div className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Active APIs</div>
+                    <div className="text-2xl font-black text-emerald-300 mt-0.5">
+                      {Object.values(config.externalLibraryApis || {}).filter(a => a.enabled !== false).length}
+                    </div>
+                    <div className="text-[9px] text-emerald-400/80 font-bold">ONLINE</div>
+                  </div>
+                  <div className="bg-[#240810] border border-rose-700/60 rounded-2xl px-4 py-3 text-center min-w-[100px]">
+                    <div className="text-[10px] text-rose-400 font-bold uppercase tracking-wider">Muted APIs</div>
+                    <div className="text-2xl font-black text-rose-300 mt-0.5">
+                      {Object.values(config.externalLibraryApis || {}).filter(a => a.enabled === false).length}
+                    </div>
+                    <div className="text-[9px] text-rose-400/80 font-bold">MUTED</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bulk Actions & Filter Bar */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 relative z-10">
+                <div className="relative flex-1 max-w-md">
+                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={externalApiSearch}
+                    onChange={(e) => setExternalApiSearch(e.target.value)}
+                    placeholder="Search by API name, provider, category..."
+                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-[#030914] border border-slate-700/80 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition"
+                  />
+                  {externalApiSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setExternalApiSearch('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleBulkExternalApis(true)}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-xs shadow-lg shadow-emerald-950/50 flex items-center gap-1.5 transition cursor-pointer active:scale-95"
+                  >
+                    <Check size={14} />
+                    <span>Activate All (14 ON)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkExternalApis(false)}
+                    className="px-4 py-2 rounded-xl bg-rose-950 hover:bg-rose-900 border border-rose-700/80 text-rose-300 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer active:scale-95"
+                  >
+                    <Power size={14} />
+                    <span>Emergency Kill-Switch (All OFF)</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isTestingAllApis}
+                    onClick={handleTestAllApis}
+                    className="px-4 py-2 rounded-xl bg-cyan-950 hover:bg-cyan-900 border border-cyan-700/80 text-cyan-300 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 active:scale-95"
+                  >
+                    <RefreshCw size={14} className={isTestingAllApis ? 'animate-spin' : ''} />
+                    <span>{isTestingAllApis ? 'Pinging APIs...' : 'Ping & Test All'}</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            {/* Grid of All 14 External Library APIs */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {Object.entries(config.externalLibraryApis || {})
+                .filter(([id, item]) => {
+                  if (!externalApiSearch) return true;
+                  const term = externalApiSearch.toLowerCase();
+                  return (
+                    (item.name && item.name.toLowerCase().includes(term)) ||
+                    (item.provider && item.provider.toLowerCase().includes(term)) ||
+                    (item.category && item.category.toLowerCase().includes(term)) ||
+                    id.toLowerCase().includes(term)
+                  );
+                })
+                .map(([id, item]) => {
+                  const isEnabled = item.enabled !== false;
+                  const testRes = apiTestResults[id];
+                  const isTesting = testingApiId === id;
+                  const meta = EXTERNAL_API_METADATA[id] || {};
+
+                  return (
+                    <div
+                      key={id}
+                      className={`rounded-3xl border p-5 transition flex flex-col justify-between gap-4 ${
+                        isEnabled
+                          ? 'bg-[#04101e]/90 border-cyan-800/70 shadow-lg shadow-cyan-950/30'
+                          : 'bg-[#080b12]/80 border-slate-800/80 opacity-75'
+                      }`}
+                    >
+                      {/* Top Row: Provider & Category Badges + Toggle Switch */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className="text-[11px] font-black px-2.5 py-0.5 rounded-lg border flex items-center gap-1 shadow-sm"
+                              style={{
+                                backgroundColor: isEnabled ? `${item.color || '#0d9488'}22` : '#1e293b',
+                                borderColor: isEnabled ? (item.color || '#0d9488') : '#475569',
+                                color: isEnabled ? (item.color || '#2dd4bf') : '#94a3b8'
+                              }}
+                            >
+                              <span>{item.badge || meta.badge || id.toUpperCase()}</span>
+                            </span>
+                            <span className="text-[10px] text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                              {item.category || meta.category || 'Academic Literature'}
+                            </span>
+                          </div>
+                          <h3 className="text-sm sm:text-base font-black text-white tracking-wide">
+                            {item.name || meta.name || id}
+                          </h3>
+                          <div className="text-[11px] text-cyan-300 font-sans flex items-center gap-1.5">
+                            <span className="text-slate-400">Provider:</span>
+                            <span className="font-semibold text-slate-200">{item.provider || meta.provider}</span>
+                          </div>
+                        </div>
+
+                        {/* Power ON/OFF Toggle Button */}
+                        <button
+                          type="button"
+                          onClick={() => toggleExternalApiItem(id)}
+                          className={`px-3.5 py-2 rounded-2xl font-black text-xs shrink-0 flex items-center gap-1.5 transition cursor-pointer shadow-md active:scale-95 ${
+                            isEnabled
+                              ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-950/40'
+                              : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700'
+                          }`}
+                        >
+                          <Power size={13} />
+                          <span>{isEnabled ? 'ONLINE' : 'MUTED'}</span>
+                        </button>
+                      </div>
+
+                      {/* Description */}
+                      <p className="text-[11px] text-slate-300 font-sans leading-relaxed">
+                        {item.description || meta.type}
+                      </p>
+
+                      {/* Bottom Diagnostics & Direct Test Row */}
+                      <div className="pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-block w-2 h-2 rounded-full ${isEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
+                          <span className={isEnabled ? 'text-emerald-400 font-bold' : 'text-slate-500 font-bold'}>
+                            {isEnabled ? 'Search Active' : 'Offline / Bypassed'}
+                          </span>
+
+                          {testRes && (
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                              testRes.success
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
+                                : 'bg-rose-950 text-rose-300 border border-rose-700'
+                            }`}>
+                              {testRes.success ? `200 OK • ${testRes.latencyMs}ms (${testRes.matchCount} recs)` : `FAIL • ${testRes.latencyMs}ms`}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {item.endpoint && (
+                            <a
+                              href={item.endpoint}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-slate-400 hover:text-cyan-300 flex items-center gap-1 transition"
+                            >
+                              <span>Docs</span>
+                              <ExternalLink size={10} />
+                            </a>
+                          )}
+                          <button
+                            type="button"
+                            disabled={isTesting}
+                            onClick={() => handleRunApiTest(id)}
+                            className="px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[10px] text-slate-200 font-bold flex items-center gap-1 cursor-pointer transition disabled:opacity-50"
+                          >
+                            <RefreshCw size={10} className={isTesting ? 'animate-spin text-cyan-400' : ''} />
+                            <span>{isTesting ? 'Testing...' : 'Test Ping'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
           </div>
         )}
 

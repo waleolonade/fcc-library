@@ -1,3 +1,4 @@
+
 -- =========================================================================
 -- FCC SMART LIBRARY & DIGITAL REPOSITORY - BOOK & METADATA REPAIR SCRIPT
 -- Database: gsashtub_brainfeels_library
@@ -20,6 +21,7 @@ SET title = 'Basics of Finance',
     department_name = 'Banking and Finance',
     status = 'approved',
     book_id = 'FCC-HOD-9314'
+    
 WHERE id = 'FCC-HOD-9314' OR book_id = 'FCC-HOD-9314';
 
 -- 2. Link any department_uploads row whose file_name matches 02.-Basics-of-Finance

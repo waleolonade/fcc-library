@@ -37,6 +37,7 @@ import {
   fetchLiveAcademicJournals,
   fetchLiveDissertationsAndProjects
 } from '../services/openSourceJournalsApi';
+import { fetchAllFederatedExternalLibraries, isApiActive, EXTERNAL_API_METADATA } from '../services/federatedLibrarySearchService';
 
 const DEFAULT_RECENT_SEARCHES = [];
 
@@ -388,21 +389,20 @@ export default function SmartCatalogSearch({
   const [liveScholarlyItems, setLiveScholarlyItems] = useState([]);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
 
-  // Fetch real Open-Access Academic Journals, Dissertations & Federated E-Resources (AGORA • JSTOR • ScienceDirect • EBSCO)
+  // Fetch real Open-Access Academic Journals, Dissertations & Federated E-Resources across all 14 World APIs concurrently
   useEffect(() => {
     let isMounted = true;
     const deptTopic = currentStudentDept?.name || 'computer science cooperative economics agriculture';
     const q = searchQuery.trim() ? `${searchQuery.trim()} ${deptTopic}` : deptTopic;
-    Promise.all([
+
+    Promise.allSettled([
       fetchLiveAcademicJournals({ query: q, perPage: 12 }),
       fetchLiveDissertationsAndProjects({ query: q, perPage: 8 }),
-      fetch(`/api/scholarly/search?query=${encodeURIComponent(q)}&per_page=8`)
-        .then(r => r.ok ? r.json() : null)
-        .catch(() => null)
-    ]).then(([journals, projects, scholarlyData]) => {
+      fetchAllFederatedExternalLibraries(q, { limit: 8 })
+    ]).then(([jRes, pRes, fedRes]) => {
       if (!isMounted) return;
-      if (Array.isArray(journals)) {
-        setLiveDeptJournals(journals.map(j => ({
+      if (jRes.status === 'fulfilled' && Array.isArray(jRes.value)) {
+        setLiveDeptJournals(jRes.value.map(j => ({
           ...j,
           department: currentStudentDept?.name || j.department,
           format: 'Journal',
@@ -410,8 +410,8 @@ export default function SmartCatalogSearch({
           targetLevel: normalizedStudentLevel
         })));
       }
-      if (Array.isArray(projects)) {
-        setLiveDeptProjects(projects.map(p => ({
+      if (pRes.status === 'fulfilled' && Array.isArray(pRes.value)) {
+        setLiveDeptProjects(pRes.value.map(p => ({
           ...p,
           department: currentStudentDept?.name || p.department,
           format: 'Student Project',
@@ -419,36 +419,36 @@ export default function SmartCatalogSearch({
           targetLevel: normalizedStudentLevel
         })));
       }
-      if (scholarlyData?.results && Array.isArray(scholarlyData.results)) {
-        setLiveScholarlyItems(scholarlyData.results.map(s => ({
+      if (fedRes.status === 'fulfilled' && fedRes.value?.allResults) {
+        setLiveScholarlyItems(fedRes.value.allResults.map(s => ({
           id: s.id,
           title: s.title,
-          subtitle: `${s.platform_badge} • ${s.source} (${s.year})`,
+          subtitle: `${s.platformBadge || '📚 Scholarly'} • ${s.source || s.platformName} (${s.year || 2024})`,
           author: s.author,
-          authorCredentials: `${s.platform} Peer-Reviewed Author`,
-          authorAffiliation: s.platform,
+          authorCredentials: `${s.platformName || s.platform} Contributor`,
+          authorAffiliation: s.platformName || s.platform,
           subject: s.discipline || currentStudentDept?.name || 'Academic Research',
           department: currentStudentDept?.name || 'Central Library Directorate',
-          format: 'E-Resource',
+          format: s.format || 'E-Resource',
           category: 'Scholarly',
           year: s.year,
           isDigital: true,
           isOnline: true,
           isLiveExternalJournal: true,
           sourceApi: s.platform,
-          platformBadge: s.platform_badge,
-          platformColor: s.platform_color,
+          platformBadge: s.platformBadge,
+          platformColor: s.platformColor,
           isOpenAccess: s.is_open_access,
-          accessType: s.access_type,
+          accessType: s.access_type || 'Scholarly Research',
           externalUrl: s.url,
-          portalUrl: s.portal_url,
+          portalUrl: s.url,
           pdfUrl: s.pdf_url || s.url,
-          coverImage: '/assets/no-cover.png',
-          callNumber: s.doi ? `DOI: ${s.doi}` : (s.issn ? `ISSN: ${s.issn}` : `${s.platform.toUpperCase()}-HOLDING`),
+          coverImage: s.coverUrl || '/assets/no-cover.png',
+          callNumber: s.doi ? `DOI: ${s.doi}` : (s.issn ? `ISSN: ${s.issn}` : `${(s.platform || 'API').toUpperCase()}-HOLDING`),
           rating: 5.0,
           copiesAvailable: 1,
           copiesTotal: 1,
-          abstract: `Scholarly peer-reviewed literature indexed across ${s.platform} research portal.`
+          abstract: `Scholarly peer-reviewed literature indexed across ${s.platformName || s.platform} research portal.`
         })));
       }
     }).catch(() => {});

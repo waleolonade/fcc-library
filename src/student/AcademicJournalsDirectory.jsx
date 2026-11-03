@@ -6,6 +6,7 @@ import {
   ArrowUpRight, Copy, BookMarked, Hash, Info, Library
 } from 'lucide-react';
 import TroveExplorer from './TroveExplorer';
+import { isApiActive } from '../services/federatedLibrarySearchService';
 
 // FCC Flagship Institutional Scholar Journals
 const SCHOLARLY_JOURNALS = [
@@ -178,6 +179,12 @@ export default function AcademicJournalsDirectory({
 
   // Fetch OpenAlex Sources / Journals API (with direct CORS-enabled fallback)
   const fetchOpenAlexJournals = async (query = searchQuery, targetPage = 1) => {
+    if (!isApiActive('openalex')) {
+      setOpenAlexJournals([]);
+      setOpenAlexError('OpenAlex API is temporarily offline / muted by the Lead Developer.');
+      setOpenAlexLoading(false);
+      return;
+    }
     setOpenAlexLoading(true);
     setOpenAlexError(null);
 

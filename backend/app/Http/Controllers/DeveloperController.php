@@ -111,6 +111,17 @@ class DeveloperController extends Controller
             $config = $this->getDefaultConfig();
         }
 
+        if (!isset($config['externalLibraryApis']) || !is_array($config['externalLibraryApis'])) {
+            $config['externalLibraryApis'] = $this->getDefaultExternalApis();
+        } else {
+            $defaults = $this->getDefaultExternalApis();
+            foreach ($defaults as $k => $def) {
+                if (!isset($config['externalLibraryApis'][$k])) {
+                    $config['externalLibraryApis'][$k] = $def;
+                }
+            }
+        }
+
         if ($customLogo) {
             $config['branding']['logoUrl'] = $customLogo;
         }
@@ -2377,8 +2388,345 @@ class DeveloperController extends Controller
                 'syllabusMandatorySync' => ['id' => 'syllabusMandatorySync', 'label' => 'Mandatory Syllabus Reading List Sync', 'enabled' => true, 'badge' => 'Accreditation'],
                 'recommendationWorkflow' => ['id' => 'recommendationWorkflow', 'label' => 'Fast-Track Dean Approval Queue', 'enabled' => true, 'badge' => 'Procurement'],
                 'handoutLocker' => ['id' => 'handoutLocker', 'label' => 'Department E-Handout Distribution Locker', 'enabled' => true, 'badge' => 'Classroom']
+            ],
+            'externalLibraryApis' => $this->getDefaultExternalApis()
+        ];
+    }
+
+    /**
+     * Master Default Catalog for All 14 External Library APIs
+     */
+    public function getDefaultExternalApis()
+    {
+        return [
+            'sciencedirect' => [
+                'id' => 'sciencedirect',
+                'name' => 'Elsevier ScienceDirect & Scopus',
+                'provider' => 'Elsevier B.V.',
+                'category' => 'Peer-Reviewed Science, Engineering & Medicine',
+                'badge' => 'Live Elsevier Key',
+                'color' => '#ff6f00',
+                'enabled' => true,
+                'description' => 'Direct searching across 18M+ peer-reviewed articles, citations, and abstracts with live Elsevier API Key.',
+                'endpoint' => 'https://api.elsevier.com/content/search/scopus'
+            ],
+            'agora' => [
+                'id' => 'agora',
+                'name' => 'AGORA (Research4Life / FAO AGRIS)',
+                'provider' => 'Food and Agriculture Organization (FAO / UN)',
+                'category' => 'Agriculture & Life Sciences',
+                'badge' => 'Research4Life Gateway',
+                'color' => '#16a34a',
+                'enabled' => true,
+                'description' => 'Global literature on agriculture, veterinary, food security, and rural cooperative economics.',
+                'endpoint' => 'https://agora.research4life.org/'
+            ],
+            'jstor' => [
+                'id' => 'jstor',
+                'name' => 'JSTOR Academic Repository',
+                'provider' => 'ITHAKA / JSTOR',
+                'category' => 'Humanities & Social Sciences',
+                'badge' => 'Scholarly Archive',
+                'color' => '#991b1b',
+                'enabled' => true,
+                'description' => 'Archival and primary sources, journals, and monographs across humanities and social sciences.',
+                'endpoint' => 'https://www.jstor.org/'
+            ],
+            'ebsco' => [
+                'id' => 'ebsco',
+                'name' => 'EBSCOhost Discovery & Research Databases',
+                'provider' => 'EBSCO Information Services',
+                'category' => 'Multidisciplinary Periodicals',
+                'badge' => 'EDS Gateway',
+                'color' => '#0284c7',
+                'enabled' => true,
+                'description' => 'Academic Search, Business Source, and periodical indexing across thousands of publishers.',
+                'endpoint' => 'https://search.ebscohost.com/'
+            ],
+            'openalex' => [
+                'id' => 'openalex',
+                'name' => 'OpenAlex Scholarly Engine',
+                'provider' => 'OurResearch (CC0 Open Catalog)',
+                'category' => 'Global Research Index',
+                'badge' => '250M+ Papers',
+                'color' => '#0d9488',
+                'enabled' => true,
+                'description' => 'Massive open index of scholarly papers, authors, citations, institutions, and topics.',
+                'endpoint' => 'https://api.openalex.org/works'
+            ],
+            'google_books' => [
+                'id' => 'google_books',
+                'name' => 'Google Books API',
+                'provider' => 'Google LLC',
+                'category' => 'World Book Index',
+                'badge' => 'Global Monograph',
+                'color' => '#4285f4',
+                'enabled' => true,
+                'description' => 'Search comprehensive previews, bibliographic metadata, and digitized pages worldwide.',
+                'endpoint' => 'https://www.googleapis.com/books/v1/volumes'
+            ],
+            'openlibrary' => [
+                'id' => 'openlibrary',
+                'name' => 'Open Library Catalog',
+                'provider' => 'Internet Archive',
+                'category' => 'Universal Library',
+                'badge' => 'Open Lending',
+                'color' => '#e11d48',
+                'enabled' => true,
+                'description' => 'Open, editable library catalog for every book ever published with covers and borrowing editions.',
+                'endpoint' => 'https://openlibrary.org/search.json'
+            ],
+            'gutenberg' => [
+                'id' => 'gutenberg',
+                'name' => 'Project Gutenberg (Gutendex)',
+                'provider' => 'Project Gutenberg Literary Archive',
+                'category' => 'Public Domain Classics',
+                'badge' => '70,000+ E-Books',
+                'color' => '#d97706',
+                'enabled' => true,
+                'description' => 'Free digital library of public domain classics available in full EPUB, HTML, and text.',
+                'endpoint' => 'https://gutendex.com/books'
+            ],
+            'archive' => [
+                'id' => 'archive',
+                'name' => 'Internet Archive Books & Texts',
+                'provider' => 'Internet Archive',
+                'category' => 'Digital Preservation',
+                'badge' => 'Full PDF Scans',
+                'color' => '#475569',
+                'enabled' => true,
+                'description' => 'Millions of scanned historical books, academic manuscripts, and open PDF downloads.',
+                'endpoint' => 'https://archive.org/advancedsearch.php'
+            ],
+            'europe_pmc' => [
+                'id' => 'europe_pmc',
+                'name' => 'Europe PMC Open Access',
+                'provider' => 'EMBL-EBI',
+                'category' => 'Life Sciences & Biomedicine',
+                'badge' => 'Full-Text OA',
+                'color' => '#059669',
+                'enabled' => true,
+                'description' => 'Worldwide life sciences research papers, PubMed Central Europe full-text articles.',
+                'endpoint' => 'https://www.ebi.ac.uk/europepmc/webservices/rest/search'
+            ],
+            'crossref' => [
+                'id' => 'crossref',
+                'name' => 'CrossRef Metadata Search',
+                'provider' => 'Crossref',
+                'category' => 'Official DOI Registry',
+                'badge' => 'DOI Engine',
+                'color' => '#ea580c',
+                'enabled' => true,
+                'description' => 'Authoritative metadata for 150M+ academic journal articles, books, and proceedings via DOI.',
+                'endpoint' => 'https://api.crossref.org/works'
+            ],
+            'doaj' => [
+                'id' => 'doaj',
+                'name' => 'DOAJ (Directory of Open Access Journals)',
+                'provider' => 'Infrastructure Services for Open Access',
+                'category' => 'Peer-Reviewed Open Access',
+                'badge' => 'Vetted Quality',
+                'color' => '#ca8a04',
+                'enabled' => true,
+                'description' => 'Curated directory of peer-reviewed open access journals and articles across all disciplines.',
+                'endpoint' => 'https://doaj.org/api/v2/search/articles'
+            ],
+            'trove' => [
+                'id' => 'trove',
+                'name' => 'Trove National Archives',
+                'provider' => 'National Library of Australia',
+                'category' => 'National Archive',
+                'badge' => 'Historical Digits',
+                'color' => '#0891b2',
+                'enabled' => true,
+                'description' => 'Digitized historical books, manuscripts, parliamentary papers, gazettes, and maps.',
+                'endpoint' => 'https://api.trove.nla.gov.au/v3/result'
+            ],
+            'core' => [
+                'id' => 'core',
+                'name' => 'CORE Open Access Research',
+                'provider' => 'CORE (Open University & Jisc)',
+                'category' => 'Institutional Repositories',
+                'badge' => 'Open Repository',
+                'color' => '#6366f1',
+                'enabled' => true,
+                'description' => 'Aggregator of open access research papers from thousands of institutional repositories globally.',
+                'endpoint' => 'https://api.core.ac.uk/v3/search/works'
             ]
         ];
+    }
+
+    /**
+     * GET /api/developer/external-apis
+     */
+    public function getExternalApis(Request $request)
+    {
+        $row = DB::table('library_settings')
+            ->where('setting_key', 'fcc_developer_master_config')
+            ->first();
+        $config = $row ? json_decode($row->setting_value, true) : null;
+        $apis = $config['externalLibraryApis'] ?? $this->getDefaultExternalApis();
+
+        // Ensure all defaults are present
+        $defaults = $this->getDefaultExternalApis();
+        foreach ($defaults as $k => $def) {
+            if (!isset($apis[$k])) {
+                $apis[$k] = $def;
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'apis' => $apis
+        ]);
+    }
+
+    /**
+     * POST /api/developer/external-apis/toggle
+     * Toggle individual external library API ON/OFF with live audit log
+     */
+    public function toggleExternalApi(Request $request)
+    {
+        if (!$this->verifyPasskey($request)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'ACCESS DENIED: Developer Passkey required to modify external library APIs.'
+            ], 403);
+        }
+
+        $apiId = $request->input('api_id');
+        $enabled = (bool)$request->input('enabled', true);
+
+        if (empty($apiId)) {
+            return response()->json(['success' => false, 'error' => 'Missing api_id parameter.'], 400);
+        }
+
+        $row = DB::table('library_settings')
+            ->where('setting_key', 'fcc_developer_master_config')
+            ->first();
+        $config = $row ? json_decode($row->setting_value, true) : $this->getDefaultConfig();
+
+        if (!isset($config['externalLibraryApis']) || !is_array($config['externalLibraryApis'])) {
+            $config['externalLibraryApis'] = $this->getDefaultExternalApis();
+        }
+
+        if (isset($config['externalLibraryApis'][$apiId])) {
+            $config['externalLibraryApis'][$apiId]['enabled'] = $enabled;
+        } else {
+            $defaults = $this->getDefaultExternalApis();
+            $base = $defaults[$apiId] ?? ['id' => $apiId, 'name' => ucfirst($apiId)];
+            $base['enabled'] = $enabled;
+            $config['externalLibraryApis'][$apiId] = $base;
+        }
+
+        DB::table('library_settings')->updateOrInsert(
+            ['setting_key' => 'fcc_developer_master_config'],
+            [
+                'setting_value' => json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
+                'setting_group' => 'Developer',
+                'value_type' => 'json',
+                'is_public' => true,
+                'updated_at' => now()
+            ]
+        );
+
+        $this->recordAudit(
+            'DEV-ROOT',
+            'DEVELOPER',
+            $enabled ? 'ACTIVATE_EXTERNAL_API' : 'DEACTIVATE_EXTERNAL_API',
+            'EXTERNAL_API',
+            $apiId,
+            "Developer switched external library API [{$apiId}] to " . ($enabled ? 'ONLINE' : 'OFFLINE'),
+            $request->ip()
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => "External library API [{$apiId}] is now " . ($enabled ? 'ONLINE' : 'OFFLINE'),
+            'api_id' => $apiId,
+            'enabled' => $enabled,
+            'apis' => $config['externalLibraryApis']
+        ]);
+    }
+
+    /**
+     * POST /api/developer/external-apis/bulk
+     * Turn all 14 external library APIs ON or OFF simultaneously
+     */
+    public function bulkToggleExternalApis(Request $request)
+    {
+        if (!$this->verifyPasskey($request)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'ACCESS DENIED: Developer Passkey required.'
+            ], 403);
+        }
+
+        $enableAll = (bool)$request->input('enable_all', true);
+
+        $row = DB::table('library_settings')
+            ->where('setting_key', 'fcc_developer_master_config')
+            ->first();
+        $config = $row ? json_decode($row->setting_value, true) : $this->getDefaultConfig();
+
+        if (!isset($config['externalLibraryApis']) || !is_array($config['externalLibraryApis'])) {
+            $config['externalLibraryApis'] = $this->getDefaultExternalApis();
+        }
+
+        foreach ($config['externalLibraryApis'] as $k => $v) {
+            $config['externalLibraryApis'][$k]['enabled'] = $enableAll;
+        }
+
+        DB::table('library_settings')->updateOrInsert(
+            ['setting_key' => 'fcc_developer_master_config'],
+            [
+                'setting_value' => json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
+                'setting_group' => 'Developer',
+                'value_type' => 'json',
+                'is_public' => true,
+                'updated_at' => now()
+            ]
+        );
+
+        $this->recordAudit(
+            'DEV-ROOT',
+            'DEVELOPER',
+            $enableAll ? 'BULK_ENABLE_EXTERNAL_APIS' : 'BULK_DISABLE_EXTERNAL_APIS',
+            'EXTERNAL_APIS',
+            'ALL',
+            "Bulk set all 14 external library APIs to " . ($enableAll ? 'ONLINE' : 'OFFLINE'),
+            $request->ip()
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => "All 14 external library APIs have been switched " . ($enableAll ? 'ONLINE' : 'OFFLINE'),
+            'apis' => $config['externalLibraryApis']
+        ]);
+    }
+
+    /**
+     * GET /api/external-apis/status (Public endpoint for OPAC and Student search clients)
+     */
+    public function getPublicExternalApisStatus()
+    {
+        $row = DB::table('library_settings')
+            ->where('setting_key', 'fcc_developer_master_config')
+            ->first();
+        $config = $row ? json_decode($row->setting_value, true) : null;
+        $apis = $config['externalLibraryApis'] ?? $this->getDefaultExternalApis();
+
+        $defaults = $this->getDefaultExternalApis();
+        foreach ($defaults as $k => $def) {
+            if (!isset($apis[$k])) {
+                $apis[$k] = $def;
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'apis' => $apis
+        ]);
     }
 
     /**

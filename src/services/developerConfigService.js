@@ -217,6 +217,148 @@ export const DEFAULT_CONFIG = {
       { id: 'ai_cataloguer', name: 'AI Deep PDF Analyzer & MARC21', visible: true, locked: false },
       { id: 'overdue_broadcaster', name: 'Automated Overdue Reminder Dispatcher', visible: true, locked: false }
     ]
+  },
+  externalLibraryApis: {
+    sciencedirect: {
+      id: 'sciencedirect',
+      name: 'Elsevier ScienceDirect & Scopus',
+      provider: 'Elsevier B.V.',
+      category: 'Peer-Reviewed Science, Engineering & Medicine',
+      badge: 'Live Elsevier Key',
+      color: '#ff6f00',
+      enabled: true,
+      description: 'Direct searching across 18M+ peer-reviewed articles, citations, and abstracts with live Elsevier API Key.'
+    },
+    agora: {
+      id: 'agora',
+      name: 'AGORA (Research4Life / FAO AGRIS)',
+      provider: 'Food and Agriculture Organization (FAO / UN)',
+      category: 'Agriculture & Life Sciences',
+      badge: 'Research4Life Gateway',
+      color: '#16a34a',
+      enabled: true,
+      description: 'Global literature on agriculture, veterinary, food security, and rural cooperative economics.'
+    },
+    jstor: {
+      id: 'jstor',
+      name: 'JSTOR Academic Repository',
+      provider: 'ITHAKA / JSTOR',
+      category: 'Humanities & Social Sciences',
+      badge: 'Scholarly Archive',
+      color: '#991b1b',
+      enabled: true,
+      description: 'Archival and primary sources, journals, and monographs across humanities and social sciences.'
+    },
+    ebsco: {
+      id: 'ebsco',
+      name: 'EBSCOhost Discovery & Research Databases',
+      provider: 'EBSCO Information Services',
+      category: 'Multidisciplinary Periodicals',
+      badge: 'EDS Gateway',
+      color: '#0284c7',
+      enabled: true,
+      description: 'Academic Search, Business Source, and periodical indexing across thousands of publishers.'
+    },
+    openalex: {
+      id: 'openalex',
+      name: 'OpenAlex Scholarly Engine',
+      provider: 'OurResearch (CC0 Open Catalog)',
+      category: 'Global Research Index',
+      badge: '250M+ Papers',
+      color: '#0d9488',
+      enabled: true,
+      description: 'Massive open index of scholarly papers, authors, citations, institutions, and topics.'
+    },
+    google_books: {
+      id: 'google_books',
+      name: 'Google Books API',
+      provider: 'Google LLC',
+      category: 'World Book Index',
+      badge: 'Global Monograph',
+      color: '#4285f4',
+      enabled: true,
+      description: 'Search comprehensive previews, bibliographic metadata, and digitized pages worldwide.'
+    },
+    openlibrary: {
+      id: 'openlibrary',
+      name: 'Open Library Catalog',
+      provider: 'Internet Archive',
+      category: 'Universal Library',
+      badge: 'Open Lending',
+      color: '#e11d48',
+      enabled: true,
+      description: 'Open, editable library catalog for every book ever published with covers and borrowing editions.'
+    },
+    gutenberg: {
+      id: 'gutenberg',
+      name: 'Project Gutenberg (Gutendex)',
+      provider: 'Project Gutenberg Literary Archive',
+      category: 'Public Domain Classics',
+      badge: '70,000+ E-Books',
+      color: '#d97706',
+      enabled: true,
+      description: 'Free digital library of public domain classics available in full EPUB, HTML, and text.'
+    },
+    archive: {
+      id: 'archive',
+      name: 'Internet Archive Books & Texts',
+      provider: 'Internet Archive',
+      category: 'Digital Preservation',
+      badge: 'Full PDF Scans',
+      color: '#475569',
+      enabled: true,
+      description: 'Millions of scanned historical books, academic manuscripts, and open PDF downloads.'
+    },
+    europe_pmc: {
+      id: 'europe_pmc',
+      name: 'Europe PMC Open Access',
+      provider: 'EMBL-EBI',
+      category: 'Life Sciences & Biomedicine',
+      badge: 'Full-Text OA',
+      color: '#059669',
+      enabled: true,
+      description: 'Worldwide life sciences research papers, PubMed Central Europe full-text articles.'
+    },
+    crossref: {
+      id: 'crossref',
+      name: 'CrossRef Metadata Search',
+      provider: 'Crossref',
+      category: 'Official DOI Registry',
+      badge: 'DOI Engine',
+      color: '#ea580c',
+      enabled: true,
+      description: 'Authoritative metadata for 150M+ academic journal articles, books, and proceedings via DOI.'
+    },
+    doaj: {
+      id: 'doaj',
+      name: 'DOAJ (Directory of Open Access Journals)',
+      provider: 'Infrastructure Services for Open Access',
+      category: 'Peer-Reviewed Open Access',
+      badge: 'Vetted Quality',
+      color: '#ca8a04',
+      enabled: true,
+      description: 'Curated directory of peer-reviewed open access journals and articles across all disciplines.'
+    },
+    trove: {
+      id: 'trove',
+      name: 'Trove National Archives',
+      provider: 'National Library of Australia',
+      category: 'National Archive',
+      badge: 'Historical Digits',
+      color: '#0891b2',
+      enabled: true,
+      description: 'Digitized historical books, manuscripts, parliamentary papers, gazettes, and maps.'
+    },
+    core: {
+      id: 'core',
+      name: 'CORE Open Access Research',
+      provider: 'CORE (Open University & Jisc)',
+      category: 'Institutional Repositories',
+      badge: 'Open Repository',
+      color: '#6366f1',
+      enabled: true,
+      description: 'Aggregator of open access research papers from thousands of institutional repositories globally.'
+    }
   }
 };
 
@@ -313,6 +455,7 @@ export const developerConfigService = {
         adminFeatures: { ...DEFAULT_CONFIG.adminFeatures, ...(parsed.adminFeatures || {}) },
         hodFeatures: { ...DEFAULT_CONFIG.hodFeatures, ...(parsed.hodFeatures || {}) },
         systemFunctions: { ...DEFAULT_CONFIG.systemFunctions, ...(parsed.systemFunctions || {}) },
+        externalLibraryApis: { ...DEFAULT_CONFIG.externalLibraryApis, ...(parsed.externalLibraryApis || {}) },
         layoutBlocks: { ...DEFAULT_CONFIG.layoutBlocks, ...(parsed.layoutBlocks || {}) }
       };
     } catch {
@@ -386,6 +529,7 @@ export const developerConfigService = {
             adminFeatures: { ...DEFAULT_CONFIG.adminFeatures, ...(data.config.adminFeatures || {}) },
             hodFeatures: { ...DEFAULT_CONFIG.hodFeatures, ...(data.config.hodFeatures || {}) },
             systemFunctions: { ...DEFAULT_CONFIG.systemFunctions, ...(data.config.systemFunctions || {}) },
+            externalLibraryApis: { ...DEFAULT_CONFIG.externalLibraryApis, ...(data.config.externalLibraryApis || {}) },
             layoutBlocks: { ...DEFAULT_CONFIG.layoutBlocks, ...(data.config.layoutBlocks || {}) }
           };
           localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
@@ -422,6 +566,47 @@ export const developerConfigService = {
       });
     } catch (e) {}
     return DEFAULT_CONFIG;
+  },
+
+  isExternalApiEnabled(apiId) {
+    const config = this.getConfig();
+    const apis = config.externalLibraryApis || DEFAULT_CONFIG.externalLibraryApis;
+    if (apis && apis[apiId] !== undefined) {
+      return apis[apiId].enabled !== false;
+    }
+    return true;
+  },
+
+  getExternalApis() {
+    const config = this.getConfig();
+    return config.externalLibraryApis || DEFAULT_CONFIG.externalLibraryApis;
+  },
+
+  async toggleExternalApi(apiId, enabled, passkey = DEV_DEFAULT_PASSKEY) {
+    const current = this.getConfig();
+    const apis = { ...(current.externalLibraryApis || DEFAULT_CONFIG.externalLibraryApis) };
+    if (apis[apiId]) {
+      apis[apiId] = { ...apis[apiId], enabled };
+    } else {
+      const def = DEFAULT_CONFIG.externalLibraryApis[apiId] || { id: apiId, name: apiId };
+      apis[apiId] = { ...def, enabled };
+    }
+    const updated = { ...current, externalLibraryApis: apis };
+    await this.saveConfig(updated, passkey);
+    window.dispatchEvent(new CustomEvent('fcc-external-apis-updated', { detail: apis }));
+    return apis;
+  },
+
+  async bulkToggleExternalApis(enableAll, passkey = DEV_DEFAULT_PASSKEY) {
+    const current = this.getConfig();
+    const apis = { ...(current.externalLibraryApis || DEFAULT_CONFIG.externalLibraryApis) };
+    for (const key of Object.keys(apis)) {
+      apis[key] = { ...apis[key], enabled: enableAll };
+    }
+    const updated = { ...current, externalLibraryApis: apis };
+    await this.saveConfig(updated, passkey);
+    window.dispatchEvent(new CustomEvent('fcc-external-apis-updated', { detail: apis }));
+    return apis;
   },
 
   verifyDevPassword(inputPassword) {

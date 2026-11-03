@@ -611,7 +611,15 @@ Route::prefix('developer')->group(function () {
     // Targeted Broadcast & Maintenance/Upgrade Matrix (Students, Admins, HODs, Staff under HODs)
     Route::get('/maintenance-broadcasts', [\App\Http\Controllers\DeveloperController::class, 'getMaintenanceBroadcasts']);
     Route::post('/maintenance-broadcasts', [\App\Http\Controllers\DeveloperController::class, 'updateMaintenanceBroadcast']);
+
+    // Master External Library APIs & Federated Search Engine Matrix (Full Developer Control)
+    Route::get('/external-apis', [\App\Http\Controllers\DeveloperController::class, 'getExternalApis']);
+    Route::post('/external-apis/toggle', [\App\Http\Controllers\DeveloperController::class, 'toggleExternalApi']);
+    Route::post('/external-apis/bulk', [\App\Http\Controllers\DeveloperController::class, 'bulkToggleExternalApis']);
 });
+
+// Public External Library APIs Status for OPAC & Student Portals
+Route::get('/external-apis/status', [\App\Http\Controllers\DeveloperController::class, 'getPublicExternalApisStatus']);
 
 // System Maintenance Broadcast & Real-Time Alerts (Public/Client Dashboards)
 Route::get('/system/maintenance-broadcasts', [\App\Http\Controllers\DeveloperController::class, 'getPublicMaintenanceBroadcasts']);

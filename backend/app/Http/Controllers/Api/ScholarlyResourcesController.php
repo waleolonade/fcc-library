@@ -6,11 +6,43 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class ScholarlyResourcesController extends Controller
 {
     /**
-     * Unified Federated E-Resource Search across AGORA, JSTOR, ScienceDirect, and EBSCOhost.
+     * Retrieve live Developer External Library APIs configuration
+     */
+    protected function getExternalApisConfig(): array
+    {
+        try {
+            $row = DB::table('library_settings')
+                ->where('setting_key', 'fcc_developer_master_config')
+                ->first();
+            if ($row && !empty($row->setting_value)) {
+                $cfg = json_decode($row->setting_value, true);
+                if (!empty($cfg['externalLibraryApis']) && is_array($cfg['externalLibraryApis'])) {
+                    return $cfg['externalLibraryApis'];
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        return [];
+    }
+
+    /**
+     * Check if a specific external library API is enabled by the developer
+     */
+    protected function isApiEnabled(string $apiId, array $config): bool
+    {
+        if (isset($config[$apiId])) {
+            return !empty($config[$apiId]['enabled']);
+        }
+        return true; // Default enabled unless developer toggles OFF
+    }
+
+    /**
+     * Unified Federated E-Resource Search across AGORA, JSTOR, ScienceDirect, EBSCOhost, DOAJ, Europe PMC, and CORE.
      */
     public function search(Request $request)
     {
@@ -23,7 +55,9 @@ class ScholarlyResourcesController extends Controller
         $perPlatform = (int) $request->input('per_page', 8);
         $perPlatform = max(2, min($perPlatform, 25));
 
-        $cacheKey = 'scholarly_search_' . md5($rawQuery . '_' . $platformFilter . '_' . $perPlatform);
+        $apiConfig = $this->getExternalApisConfig();
+
+        $cacheKey = 'scholarly_search_' . md5($rawQuery . '_' . $platformFilter . '_' . $perPlatform . '_' . serialize($apiConfig));
         
         $cached = Cache::get($cacheKey);
         if ($cached) {
@@ -32,8 +66,8 @@ class ScholarlyResourcesController extends Controller
 
         $results = [];
 
-        // 1. ScienceDirect / Scopus (Elsevier)
-        if ($platformFilter === 'all' || str_contains($platformFilter, 'sciencedirect') || str_contains($platformFilter, 'elsevier')) {
+        // 1. ScienceDirect / Scopus (Elsevier) - Check Developer Kill-Switch
+        if ($this->isApiEnabled('sciencedirect', $apiConfig) && ($platformFilter === 'all' || str_contains($platformFilter, 'sciencedirect') || str_contains($platformFilter, 'elsevier'))) {
             try {
                 $elsevierResults = $this->queryScienceDirect($rawQuery, $perPlatform);
                 $results = array_merge($results, $elsevierResults);
@@ -41,7 +75,7 @@ class ScholarlyResourcesController extends Controller
         }
 
         // 2. AGORA (Research4Life - Agriculture, Forestry, Veterinary, Environmental Sciences)
-        if ($platformFilter === 'all' || str_contains($platformFilter, 'agora') || str_contains($platformFilter, 'research4life')) {
+        if ($this->isApiEnabled('agora', $apiConfig) && ($platformFilter === 'all' || str_contains($platformFilter, 'agora') || str_contains($platformFilter, 'research4life'))) {
             try {
                 $agoraResults = $this->queryAgora($rawQuery, $perPlatform);
                 $results = array_merge($results, $agoraResults);
@@ -49,7 +83,7 @@ class ScholarlyResourcesController extends Controller
         }
 
         // 3. JSTOR (Humanities, Social Sciences, Economics, Business, Multidisciplinary)
-        if ($platformFilter === 'all' || str_contains($platformFilter, 'jstor')) {
+        if ($this->isApiEnabled('jstor', $apiConfig) && ($platformFilter === 'all' || str_contains($platformFilter, 'jstor'))) {
             try {
                 $jstorResults = $this->queryJstor($rawQuery, $perPlatform);
                 $results = array_merge($results, $jstorResults);
@@ -57,10 +91,26 @@ class ScholarlyResourcesController extends Controller
         }
 
         // 4. EBSCOhost (Academic Search Complete, Business Source, CINAHL)
-        if ($platformFilter === 'all' || str_contains($platformFilter, 'ebsco')) {
+        if ($this->isApiEnabled('ebsco', $apiConfig) && ($platformFilter === 'all' || str_contains($platformFilter, 'ebsco'))) {
             try {
                 $ebscoResults = $this->queryEbsco($rawQuery, $perPlatform);
                 $results = array_merge($results, $ebscoResults);
+            } catch (\Throwable $e) {}
+        }
+
+        // 5. DOAJ (Directory of Open Access Journals)
+        if ($this->isApiEnabled('doaj', $apiConfig) && ($platformFilter === 'all' || str_contains($platformFilter, 'doaj'))) {
+            try {
+                $doajResults = $this->queryDoaj($rawQuery, $perPlatform);
+                $results = array_merge($results, $doajResults);
+            } catch (\Throwable $e) {}
+        }
+
+        // 6. Europe PMC Open Access
+        if ($this->isApiEnabled('europe_pmc', $apiConfig) && ($platformFilter === 'all' || str_contains($platformFilter, 'europe_pmc') || str_contains($platformFilter, 'pmc'))) {
+            try {
+                $europePmcResults = $this->queryEuropePmc($rawQuery, $perPlatform);
+                $results = array_merge($results, $europePmcResults);
             } catch (\Throwable $e) {}
         }
 
@@ -80,6 +130,16 @@ class ScholarlyResourcesController extends Controller
                 'AGORA' => count(array_filter($results, fn($r) => $r['platform'] === 'AGORA (Research4Life)')),
                 'JSTOR' => count(array_filter($results, fn($r) => $r['platform'] === 'JSTOR')),
                 'EBSCOhost' => count(array_filter($results, fn($r) => $r['platform'] === 'EBSCOhost')),
+                'DOAJ' => count(array_filter($results, fn($r) => $r['platform'] === 'DOAJ')),
+                'Europe PMC' => count(array_filter($results, fn($r) => $r['platform'] === 'Europe PMC')),
+            ],
+            'api_status' => [
+                'sciencedirect' => $this->isApiEnabled('sciencedirect', $apiConfig),
+                'agora' => $this->isApiEnabled('agora', $apiConfig),
+                'jstor' => $this->isApiEnabled('jstor', $apiConfig),
+                'ebsco' => $this->isApiEnabled('ebsco', $apiConfig),
+                'doaj' => $this->isApiEnabled('doaj', $apiConfig),
+                'europe_pmc' => $this->isApiEnabled('europe_pmc', $apiConfig),
             ],
             'results' => $results
         ];
@@ -97,27 +157,17 @@ class ScholarlyResourcesController extends Controller
         $apiKey = env('ELSEVIER_API_KEY', 'bf3c85cf8f30e3518e1f3ce95244187c');
         $url = 'https://api.elsevier.com/content/search/scopus';
 
-        $scopusQuery = str_contains($query, ' ') ? 'TITLE-ABS-KEY({' . $query . '})' : 'TITLE-ABS-KEY(' . $query . ')';
-
         $response = Http::withHeaders([
             'X-ELS-APIKey' => $apiKey,
             'Accept' => 'application/json'
-        ])->timeout(6)->get($url, [
-            'query' => $scopusQuery,
+        ])->timeout(5)->get($url, [
+            'query' => 'TITLE-ABS-KEY(' . $query . ')',
             'count' => $limit,
             'view' => 'STANDARD'
         ]);
 
         if (!$response->successful()) {
-            // Fallback to broader keyword query
-            $response = Http::withHeaders([
-                'X-ELS-APIKey' => $apiKey,
-                'Accept' => 'application/json'
-            ])->timeout(6)->get($url, [
-                'query' => $query,
-                'count' => $limit
-            ]);
-            if (!$response->successful()) return [];
+            return [];
         }
 
         $data = $response->json();
@@ -160,11 +210,13 @@ class ScholarlyResourcesController extends Controller
      */
     private function queryAgora(string $query, int $limit): array
     {
+        // Query CrossRef filter for FAO / CGIAR / Agriculture & Research4Life publishers
         $url = 'https://api.crossref.org/works';
         $response = Http::withHeaders([
             'User-Agent' => 'FCCSmartLibrary/2.0 (mailto:library@fccibadanlibrary.com.ng)'
-        ])->timeout(6)->get($url, [
-            'query' => $query . ' agriculture food',
+        ])->timeout(5)->get($url, [
+            'query' => $query,
+            'query.bibliographic' => 'agriculture food forestry veterinary cooperative',
             'rows' => $limit,
             'sort' => 'relevance'
         ]);
@@ -233,23 +285,15 @@ class ScholarlyResourcesController extends Controller
         $url = 'https://api.crossref.org/works';
         $response = Http::withHeaders([
             'User-Agent' => 'FCCSmartLibrary/2.0 (mailto:library@fccibadanlibrary.com.ng)'
-        ])->timeout(6)->get($url, [
+        ])->timeout(5)->get($url, [
             'query' => $query,
             'filter' => 'member:340', // Member 340 is ITHAKA / JSTOR
             'rows' => $limit,
             'sort' => 'relevance'
         ]);
 
-        if (!$response->successful() || empty($response->json('message.items'))) {
-            // Fallback: search JSTOR repository publications
-            $response = Http::withHeaders([
-                'User-Agent' => 'FCCSmartLibrary/2.0 (mailto:library@fccibadanlibrary.com.ng)'
-            ])->timeout(6)->get($url, [
-                'query' => $query . ' jstor',
-                'rows' => $limit,
-                'sort' => 'relevance'
-            ]);
-            if (!$response->successful()) return [];
+        if (!$response->successful()) {
+            return [];
         }
 
         $items = [];
@@ -356,4 +400,143 @@ class ScholarlyResourcesController extends Controller
 
         return $items;
     }
+
+    /**
+     * DOAJ (Directory of Open Access Journals)
+     */
+    private function queryDoaj(string $query, int $limit): array
+    {
+        $url = 'https://doaj.org/api/search/articles/' . urlencode($query);
+        $response = Http::withHeaders([
+            'Accept' => 'application/json',
+            'User-Agent' => 'FCCSmartLibrary/2.0 (mailto:library@fccibadanlibrary.com.ng)'
+        ])->timeout(5)->get($url, [
+            'pageSize' => $limit
+        ]);
+
+        if (!$response->successful()) {
+            return [];
+        }
+
+        $items = [];
+        $results = $response->json('results') ?? [];
+
+        foreach ($results as $r) {
+            $bibjson = $r['bibjson'] ?? [];
+            $title = $bibjson['title'] ?? null;
+            if (empty($title)) continue;
+
+            $authorsList = [];
+            foreach ($bibjson['author'] ?? [] as $a) {
+                if (!empty($a['name'])) $authorsList[] = $a['name'];
+            }
+            $authors = !empty($authorsList) ? implode(', ', array_slice($authorsList, 0, 3)) : 'DOAJ Peer-Reviewed Scholar';
+
+            $doi = null;
+            foreach ($bibjson['identifier'] ?? [] as $idObj) {
+                if (($idObj['type'] ?? '') === 'doi') {
+                    $doi = $idObj['id'];
+                    break;
+                }
+            }
+
+            $pdfUrl = null;
+            $fullUrl = $doi ? "https://doi.org/{$doi}" : 'https://doaj.org/';
+            foreach ($bibjson['link'] ?? [] as $lk) {
+                if (($lk['type'] ?? '') === 'fulltext') {
+                    $fullUrl = $lk['url'];
+                    if (str_ends_with(strtolower($fullUrl), '.pdf')) $pdfUrl = $fullUrl;
+                }
+            }
+
+            $journalTitle = $bibjson['journal']['title'] ?? 'DOAJ Open Access Journal';
+            $year = (int) ($bibjson['year'] ?? 2024);
+
+            $items[] = [
+                'id' => 'DOAJ-' . ($r['id'] ?? rand(10000, 99999)),
+                'title' => trim($title),
+                'author' => $authors,
+                'source' => $journalTitle,
+                'year' => $year,
+                'doi' => $doi,
+                'issn' => $bibjson['journal']['issns'][0] ?? null,
+                'volume_issue' => trim(($bibjson['journal']['volume'] ?? '') . ' ' . ($bibjson['journal']['number'] ?? '')),
+                'platform' => 'DOAJ',
+                'platform_badge' => '🌐 DOAJ',
+                'platform_color' => '#ca8a04',
+                'is_open_access' => true,
+                'access_type' => 'Open Access (Peer-Reviewed DOAJ)',
+                'url' => $fullUrl,
+                'portal_url' => 'https://doaj.org/',
+                'pdf_url' => $pdfUrl,
+                'citations' => 0,
+                'discipline' => 'Open Access Scholarly Serials'
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
+     * Europe PMC Open Access Life & Biomedical Sciences
+     */
+    private function queryEuropePmc(string $query, int $limit): array
+    {
+        $url = 'https://www.ebi.ac.uk/europepmc/webservices/rest/search';
+        $response = Http::withHeaders([
+            'Accept' => 'application/json',
+            'User-Agent' => 'FCCSmartLibrary/2.0 (mailto:library@fccibadanlibrary.com.ng)'
+        ])->timeout(5)->get($url, [
+            'query' => $query,
+            'format' => 'json',
+            'pageSize' => $limit,
+            'resultType' => 'core'
+        ]);
+
+        if (!$response->successful()) {
+            return [];
+        }
+
+        $items = [];
+        $entries = $response->json('resultList.result') ?? [];
+
+        foreach ($entries as $e) {
+            $title = $e['title'] ?? null;
+            if (empty($title)) continue;
+
+            $authors = $e['authorString'] ?? 'Europe PMC Researcher';
+            $doi = $e['doi'] ?? null;
+            $pmcid = $e['pmcid'] ?? null;
+            $isOa = ($e['isOpenAccess'] ?? 'N') === 'Y';
+            $journal = $e['journalTitle'] ?? ($e['journalInfo']['journal']['title'] ?? 'Europe PMC Scholarly Journal');
+            $year = isset($e['pubYear']) ? (int) $e['pubYear'] : 2024;
+
+            $url = $doi ? "https://doi.org/{$doi}" : ($pmcid ? "https://europepmc.org/article/PMC/{$pmcid}" : "https://europepmc.org/article/MED/{$e['id']}");
+            $pdfUrl = $pmcid ? "https://europepmc.org/backend/ptpmcrender.fcgi?accid={$pmcid}&blobtype=pdf" : null;
+
+            $items[] = [
+                'id' => 'EPMC-' . ($e['id'] ?? rand(10000, 99999)),
+                'title' => trim(rtrim($title, '.')),
+                'author' => $authors,
+                'source' => $journal,
+                'year' => $year,
+                'doi' => $doi,
+                'issn' => $e['journalInfo']['journal']['issn'] ?? null,
+                'volume_issue' => trim(($e['journalInfo']['volume'] ?? '') . ' ' . ($e['journalInfo']['issue'] ?? '')),
+                'platform' => 'Europe PMC',
+                'platform_badge' => '🧬 Europe PMC',
+                'platform_color' => '#059669',
+                'is_open_access' => $isOa,
+                'access_type' => $isOa ? 'Open Access (PMC Full-Text)' : 'Europe PMC Abstract Archive',
+                'url' => $url,
+                'portal_url' => 'https://europepmc.org/',
+                'pdf_url' => $pdfUrl,
+                'citations' => (int) ($e['citedByCount'] ?? 0),
+                'discipline' => 'Life, Agricultural & Biomedical Sciences'
+            ];
+        }
+
+        return $items;
+    }
 }
+

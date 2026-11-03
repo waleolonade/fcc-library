@@ -29,6 +29,7 @@ import {
   fetchLiveAcademicJournals,
   fetchLiveDissertationsAndProjects
 } from '../services/openSourceJournalsApi';
+import { fetchAllFederatedExternalLibraries, isApiActive, EXTERNAL_API_METADATA } from '../services/federatedLibrarySearchService';
 
 export default function PublicDiscovery({
   books: propBooks = [],
@@ -576,51 +577,26 @@ export default function PublicDiscovery({
     setHasQueriedLiveApi(true);
 
     try {
-      // 1. Fetch from Open Library API (limit 6)
-      const olUrl = searchField === 'author'
-        ? `https://openlibrary.org/search.json?author=${encodeURIComponent(term)}&limit=6&fields=key,title,author_name,first_publish_year,cover_i,ia,ebook_access`
-        : `https://openlibrary.org/search.json?q=${encodeURIComponent(term)}&limit=6&fields=key,title,author_name,first_publish_year,cover_i,ia,ebook_access`;
-      const olPromise = fetch(olUrl)
-        .then(res => res.ok ? res.json() : { docs: [] })
-        .then(data => data.docs || [])
-        .catch(() => []);
+      // Execute all active external library APIs concurrently in parallel
+      const federated = await fetchAllFederatedExternalLibraries(term, { limit: 8 });
+      setLiveOpenLibraryResults(federated.resultsByPlatform.openlibrary || []);
+      setLiveGutenbergResults(federated.resultsByPlatform.gutenberg || []);
+      setLiveInternetArchiveResults(federated.resultsByPlatform.archive || []);
+      setLiveGoogleBooksResults(federated.resultsByPlatform.google_books || []);
 
-      // 2. Fetch from Gutendex API via proxy or direct (limit 6)
-      const gutPromise = fetch(`/api/gutenberg/books?search=${encodeURIComponent(term)}`)
-        .then(res => {
-          if (res.ok) return res.json();
-          return fetch(`https://gutendex.com/books?search=${encodeURIComponent(term)}`).then(r => r.ok ? r.json() : { results: [] });
-        })
-        .then(data => (data.results || []).slice(0, 6))
-        .catch(() => []);
-
-      // 3. Fetch from Official Internet Archive API via backend proxy (limit 6)
-      const iaPromise = fetch(`/api/internet-archive/search?q=${encodeURIComponent(term)}&filter=open&rows=6`)
-        .then(res => res.ok ? res.json() : { results: [] })
-        .then(data => (data.results || []).slice(0, 6))
-        .catch(() => []);
-
-      // 4. Fetch from Google Books API via backend proxy (limit 6)
-      const gbQuery = searchField === 'author' ? `inauthor:${encodeURIComponent(term)}` : encodeURIComponent(term);
-      const gbPromise = fetch(`/api/google-books/search?q=${gbQuery}&maxResults=6`)
-        .then(res => res.ok ? res.json() : { books: [] })
-        .then(data => (data.books || []).slice(0, 6))
-        .catch(() => []);
-
-      // 5. Fetch from World Scholarly E-Resources (AGORA • JSTOR • ScienceDirect • EBSCOhost)
-      const scholarlyPromise = fetch(`/api/scholarly/search?query=${encodeURIComponent(term)}&per_page=6`)
-        .then(res => res.ok ? res.json() : { results: [] })
-        .then(data => data.results || [])
-        .catch(() => []);
-
-      const [olDocs, gutResults, iaResults, gbResults, scholarlyResults] = await Promise.all([
-        olPromise, gutPromise, iaPromise, gbPromise, scholarlyPromise
-      ]);
-      setLiveOpenLibraryResults(olDocs);
-      setLiveGutenbergResults(gutResults);
-      setLiveInternetArchiveResults(iaResults);
-      setLiveGoogleBooksResults(gbResults);
-      setLiveScholarlyResults(scholarlyResults);
+      // Combine all scholarly results (ScienceDirect, AGORA, JSTOR, EBSCO, DOAJ, Europe PMC, OpenAlex, Crossref, CORE)
+      const scholarlyCombined = [
+        ...(federated.resultsByPlatform.sciencedirect || []),
+        ...(federated.resultsByPlatform.agora || []),
+        ...(federated.resultsByPlatform.jstor || []),
+        ...(federated.resultsByPlatform.ebsco || []),
+        ...(federated.resultsByPlatform.doaj || []),
+        ...(federated.resultsByPlatform.europe_pmc || []),
+        ...(federated.resultsByPlatform.openalex || []),
+        ...(federated.resultsByPlatform.crossref || []),
+        ...(federated.resultsByPlatform.core || []),
+      ];
+      setLiveScholarlyResults(scholarlyCombined);
     } catch (err) {
       console.error('Error fetching live federated resources:', err);
     } finally {
