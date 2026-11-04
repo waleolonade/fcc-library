@@ -20,6 +20,8 @@ export default function HodStaffLiveWorkspace({
   selectedStaffId,
   setSelectedStaffId,
   onOpenStaffBuilder,
+  isStaffUser = false,
+  currentUser = null,
   // Live Departmental Data & Handlers passed from HodDashboard
   courses = [],
   uploads = [],
@@ -46,9 +48,17 @@ export default function HodStaffLiveWorkspace({
   onRefreshStaff
 }) {
   const activeStaff = useMemo(() => {
+    if (isStaffUser && currentUser) {
+      const found = staffList.find(s =>
+        s.id === (currentUser.id || currentUser.staff_id) ||
+        s.staff_code === currentUser.staff_code ||
+        s.username === currentUser.username
+      );
+      return found || currentUser;
+    }
     if (!staffList || staffList.length === 0) return null;
     return staffList.find(s => s.id === selectedStaffId) || staffList[0];
-  }, [staffList, selectedStaffId]);
+  }, [staffList, selectedStaffId, isStaffUser, currentUser]);
 
   // Real-time synchronization when HOD modifies staff permissions or assigns new functions
   useEffect(() => {
@@ -241,45 +251,54 @@ export default function HodStaffLiveWorkspace({
             </div>
           </div>
 
-          {/* Right Controls: Switch Active Staff Member or Return to Builder */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
-            <div className="bg-[#0f172a] border border-slate-700 rounded-2xl p-2 flex items-center gap-2">
-              <span className="text-[10px] font-mono text-slate-400 uppercase pl-1">Active Staff:</span>
-              <select
-                value={activeStaff.id}
-                onChange={e => {
-                  sounds.playClick();
-                  setSelectedStaffId(e.target.value);
-                }}
-                className="bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-bold text-cyan-300 focus:outline-none focus:border-emerald-500 cursor-pointer"
+          {/* Right Controls: If HOD, switch staff or edit in builder; If Staff member, show official session badge */}
+          {!isStaffUser ? (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+              <div className="bg-[#0f172a] border border-slate-700 rounded-2xl p-2 flex items-center gap-2">
+                <span className="text-[10px] font-mono text-slate-400 uppercase pl-1">Active Staff:</span>
+                <select
+                  value={activeStaff.id}
+                  onChange={e => {
+                    sounds.playClick();
+                    setSelectedStaffId(e.target.value);
+                  }}
+                  className="bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-bold text-cyan-300 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                >
+                  {staffList.map(st => (
+                    <option key={st.id} value={st.id}>
+                      {st.name} ({st.staff_code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowStaffAuthModal(true)}
+                className="px-3.5 py-2.5 rounded-xl bg-[#162238] hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                title="Authenticate directly with a Staff ID and Password"
               >
-                {staffList.map(st => (
-                  <option key={st.id} value={st.id}>
-                    {st.name} ({st.staff_code})
-                  </option>
-                ))}
-              </select>
+                <KeyRound size={13} className="text-amber-400" />
+                <span>Staff Sign-In</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={onOpenStaffBuilder}
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-lg transition cursor-pointer"
+              >
+                <Sliders size={14} />
+                <span>Edit Access in Builder</span>
+              </button>
             </div>
-
-            <button
-              type="button"
-              onClick={() => setShowStaffAuthModal(true)}
-              className="px-3.5 py-2.5 rounded-xl bg-[#162238] hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
-              title="Authenticate directly with a Staff ID and Password"
-            >
-              <KeyRound size={13} className="text-amber-400" />
-              <span>Staff Sign-In</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onOpenStaffBuilder}
-              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-lg transition cursor-pointer"
-            >
-              <Sliders size={14} />
-              <span>Edit Access in Builder</span>
-            </button>
-          </div>
+          ) : (
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="px-3.5 py-2 rounded-2xl bg-emerald-950/80 border border-emerald-600 text-emerald-300 text-xs font-mono font-bold flex items-center gap-2 shadow-lg">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Verified Faculty Session</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 2. DYNAMIC ALLOWED PAGES NAVIGATION BAR (Only pages enabled by HOD are unlocked) */}
@@ -514,9 +533,14 @@ export default function HodStaffLiveWorkspace({
                 <HodUploadStudio
                   user={{
                     name: `${activeStaff.name} (${activeStaff.staff_code})`,
+                    staff_id: activeStaff.id || activeStaff.staff_id,
+                    staff_code: activeStaff.staff_code,
+                    uploaded_by_hod_id: activeStaff.staff_code || activeStaff.id,
+                    hod_name: activeStaff.name,
                     department_id: currentDept?.id || `DEP-${currentDept?.code}`,
                     department_name: currentDept?.name,
                     department_code: currentDept?.code,
+                    role: 'hod_staff',
                     theme
                   }}
                   onUploadComplete={() => {

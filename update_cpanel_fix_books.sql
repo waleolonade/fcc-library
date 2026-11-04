@@ -46,6 +46,49 @@ CREATE TABLE IF NOT EXISTS `audit_logs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -------------------------------------------------------------------------
+-- STEP 2B: ENSURE `hod_department_staff` TABLE EXISTS (STAFF UNDER HODS)
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `hod_department_staff` (
+  `id` varchar(64) NOT NULL,
+  `staff_code` varchar(64) NOT NULL,
+  `username` varchar(100) NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `email` varchar(255) DEFAULT NULL,
+  `phone` varchar(64) DEFAULT NULL,
+  `designation` varchar(150) DEFAULT 'Senior Lecturer',
+  `department_code` varchar(32) NOT NULL,
+  `department_name` varchar(255) DEFAULT NULL,
+  `assigned_courses` text DEFAULT NULL,
+  `page_title` varchar(255) DEFAULT NULL,
+  `welcome_banner` text DEFAULT NULL,
+  `allowed_pages` longtext DEFAULT NULL,
+  `allowed_features` longtext DEFAULT NULL,
+  `password_plain` varchar(120) DEFAULT NULL,
+  `password_hash` varchar(255) DEFAULT NULL,
+  `status` varchar(32) DEFAULT 'active',
+  `created_by_hod` varchar(255) DEFAULT NULL,
+  `last_login_at` varchar(64) DEFAULT NULL,
+  `created_at` varchar(64) DEFAULT NULL,
+  `updated_at` varchar(64) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_hod_dept_code` (`department_code`),
+  KEY `idx_hod_staff_code` (`staff_code`),
+  KEY `idx_hod_username` (`username`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Seed Default Departmental Staff Workspaces if missing
+INSERT INTO `hod_department_staff` (`id`, `staff_code`, `username`, `name`, `email`, `phone`, `designation`, `department_code`, `department_name`, `assigned_courses`, `page_title`, `welcome_banner`, `allowed_pages`, `allowed_features`, `password_plain`, `password_hash`, `status`, `created_by_hod`, `created_at`, `updated_at`)
+VALUES
+('STF-CEM-001', 'STF/CEM/001', 'cem_coordinator', 'Dr. Tunde Olatunji (CEM)', 'cem.coordinator@fccibadan.edu.ng', '+234 803 412 8890', 'Senior Lecturer & Course Coordinator', 'CEM', 'Co-operative Economics & Management', '["CEM 411", "CEM 312", "CEM 214"]', 'CEM Curriculum & Publishing Workspace', 'Authorized by Head of Department (Co-operative Economics & Management) to manage syllabi, upload course materials, and oversee reserves.', '{"overview":true,"courses":true,"upload":true,"submissions":true,"dissertations":false,"reserves":true,"scholars":false,"communication":true}', '{"fn_upload_books":true,"fn_upload_journals":true,"fn_watermark_control":true,"fn_edit_submissions":true,"fn_delete_submissions":false,"fn_manage_courses":true,"fn_approve_dissertations":false,"fn_upload_dissertations":false,"fn_manage_reserves":true,"fn_manage_students":false,"fn_approve_clearance":false,"fn_send_dispatch":true,"fn_ai_gora_tools":true}', 'cemstaff123', '$2y$10$wEeVq05P1V0iW0V1E0QYw.m2B3x1A6K3qU9yD4e5f6g7h8i9j0k1l', 'active', 'HOD CEM', NOW(), NOW()),
+('STF-BF-001', 'STF/BF/001', 'bf_coordinator', 'Dr. A. B. Adeyeye (BF)', 'bf.coordinator@fccibadan.edu.ng', '+234 802 334 5567', 'Senior Lecturer & Academic Coordinator', 'BF', 'Banking and Finance', '["BFN 411", "BFN 312", "BFN 211"]', 'Banking & Finance Academic Workspace', 'Authorized by Head of Department (Banking and Finance) to manage course materials, textbooks, and reading lists.', '{"overview":true,"courses":true,"upload":true,"submissions":true,"dissertations":true,"reserves":true,"scholars":false,"communication":true}', '{"fn_upload_books":true,"fn_upload_journals":true,"fn_watermark_control":true,"fn_edit_submissions":true,"fn_delete_submissions":false,"fn_manage_courses":true,"fn_approve_dissertations":true,"fn_upload_dissertations":true,"fn_manage_reserves":true,"fn_manage_students":false,"fn_approve_clearance":false,"fn_send_dispatch":true,"fn_ai_gora_tools":true}', 'bfstaff123', '$2y$10$wEeVq05P1V0iW0V1E0QYw.m2B3x1A6K3qU9yD4e5f6g7h8i9j0k1l', 'active', 'HOD BF', NOW(), NOW()),
+('STF-OAO-EHWU', 'STF/OAO/009', 'oao_lecturer9', 'OLAWALE AKEEM OLONADE', 'homecrew.ng@gmail.com', '+234 803 000 0000', 'Senior Lecturer & Course Coordinator', 'OAO', 'Academic Department', '["OAO 411", "OAO 312"]', 'Faculty Staff Academic Workspace', 'Authorized by Head of Department to manage assigned departmental academic modules.', '{"overview":true,"courses":true,"upload":true,"submissions":true,"dissertations":true,"reserves":true,"scholars":true,"communication":true}', '{"fn_upload_books":true,"fn_upload_journals":true,"fn_watermark_control":true,"fn_edit_submissions":true,"fn_delete_submissions":true,"fn_manage_courses":true,"fn_approve_dissertations":true,"fn_upload_dissertations":true,"fn_manage_reserves":true,"fn_manage_students":true,"fn_approve_clearance":true,"fn_send_dispatch":true,"fn_ai_gora_tools":true}', '1234', '$2y$12$ZH6iAUwwleb/mr7rcb95EOxdHepBgvV2MGRxUvP0qpp/kKMVMQ0pW', 'active', 'Head of Department', NOW(), NOW())
+ON DUPLICATE KEY UPDATE
+  `allowed_pages` = VALUES(`allowed_pages`),
+  `allowed_features` = VALUES(`allowed_features`),
+  `status` = 'active',
+  `updated_at` = NOW();
+
+-- -------------------------------------------------------------------------
 -- STEP 3: SEED MASTER DEVELOPER CONFIG & 14 EXTERNAL LIBRARY APIS
 -- -------------------------------------------------------------------------
 INSERT INTO `library_settings` (`setting_key`, `setting_value`, `setting_group`, `value_type`, `is_public`, `description`, `created_at`, `updated_at`)
@@ -344,6 +387,7 @@ ON DUPLICATE KEY UPDATE
 SELECT 
   (SELECT COUNT(*) FROM `books`) AS total_books_in_catalog,
   (SELECT COUNT(*) FROM `department_uploads` WHERE `status` = 'approved') AS approved_hod_uploads,
+  (SELECT COUNT(*) FROM `hod_department_staff`) AS total_department_staff,
   (SELECT COUNT(*) FROM `library_settings` WHERE `setting_key` = 'fcc_developer_master_config') AS developer_config_active,
   (SELECT `title` FROM `books` WHERE `id` = 'FCC-HOD-9314') AS book_9314_repaired_title,
   (SELECT LENGTH(`file_data_url`) FROM `books` WHERE `id` = 'FCC-HOD-9314') AS book_9314_pdf_data_bytes;

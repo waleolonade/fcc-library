@@ -255,6 +255,9 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
     }
   };
 
+  // Check whether the active logged-in user is a Departmental Staff member under the HOD
+  const isStaffUser = Boolean(currentUser?.role === 'hod_staff' || initialUser?.role === 'hod_staff');
+
   // Active department derived from currentUser or initialUser (zero hardcoded CSC fallback)
   const currentDeptCode = currentUser?.department_code || initialUser?.department_code || '';
   const currentDept = useMemo(() => {
@@ -270,10 +273,10 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
           code: code,
           name: currentUser.department_name || `${code} Department`,
           faculty: currentUser.faculty || 'School of Academic Studies',
-          hod: currentUser.name || 'Head of Department',
-          hod_name: currentUser.name || 'Head of Department',
-          hodEmail: currentUser.email || '',
-          hod_email: currentUser.email || '',
+          hod: isStaffUser ? (currentUser.hod_name || 'Head of Department') : (currentUser.name || 'Head of Department'),
+          hod_name: isStaffUser ? (currentUser.hod_name || 'Head of Department') : (currentUser.name || 'Head of Department'),
+          hodEmail: isStaffUser ? (currentUser.hod_email || '') : (currentUser.email || ''),
+          hod_email: isStaffUser ? (currentUser.hod_email || '') : (currentUser.email || ''),
           hodPhone: currentUser.phone || '',
           studentCount: currentUser.student_count || 0,
           student_count: currentUser.student_count || 0,
@@ -295,7 +298,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
       student_count: 0,
       uploads_count: 0
     };
-  }, [departments, currentDeptCode, currentUser]);
+  }, [departments, currentDeptCode, currentUser, isStaffUser]);
 
   const theme = useMemo(() => {
     const code = (currentDeptCode || currentDept?.code || '').toUpperCase();
@@ -309,9 +312,12 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
     department_id: currentDept?.id,
     department_name: currentDept?.name,
     department_code: currentDept?.code,
-    name: currentDept?.hod_name || currentDept?.hod,
+    name: isStaffUser ? `${currentUser.name} (${currentUser.staff_code || 'Staff'})` : (currentDept?.hod_name || currentDept?.hod),
+    role: isStaffUser ? 'hod_staff' : 'hod',
+    staff_id: currentUser?.id || currentUser?.staff_id,
+    staff_code: currentUser?.staff_code,
     theme
-  }), [currentUser, currentDept, theme]);
+  }), [currentUser, currentDept, theme, isStaffUser]);
 
   // Master Developer Configuration & Institutional Parameters
   const [devConfig, setDevConfig] = useState(() => developerConfigService.getConfig());
@@ -789,6 +795,11 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
         if ((data.success || data.status === 'success') && Array.isArray(data.staff)) {
           setStaffList(data.staff);
           setSelectedStaffId(prev => {
+            if (isStaffUser && currentUser?.id) {
+              const myRecord = data.staff.find(s => s.id === currentUser.id || s.staff_code === currentUser.staff_code || s.username === currentUser.username);
+              if (myRecord) return myRecord.id;
+              return currentUser.id;
+            }
             if (prev && data.staff.some(s => s.id === prev)) return prev;
             return data.staff.length > 0 ? data.staff[0].id : null;
           });
@@ -1925,12 +1936,17 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
           'staff': 'staff_builder'
         };
         const resolved = aliasMap[sub] || sub;
+        if (isStaffUser && (resolved === 'staff_builder' || resolved === 'settings')) {
+          setActiveTab('staff_workspace');
+          navigateTo('/hod/staff-workspace');
+          return;
+        }
         const valid = ['overview', 'courses', 'upload', 'submissions', 'dissertations', 'reserves', 'scholars', 'communication', 'settings', 'staff_builder', 'staff_workspace'];
         if (valid.includes(resolved)) {
           setActiveTab(resolved);
         }
       } else if (targetPath === '/hod') {
-        setActiveTab('overview');
+        setActiveTab(isStaffUser ? 'staff_workspace' : 'overview');
       }
     };
     syncFromHash();
@@ -1940,9 +1956,12 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
       window.removeEventListener('hashchange', syncFromHash);
       window.removeEventListener('fcc-notification-navigate', syncFromHash);
     };
-  }, []);
+  }, [isStaffUser]);
 
   const handleTabSwitch = (tabId) => {
+    if (isStaffUser && (tabId === 'staff_builder' || tabId === 'settings')) {
+      return;
+    }
     sounds.playClick();
     setActiveTab(tabId);
     const slug = tabId === 'staff_builder' ? 'staff-builder' : (tabId === 'staff_workspace' ? 'staff-workspace' : tabId);
@@ -2721,40 +2740,66 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
 
   const pendingUploadsCount = uploads.filter(u => u.status === 'pending').length;
 
-  // Sidebar navigation structure (respecting Developer Master Portal hodPages toggles)
-  const navSections = [
-    {
-      title: 'DEPARTMENT PORTAL',
-      items: [
-        { id: 'overview', label: 'Department Overview', icon: Building2 },
-        { id: 'courses', label: 'Curriculum & Syllabi', icon: BookOpen, badge: courses.length },
-        { id: 'upload', label: 'Upload Materials', icon: Upload, badge: 'Studio' },
-        { id: 'submissions', label: 'Ingestion Pipeline', icon: Layers, badge: pendingUploadsCount || undefined }
-      ].filter(it => devConfig?.hodPages?.[it.id]?.enabled !== false)
-    },
-    {
-      title: 'ACADEMIC & RESEARCH',
-      items: [
-        { id: 'dissertations', label: 'HND Dissertations', icon: Award, badge: dissertations.filter(d => (d.status || '').toLowerCase().includes('review') || (d.status || '').toLowerCase().includes('pending')).length, badgeAlert: true },
-        { id: 'reserves', label: 'Course Reserves', icon: Bookmark, badge: reservesList.length },
-        { id: 'scholars', label: 'Registered Students', icon: Users, badge: scholarsList.length }
-      ].filter(it => devConfig?.hodPages?.[it.id]?.enabled !== false)
-    },
-    {
-      title: 'STAFF WORKSPACES & RBAC',
-      items: [
-        { id: 'staff_builder', label: 'Staff Page Builder', icon: Sliders, badge: 'RBAC' },
-        { id: 'staff_workspace', label: 'Staff Live Workspace', icon: Users, badge: staffList.length ? String(staffList.length) : 'Live' }
-      ].filter(it => devConfig?.hodPages?.[it.id]?.enabled !== false)
-    },
-    {
-      title: 'DISPATCH & SETTINGS',
-      items: [
-        { id: 'communication', label: 'Tri-Party Dispatch', icon: MessageSquare, badge: 'Live' },
-        { id: 'settings', label: 'HOD Profile & Security', icon: Settings }
-      ].filter(it => devConfig?.hodPages?.[it.id]?.enabled !== false)
+  // Sidebar navigation structure (respecting Developer Master Portal hodPages toggles and Staff RBAC)
+  const navSections = useMemo(() => {
+    if (isStaffUser) {
+      const allowedPages = currentUser?.allowed_pages || { overview: true };
+
+      const portalItems = [
+        { id: 'staff_workspace', label: 'My Staff Workspace', icon: Users, badge: 'Active' },
+        allowedPages.overview ? { id: 'overview', label: 'Department Overview', icon: Building2 } : null,
+        allowedPages.courses ? { id: 'courses', label: 'Curriculum & Syllabi', icon: BookOpen, badge: courses.length } : null,
+        allowedPages.upload ? { id: 'upload', label: 'Upload Materials', icon: Upload, badge: 'Studio' } : null,
+        allowedPages.submissions ? { id: 'submissions', label: 'Ingestion Pipeline', icon: Layers, badge: pendingUploadsCount || undefined } : null,
+      ].filter(Boolean);
+
+      const researchItems = [
+        allowedPages.dissertations ? { id: 'dissertations', label: 'HND Dissertations', icon: Award, badge: dissertations.filter(d => (d.status || '').toLowerCase().includes('review') || (d.status || '').toLowerCase().includes('pending')).length, badgeAlert: true } : null,
+        allowedPages.reserves ? { id: 'reserves', label: 'Course Reserves', icon: Bookmark, badge: reservesList.length } : null,
+        allowedPages.scholars ? { id: 'scholars', label: 'Registered Students', icon: Users, badge: scholarsList.length } : null,
+        allowedPages.communication ? { id: 'communication', label: 'Tri-Party Dispatch', icon: MessageSquare, badge: 'Live' } : null,
+      ].filter(Boolean);
+
+      return [
+        { title: 'MY STAFF WORKSPACE', items: portalItems },
+        ...(researchItems.length > 0 ? [{ title: 'DELEGATED ACADEMIC DUTIES', items: researchItems }] : [])
+      ];
     }
-  ].filter(sec => sec.items.length > 0);
+
+    return [
+      {
+        title: 'DEPARTMENT PORTAL',
+        items: [
+          { id: 'overview', label: 'Department Overview', icon: Building2 },
+          { id: 'courses', label: 'Curriculum & Syllabi', icon: BookOpen, badge: courses.length },
+          { id: 'upload', label: 'Upload Materials', icon: Upload, badge: 'Studio' },
+          { id: 'submissions', label: 'Ingestion Pipeline', icon: Layers, badge: pendingUploadsCount || undefined }
+        ].filter(it => devConfig?.hodPages?.[it.id]?.enabled !== false)
+      },
+      {
+        title: 'ACADEMIC & RESEARCH',
+        items: [
+          { id: 'dissertations', label: 'HND Dissertations', icon: Award, badge: dissertations.filter(d => (d.status || '').toLowerCase().includes('review') || (d.status || '').toLowerCase().includes('pending')).length, badgeAlert: true },
+          { id: 'reserves', label: 'Course Reserves', icon: Bookmark, badge: reservesList.length },
+          { id: 'scholars', label: 'Registered Students', icon: Users, badge: scholarsList.length }
+        ].filter(it => devConfig?.hodPages?.[it.id]?.enabled !== false)
+      },
+      {
+        title: 'STAFF WORKSPACES & RBAC',
+        items: [
+          { id: 'staff_builder', label: 'Staff Page Builder', icon: Sliders, badge: 'RBAC' },
+          { id: 'staff_workspace', label: 'Staff Live Workspace', icon: Users, badge: staffList.length ? String(staffList.length) : 'Live' }
+        ].filter(it => devConfig?.hodPages?.[it.id]?.enabled !== false)
+      },
+      {
+        title: 'DISPATCH & SETTINGS',
+        items: [
+          { id: 'communication', label: 'Tri-Party Dispatch', icon: MessageSquare, badge: 'Live' },
+          { id: 'settings', label: 'HOD Profile & Security', icon: Settings }
+        ].filter(it => devConfig?.hodPages?.[it.id]?.enabled !== false)
+      }
+    ].filter(sec => sec.items.length > 0);
+  }, [isStaffUser, currentUser, devConfig, courses.length, pendingUploadsCount, dissertations, reservesList.length, scholarsList.length, staffList.length]);
 
   return (
     <div
@@ -2765,7 +2810,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
       <div className="h-2 w-full shrink-0 shadow-md transition-colors duration-500" style={{ backgroundColor: theme.solidPrimary }} />
 
       {/* Targeted Developer Broadcast Banner & Maintenance Lock */}
-      <MaintenanceBroadcastBanner role="hod" currentPage={activeTab} />
+      <MaintenanceBroadcastBanner role={isStaffUser ? 'hod_staff' : 'hod'} currentPage={activeTab} />
 
       {/* 1. TOP INSTITUTIONAL NAVIGATION BAR */}
       <header className="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between sticky top-0 z-40">
@@ -2787,41 +2832,55 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
 
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-black text-white">{currentDept.code} HOD PORTAL</span>
+              <span className="text-sm font-black text-white">
+                {isStaffUser ? `${currentDept.code} • ACADEMIC STAFF WORKSPACE` : `${currentDept.code} HOD PORTAL`}
+              </span>
               <span
                 className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold text-white shadow-sm"
                 style={{ backgroundColor: theme.solidPrimary }}
               >
-                {theme.colorName.toUpperCase()} THEME
+                {isStaffUser ? 'DELEGATED STAFF' : `${theme.colorName.toUpperCase()} THEME`}
               </span>
             </div>
             <p className="text-[11px] text-slate-400 truncate max-w-xs sm:max-w-md">
-              {currentDept.name} • {currentDept.hod_name || currentDept.hod}
+              {isStaffUser
+                ? `${currentUser?.name} (${currentUser?.designation || 'Academic Staff'}) • Appointed by HOD ${currentDept.hod_name || currentDept.hod}`
+                : `${currentDept.name} • ${currentDept.hod_name || currentDept.hod}`}
             </p>
           </div>
         </div>
 
-        {/* Center: Department Switcher */}
-        <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-950 border border-slate-800 text-xs shadow-inner">
-          <span className="text-slate-400 font-semibold flex items-center gap-1.5">
-            <Lock size={12} className="text-amber-400 shrink-0" title="Password Required to Switch" />
-            <Building2 size={13} style={{ color: theme.solidPrimary }} />
-            <span>Switch HOD:</span>
-          </span>
-          <select
-            value={currentDept.code}
-            onChange={(e) => handleInitiateSwitchDepartment(e.target.value)}
-            className="bg-transparent font-bold border-none focus:outline-none cursor-pointer text-xs"
-            style={{ color: theme.accent }}
-            title="Select department to switch (password required)"
-          >
-            {departments.map((d) => (
-              <option key={d.code} value={d.code} className="bg-slate-900 text-white">
-                {d.code} - {d.name} ({d.hod_name || d.hod})
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Center: Department Switcher for HOD, or Staff Identity Banner for Staff */}
+        {!isStaffUser ? (
+          <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-950 border border-slate-800 text-xs shadow-inner">
+            <span className="text-slate-400 font-semibold flex items-center gap-1.5">
+              <Lock size={12} className="text-amber-400 shrink-0" title="Password Required to Switch" />
+              <Building2 size={13} style={{ color: theme.solidPrimary }} />
+              <span>Switch HOD:</span>
+            </span>
+            <select
+              value={currentDept.code}
+              onChange={(e) => handleInitiateSwitchDepartment(e.target.value)}
+              className="bg-transparent font-bold border-none focus:outline-none cursor-pointer text-xs"
+              style={{ color: theme.accent }}
+              title="Select department to switch (password required)"
+            >
+              {departments.map((d) => (
+                <option key={d.code} value={d.code} className="bg-slate-900 text-white">
+                  {d.code} - {d.name} ({d.hod_name || d.hod})
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className="hidden lg:flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-[#0f172a] border border-slate-800 text-xs shadow-inner">
+            <span className="text-emerald-400 font-mono font-bold flex items-center gap-1.5">
+              <ShieldCheck size={14} />
+              <span>{currentUser?.staff_code || 'STAFF'}</span>
+            </span>
+            <span className="text-slate-400">• {currentDept.name}</span>
+          </div>
+        )}
 
         {/* Right User Actions */}
         <div className="flex items-center gap-3">
@@ -2844,43 +2903,62 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
             <span>Scholar View</span>
           </button>
 
-          {/* Interactive HOD Profile Pill in Header */}
-          <button
-            type="button"
-            onClick={() => handleTabSwitch('settings')}
-            className="flex items-center gap-2.5 p-1 sm:px-2.5 sm:py-1 rounded-2xl bg-slate-950/80 hover:bg-slate-800 border border-slate-800 hover:border-teal-500/50 transition cursor-pointer group text-left shadow-sm"
-            title="View & Edit HOD Profile"
-          >
-            <div className="relative shrink-0">
-              {profilePhoto || currentDept.hod_photo ? (
-                <img
-                  src={profilePhoto || currentDept.hod_photo}
-                  alt={currentDept.hod_name || currentDept.hod}
-                  className="w-8 h-8 rounded-xl object-cover border shadow-sm"
-                  style={{ borderColor: theme.solidPrimary }}
-                />
-              ) : (
-                <div
-                  className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs text-white border shadow-sm"
-                  style={{ backgroundColor: theme.solidDark, borderColor: theme.solidPrimary }}
-                >
-                  {(currentDept.hod_name || currentDept.hod || 'HD').split(' ').map(n => n[0]).slice(0, 2).join('')}
-                </div>
-              )}
-              <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-slate-900" title="Active HOD" />
-            </div>
+          {/* Interactive HOD Profile Pill (or Staff Identity Pill for staff) */}
+          {!isStaffUser ? (
+            <button
+              type="button"
+              onClick={() => handleTabSwitch('settings')}
+              className="flex items-center gap-2.5 p-1 sm:px-2.5 sm:py-1 rounded-2xl bg-slate-950/80 hover:bg-slate-800 border border-slate-800 hover:border-teal-500/50 transition cursor-pointer group text-left shadow-sm"
+              title="View & Edit HOD Profile"
+            >
+              <div className="relative shrink-0">
+                {profilePhoto || currentDept.hod_photo ? (
+                  <img
+                    src={profilePhoto || currentDept.hod_photo}
+                    alt={currentDept.hod_name || currentDept.hod}
+                    className="w-8 h-8 rounded-xl object-cover border shadow-sm"
+                    style={{ borderColor: theme.solidPrimary }}
+                  />
+                ) : (
+                  <div
+                    className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs text-white border shadow-sm"
+                    style={{ backgroundColor: theme.solidDark, borderColor: theme.solidPrimary }}
+                  >
+                    {(currentDept.hod_name || currentDept.hod || 'HD').split(' ').map(n => n[0]).slice(0, 2).join('')}
+                  </div>
+                )}
+                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-slate-900" title="Active HOD" />
+              </div>
 
-            <div className="text-right hidden sm:block">
-              <div className="text-xs font-bold text-white group-hover:text-teal-300 transition line-clamp-1">
-                {currentDept.hod_name || currentDept.hod}
+              <div className="text-right hidden sm:block">
+                <div className="text-xs font-bold text-white group-hover:text-teal-300 transition line-clamp-1">
+                  {currentDept.hod_name || currentDept.hod}
+                </div>
+                <div className="text-[10px] font-mono flex items-center gap-1 justify-end" style={{ color: theme.accent }}>
+                  <span>Head of Dept ({currentDept.code})</span>
+                  <span className="text-slate-500">•</span>
+                  <span className="text-slate-400 group-hover:underline">Profile &rarr;</span>
+                </div>
               </div>
-              <div className="text-[10px] font-mono flex items-center gap-1 justify-end" style={{ color: theme.accent }}>
-                <span>Head of Dept ({currentDept.code})</span>
-                <span className="text-slate-500">•</span>
-                <span className="text-slate-400 group-hover:underline">Profile &rarr;</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2.5 p-1 sm:px-2.5 sm:py-1 rounded-2xl bg-slate-950/80 border border-slate-800 shadow-sm text-left">
+              <div
+                className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs text-white border shadow-sm"
+                style={{ backgroundColor: theme.solidDark, borderColor: theme.solidPrimary }}
+              >
+                {(currentUser?.name || 'ST').split(' ').map(n => n[0]).slice(0, 2).join('')}
+              </div>
+              <div className="text-right hidden sm:block">
+                <div className="text-xs font-bold text-white line-clamp-1">
+                  {currentUser?.name || 'Department Staff'}
+                </div>
+                <div className="text-[10px] font-mono text-emerald-400">
+                  {currentUser?.designation || 'Academic Staff'}
+                </div>
               </div>
             </div>
-          </button>
+          )}
 
           <button
             onClick={() => onLogout ? onLogout() : navigateTo('/hod/login')}
@@ -7147,6 +7225,8 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                 selectedStaffId={selectedStaffId}
                 setSelectedStaffId={setSelectedStaffId}
                 onOpenStaffBuilder={() => handleTabSwitch('staff_builder')}
+                isStaffUser={isStaffUser}
+                currentUser={currentUser}
                 courses={courses}
                 uploads={uploads}
                 dissertations={dissertations}
