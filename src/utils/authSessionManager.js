@@ -115,7 +115,9 @@ export function storeUserSession(user, token = null, explicitRole = null) {
   let role = explicitRole || user.role || 'student';
   if (role === 'admin' || user.is_admin || user.role === 'admin') {
     role = 'admin';
-  } else if (role === 'hod' || user.department_code || user.is_hod) {
+  } else if (role === 'hod_staff' || user.role === 'hod_staff') {
+    role = 'hod_staff';
+  } else if (role === 'hod' || user.is_hod || (user.department_code && !user.staff_code && !user.staff_id)) {
     role = 'hod';
   } else if (role === 'developer' || user.role === 'developer') {
     role = 'developer';
@@ -137,6 +139,10 @@ export function storeUserSession(user, token = null, explicitRole = null) {
       if (token) localStorage.setItem('fcc_admin_token', token);
     } else if (role === 'hod') {
       localStorage.setItem('fcc_hod_session', JSON.stringify(cleanUser));
+      if (token) localStorage.setItem('fcc_hod_token', token);
+    } else if (role === 'hod_staff') {
+      localStorage.setItem('fcc_hod_session', JSON.stringify(cleanUser));
+      localStorage.setItem('fcc_active_staff_session', JSON.stringify(cleanUser));
       if (token) localStorage.setItem('fcc_hod_token', token);
     } else if (role === 'developer') {
       localStorage.setItem('fcc_developer_session', 'active');
@@ -229,11 +235,11 @@ export function getActiveUserSession() {
       return null;
     }
 
-    if (activeRole === 'hod') {
-      const s = localStorage.getItem('fcc_hod_session');
+    if (activeRole === 'hod' || activeRole === 'hod_staff') {
+      const s = localStorage.getItem('fcc_active_staff_session') || localStorage.getItem('fcc_hod_session');
       if (s) {
         const u = JSON.parse(s);
-        if (u && (u.role === 'hod' || u.department_code)) return u;
+        if (u && (u.role === 'hod' || u.role === 'hod_staff' || u.department_code)) return u;
       }
       return null;
     }
@@ -253,25 +259,28 @@ export function getActiveUserSession() {
       return null;
     }
 
-    // Fallback: Check if exactly one session exists
+    // Fallback: Check if active session exists
     const hasAdmin = Boolean(localStorage.getItem('fcc_admin_session'));
+    const hasStaff = Boolean(localStorage.getItem('fcc_active_staff_session'));
     const hasHod = Boolean(localStorage.getItem('fcc_hod_session'));
     const hasStudent = Boolean(localStorage.getItem('fcc_student_session'));
 
-    const count = (hasAdmin ? 1 : 0) + (hasHod ? 1 : 0) + (hasStudent ? 1 : 0);
-    if (count > 1) {
-      // Conflicting sessions detected: purge immediately for security!
-      clearAllAuthStores({ reason: 'conflicting_sessions_detected' });
-      return null;
+    if (hasStaff) {
+      localStorage.setItem('fcc_active_role', 'hod_staff');
+      return JSON.parse(localStorage.getItem('fcc_active_staff_session'));
     }
-
     if (hasAdmin) {
       localStorage.setItem('fcc_active_role', 'admin');
       return JSON.parse(localStorage.getItem('fcc_admin_session'));
     }
     if (hasHod) {
-      localStorage.setItem('fcc_active_role', 'hod');
-      return JSON.parse(localStorage.getItem('fcc_hod_session'));
+      const parsed = JSON.parse(localStorage.getItem('fcc_hod_session'));
+      if (parsed?.role === 'hod_staff') {
+        localStorage.setItem('fcc_active_role', 'hod_staff');
+      } else {
+        localStorage.setItem('fcc_active_role', 'hod');
+      }
+      return parsed;
     }
     if (hasStudent) {
       localStorage.setItem('fcc_active_role', 'student');

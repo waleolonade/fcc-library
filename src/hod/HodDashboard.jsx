@@ -380,8 +380,15 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
   };
 
   // Active Tab
-  // 'overview' | 'courses' | 'upload' | 'submissions' | 'dissertations' | 'reserves' | 'scholars' | 'communication' | 'settings'
-  const [activeTab, setActiveTab] = useState('overview');
+  // 'overview' | 'courses' | 'upload' | 'submissions' | 'dissertations' | 'reserves' | 'scholars' | 'communication' | 'settings' | 'staff_builder' | 'staff_workspace'
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash || '';
+      if (hash.includes('staff-workspace') || hash.includes('staffworkspace')) return 'staff_workspace';
+      if (hash.includes('staff-builder') || hash.includes('staffbuilder')) return 'staff_builder';
+    }
+    return isStaffUser ? 'staff_workspace' : 'overview';
+  });
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Database-backed states

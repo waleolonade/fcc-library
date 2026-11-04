@@ -838,7 +838,7 @@ export default function App() {
         viewMode === 'student' || viewMode === 'developer'
           ? 'h-screen overflow-hidden'
           : currentUser &&
-            ['admin', 'hod'].includes(currentUser.role) &&
+            ['admin', 'hod', 'hod_staff'].includes(currentUser.role) &&
             !['kiosk', 'book_dossier', 'admin_login', 'hod_login'].includes(viewMode)
           ? 'pb-16 lg:pb-0 lg:h-screen lg:overflow-hidden'
           : 'pb-16'
@@ -938,7 +938,7 @@ export default function App() {
             onImpersonate={(role, user) => {
               setCurrentUser(user);
               if (role === 'admin') setViewMode('admin');
-              else if (role === 'hod') setViewMode('hod');
+              else if (role === 'hod' || role === 'hod_staff') setViewMode('hod');
               else if (role === 'student') setViewMode('student');
             }}
             onLogout={() => {
@@ -1104,7 +1104,7 @@ export default function App() {
               }}
             />
           )
-        ) : currentUser.role === 'hod' ? (
+        ) : (currentUser.role === 'hod' || currentUser.role === 'hod_staff') ? (
           devConfig?.pageStatus?.hod?.enabled === false && !currentUser?.isDeveloperImpersonation ? (
             <PageMaintenanceGuard
               pageTitle={devConfig.pageStatus.hod.title || 'HOD Academic Department'}
@@ -1116,7 +1116,7 @@ export default function App() {
             />
           ) : (
             <HodDashboard
-              key={currentUser?.department_code || 'hod'}
+              key={currentUser?.id || currentUser?.department_code || 'hod'}
               user={currentUser}
               onLogout={() => handleLogout('hod')}
             />
