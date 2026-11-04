@@ -866,7 +866,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
 
   const handleUpdateStaff = async (id, staffPayload) => {
     try {
-      const endpoint = `${getApiBase()}/hod/staff/${id}`;
+      const endpoint = `${getApiBase()}/hod/staff/${encodeURIComponent(id)}`;
       let res;
       try {
         res = await fetch(endpoint, {
@@ -874,22 +874,39 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(staffPayload)
         });
-      } catch (netErr) {
-        if (isLocalhostHost) {
-          res = await fetch(`${window.location.protocol}//${window.location.hostname}:8000/api/hod/staff/${id}`, {
-            method: 'PUT',
+        if (!res || !res.ok) {
+          res = await fetch(endpoint, {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(staffPayload)
           });
+        }
+      } catch (netErr) {
+        if (isLocalhostHost) {
+          const directEndpoint = `${window.location.protocol}//${window.location.hostname}:8000/api/hod/staff/${encodeURIComponent(id)}`;
+          try {
+            res = await fetch(directEndpoint, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(staffPayload)
+            });
+          } catch (e2) {
+            res = await fetch(directEndpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(staffPayload)
+            });
+          }
         }
       }
       if (res) {
         const data = await res.json();
         if (data.success || data.status === 'success') {
           sounds.playSuccessChime();
+          setStaffList(prev => prev.map(s => s.id === id ? { ...s, ...staffPayload, ...(data.staff || {}) } : s));
           await fetchStaffList();
-          window.dispatchEvent(new CustomEvent('fcc-staff-updated', { detail: data.staff }));
-          return { success: true, staff: data.staff };
+          window.dispatchEvent(new CustomEvent('fcc-staff-updated', { detail: data.staff || { id, ...staffPayload } }));
+          return { success: true, staff: data.staff || { id, ...staffPayload } };
         } else {
           sounds.playErrorBuzz();
           return { success: false, message: data.message || 'Staff update failed' };
@@ -904,19 +921,36 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
 
   const handleDeleteStaff = async (id) => {
     try {
-      const endpoint = `${getApiBase()}/hod/staff/${id}`;
+      const endpoint = `${getApiBase()}/hod/staff/${encodeURIComponent(id)}`;
       let res;
       try {
         res = await fetch(endpoint, { method: 'DELETE' });
+        if (!res || !res.ok) {
+          res = await fetch(`${endpoint}/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ _method: 'DELETE' })
+          });
+        }
       } catch (netErr) {
         if (isLocalhostHost) {
-          res = await fetch(`${window.location.protocol}//${window.location.hostname}:8000/api/hod/staff/${id}`, { method: 'DELETE' });
+          const directEndpoint = `${window.location.protocol}//${window.location.hostname}:8000/api/hod/staff/${encodeURIComponent(id)}`;
+          try {
+            res = await fetch(directEndpoint, { method: 'DELETE' });
+          } catch (e2) {
+            res = await fetch(`${directEndpoint}/delete`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ _method: 'DELETE' })
+            });
+          }
         }
       }
       if (res) {
         const data = await res.json();
         if (data.success || data.status === 'success') {
           sounds.playSuccessChime();
+          setStaffList(prev => prev.filter(s => s.id !== id));
           await fetchStaffList();
           window.dispatchEvent(new CustomEvent('fcc-staff-updated', { detail: { id } }));
           return { success: true };
@@ -7207,7 +7241,12 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                 onBulkUpdateStaff={handleBulkUpdateStaff}
                 onLaunchStaffWorkspace={(staff) => {
                   const sId = typeof staff === 'object' ? staff?.id : staff;
-                  if (sId) setSelectedStaffId(sId);
+                  if (sId) {
+                    setSelectedStaffId(sId);
+                    try {
+                      localStorage.setItem('fcc_active_staff_selection', JSON.stringify(staff));
+                    } catch (e) {}
+                  }
                   handleTabSwitch('staff_workspace');
                 }}
                 onRefreshStaff={fetchStaffList}

@@ -380,6 +380,105 @@ export default function HodStaffPageBuilder({
     }
   };
 
+  // Dedicated Handlers for Launch, Delete, Password Reset & Workspace Status
+  const handleLaunchActiveStaffWorkspace = (staffObj) => {
+    const target = staffObj || activeStaff;
+    if (!target) return;
+    sounds.playClick();
+    if (target.status === 'suspended') {
+      const proceed = window.confirm(
+        `Note: ${target.name}'s workspace is currently marked as SUSPENDED in the database.\n\nDo you want to proceed and open this workspace anyway?`
+      );
+      if (!proceed) return;
+    }
+    try {
+      localStorage.setItem('fcc_active_staff_selection', JSON.stringify(target));
+    } catch (e) {}
+    showToast('success', `Launching live delegated workspace for ${target.name} (${target.staff_code})...`);
+    if (onLaunchStaffWorkspace) {
+      onLaunchStaffWorkspace(target);
+    }
+  };
+
+  const handleDeleteActiveStaff = async () => {
+    if (!activeStaff || isSaving) return;
+    sounds.playClick();
+    const confirmDel = window.confirm(
+      `Permanently remove staff workspace for ${activeStaff.name} (${activeStaff.staff_code})?\n\nThis will remove their assigned functions and database record.`
+    );
+    if (!confirmDel) return;
+
+    setIsSaving(true);
+    try {
+      const res = await onDeleteStaff(activeStaff.id);
+      if (res && res.success) {
+        showToast('success', `Staff workspace for ${activeStaff.name} removed from central database.`);
+        const remaining = staffList.filter(s => s.id !== activeStaff.id);
+        if (remaining.length > 0) {
+          setSelectedStaffId(remaining[0].id);
+        } else {
+          setSelectedStaffId(null);
+        }
+        if (onRefreshStaff) await onRefreshStaff(deptCode);
+      } else {
+        showToast('error', res?.message || 'Failed to remove staff workspace from database.');
+      }
+    } catch (e) {
+      showToast('error', 'Error removing staff: ' + (e.message || 'Network error'));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleToggleActiveStaffStatus = async () => {
+    if (!activeStaff || isSaving) return;
+    sounds.playClick();
+    const newStatus = activeStaff.status === 'active' ? 'suspended' : 'active';
+    setIsSaving(true);
+    try {
+      const res = await onUpdateStaff(activeStaff.id, { status: newStatus });
+      if (res && res.success) {
+        showToast(
+          'success',
+          newStatus === 'active'
+            ? `Workspace for ${activeStaff.name} reactivated in database.`
+            : `Workspace for ${activeStaff.name} suspended. Staff login is now blocked in database.`
+        );
+        if (onRefreshStaff) await onRefreshStaff(deptCode);
+      } else {
+        showToast('error', res?.message || 'Failed to update workspace status in database.');
+      }
+    } catch (e) {
+      showToast('error', 'Error updating status: ' + (e.message || 'Network error'));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleResetStaffPassword = async () => {
+    if (!activeStaff || isSaving) return;
+    const defaultFallback = `${deptCode.toLowerCase()}staff123`;
+    const currentPass = activeStaff.password_plain || defaultFallback;
+    const newPass = window.prompt(`Set new access password for ${activeStaff.name} (${activeStaff.staff_code}):`, currentPass);
+    if (newPass === null || !newPass.trim()) return;
+
+    setIsSaving(true);
+    try {
+      const res = await onUpdateStaff(activeStaff.id, { password: newPass.trim() });
+      if (res && res.success) {
+        setShowPasswordMap(p => ({ ...p, [activeStaff.id]: true }));
+        showToast('success', `Password for ${activeStaff.name} updated to "${newPass.trim()}" and saved to database.`);
+        if (onRefreshStaff) await onRefreshStaff(deptCode);
+      } else {
+        showToast('error', res?.message || 'Failed to update password in database.');
+      }
+    } catch (e) {
+      showToast('error', 'Error updating password: ' + (e.message || 'Network error'));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Toggle a feature inside the Create Modal
   const handleToggleModalFeature = (featId) => {
     sounds.playClick();
@@ -559,7 +658,7 @@ export default function HodStaffPageBuilder({
             {activeStaff && (
               <button
                 type="button"
-                onClick={() => onLaunchStaffWorkspace(activeStaff)}
+                onClick={() => handleLaunchActiveStaffWorkspace(activeStaff)}
                 className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-lg transition cursor-pointer"
                 title="Open Page 2 (#/hod/staff-workspace) to preview and operate this staff member's live page"
               >
@@ -701,19 +800,19 @@ export default function HodStaffPageBuilder({
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => onLaunchStaffWorkspace(activeStaff)}
-                      className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow transition cursor-pointer"
+                      onClick={() => handleLaunchActiveStaffWorkspace(activeStaff)}
+                      className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow transition cursor-pointer hover:scale-105 active:scale-95"
+                      title="Launch and enter this staff member's live delegated workspace"
                     >
                       <Play size={13} />
                       <span>Launch Staff Dashboard &rarr;</span>
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        const confirmDel = window.confirm(`Permanently remove staff workspace for ${activeStaff.name} (${activeStaff.staff_code})?`);
-                        if (confirmDel) onDeleteStaff(activeStaff.id);
-                      }}
-                      className="px-3 py-2 rounded-xl bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-200 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                      disabled={isSaving}
+                      onClick={handleDeleteActiveStaff}
+                      className="px-3 py-2 rounded-xl bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-200 text-xs font-bold transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      title="Permanently remove this staff member and delete from database"
                     >
                       <Trash2 size={13} />
                       <span>Remove</span>
@@ -739,28 +838,41 @@ export default function HodStaffPageBuilder({
                   </div>
 
                   <div className="p-2.5 rounded-xl bg-[#070d19] border border-slate-800 flex items-center justify-between">
-                    <div>
+                    <div className="min-w-0 pr-1">
                       <span className="text-[10px] text-slate-500 block">INITIAL ACCESS PASSWORD</span>
-                      <strong className="text-emerald-300">
-                        {showPasswordMap[activeStaff.id] ? (activeStaff.password_plain || '••••••••') : '••••••••'}
+                      <strong className="text-emerald-300 tracking-wider break-all">
+                        {showPasswordMap[activeStaff.id]
+                          ? (activeStaff.password_plain || `${deptCode.toLowerCase()}staff123`)
+                          : '••••••••••••'}
                       </strong>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 shrink-0">
                       <button
                         type="button"
-                        onClick={() => setShowPasswordMap(p => ({ ...p, [activeStaff.id]: !p[activeStaff.id] }))}
-                        className="p-1 rounded text-slate-400 hover:text-white"
-                        title="Toggle password view"
+                        onClick={() => {
+                          sounds.playClick();
+                          setShowPasswordMap(p => ({ ...p, [activeStaff.id]: !p[activeStaff.id] }));
+                        }}
+                        className="p-1 rounded text-slate-400 hover:text-white transition cursor-pointer"
+                        title={showPasswordMap[activeStaff.id] ? "Hide password" : "View initial access password"}
                       >
-                        {showPasswordMap[activeStaff.id] ? <EyeOff size={13} /> : <Eye size={13} />}
+                        {showPasswordMap[activeStaff.id] ? <EyeOff size={14} className="text-amber-400" /> : <Eye size={14} className="text-emerald-400" />}
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleCopy(activeStaff.password_plain || 'staff123', 'pass')}
-                        className="p-1 rounded text-slate-400 hover:text-white"
+                        onClick={() => handleCopy(activeStaff.password_plain || `${deptCode.toLowerCase()}staff123`, 'pass')}
+                        className="p-1 rounded text-slate-400 hover:text-white transition cursor-pointer"
                         title="Copy Password"
                       >
                         {copiedKey === 'pass' ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleResetStaffPassword}
+                        className="p-1 rounded text-slate-400 hover:text-cyan-300 transition cursor-pointer"
+                        title="Change / Reset Initial Access Password"
+                      >
+                        <KeyRound size={13} />
                       </button>
                     </div>
                   </div>
@@ -768,14 +880,21 @@ export default function HodStaffPageBuilder({
                   <div className="p-2.5 rounded-xl bg-[#070d19] border border-slate-800 flex items-center justify-between">
                     <div>
                       <span className="text-[10px] text-slate-500 block">WORKSPACE STATUS</span>
-                      <span className={`font-bold ${activeStaff.status === 'active' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      <span className={`font-bold text-xs flex items-center gap-1.5 ${activeStaff.status === 'active' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <span className={`w-2 h-2 rounded-full ${activeStaff.status === 'active' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
                         {activeStaff.status === 'active' ? '✓ ACTIVE' : 'SUSPENDED'}
                       </span>
                     </div>
                     <button
                       type="button"
-                      onClick={() => onUpdateStaff(activeStaff.id, { status: activeStaff.status === 'active' ? 'suspended' : 'active' })}
-                      className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 hover:text-white"
+                      disabled={isSaving}
+                      onClick={handleToggleActiveStaffStatus}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer flex items-center gap-1 shadow ${
+                        activeStaff.status === 'active'
+                          ? 'bg-rose-950/80 hover:bg-rose-900 border border-rose-800 text-rose-200'
+                          : 'bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-200'
+                      }`}
+                      title={activeStaff.status === 'active' ? "Suspend staff member access (blocks login)" : "Reactivate staff member workspace"}
                     >
                       {activeStaff.status === 'active' ? 'Suspend' : 'Activate'}
                     </button>

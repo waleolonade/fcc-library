@@ -276,7 +276,7 @@ class HodStaffPortalController extends Controller
         } catch (\Throwable $e) {}
     }
 
-    private function formatStaffRecord($row, bool $includePassword = false): array
+    private function formatStaffRecord($row, bool $includePassword = true): array
     {
         $arr = (array) $row;
         $arr['assigned_courses'] = is_string($arr['assigned_courses'] ?? null)
@@ -291,6 +291,9 @@ class HodStaffPortalController extends Controller
         unset($arr['password_hash']);
         if (!$includePassword) {
             unset($arr['password_plain']);
+        } else if (empty($arr['password_plain'])) {
+            $code = strtolower($arr['department_code'] ?? 'cem');
+            $arr['password_plain'] = "{$code}staff123";
         }
         return $arr;
     }

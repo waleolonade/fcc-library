@@ -636,7 +636,8 @@ Route::post('/hod/staff/login', [\App\Http\Controllers\Api\HodStaffPortalControl
 Route::post('/hod/staff/log-activity', [\App\Http\Controllers\DeveloperController::class, 'logStaffActivity']);
 Route::get('/hod/staff/features-catalog', [\App\Http\Controllers\DeveloperController::class, 'getStaffFeaturesCatalog']);
 Route::match(['put', 'post'], '/hod/staff/{id}', [\App\Http\Controllers\Api\HodStaffPortalController::class, 'update'])->where('id', '.*');
-Route::delete('/hod/staff/{id}', [\App\Http\Controllers\Api\HodStaffPortalController::class, 'destroy'])->where('id', '.*');
+Route::match(['delete', 'post'], '/hod/staff/{id}', [\App\Http\Controllers\Api\HodStaffPortalController::class, 'destroy'])->where('id', '.*');
+Route::match(['delete', 'post'], '/hod/staff/{id}/delete', [\App\Http\Controllers\Api\HodStaffPortalController::class, 'destroy'])->where('id', '.*');
 
 // =========================================================================
 // REAL-TIME SYNCHRONIZATION API (Instant Cross-Device Updates & Auto-Close)
