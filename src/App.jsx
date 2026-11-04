@@ -587,9 +587,18 @@ export default function App() {
           setViewMode('hod_login');
           navigateTo('/hod/login');
         }
-      } else if (path.startsWith('/scholar')) {
+      } else if (path.startsWith('/scholar') || path.startsWith('/student')) {
         const active = getActiveUserSession();
-        if (active && active.role === 'student') {
+        if (active && active.role === 'hod_staff') {
+          // Departmental staff are strictly blocked from entering the student/scholar portal
+          setCurrentUser(active);
+          setViewMode('hod');
+          navigateTo('/hod/staff-workspace');
+        } else if (active && active.role === 'hod') {
+          setCurrentUser(active);
+          setViewMode('hod');
+          navigateTo('/hod/overview');
+        } else if (active && active.role === 'student') {
           setCurrentUser(active);
           setViewMode('student');
         } else {
@@ -598,12 +607,34 @@ export default function App() {
         }
       } else if (path === '/communication' || path.startsWith('/communication')) {
         const active = getActiveUserSession();
-        if (active && active.role === 'student') {
+        if (active && active.role === 'hod_staff') {
+          setCurrentUser(active);
+          setViewMode('hod');
+          navigateTo('/hod/communication');
+        } else if (active && active.role === 'student') {
           setCurrentUser(active);
           setViewMode('student');
         } else {
           setViewMode('login');
           navigateTo('/login');
+        }
+      } else if (path.startsWith('/login')) {
+        const active = getActiveUserSession();
+        if (active && active.role === 'hod_staff') {
+          // Already authenticated as staff - do not open student login
+          setCurrentUser(active);
+          setViewMode('hod');
+          navigateTo('/hod/staff-workspace');
+        } else if (active && active.role === 'hod') {
+          setCurrentUser(active);
+          setViewMode('hod');
+          navigateTo('/hod/overview');
+        } else if (active && active.role === 'admin') {
+          setCurrentUser(active);
+          setViewMode('admin');
+          navigateTo('/admin/overview');
+        } else {
+          setViewMode('login');
         }
       } else if (path === '/qr-approve' || path.startsWith('/qr-approve') || path === '/qr-login' || path.startsWith('/qr-login') || path === '/mobile-pass' || path.startsWith('/mobile-pass') || (typeof window !== 'undefined' && window.location.pathname.includes('/qr-approve'))) {
         setViewMode('qr_approval');
@@ -949,6 +980,9 @@ export default function App() {
                 } else if (currentUser?.role === 'hod') {
                   setViewMode('hod');
                   navigateTo('/hod/overview');
+                } else if (currentUser?.role === 'hod_staff') {
+                  setViewMode('hod');
+                  navigateTo('/hod/staff-workspace');
                 } else {
                   setViewMode('student');
                   navigateTo('/scholar/profile');
@@ -961,6 +995,27 @@ export default function App() {
             onLogin={(user) => {
               sounds.playSuccessChime();
               if (user) {
+                if (user.role === 'hod_staff') {
+                  storeUserSession(user, null, 'hod');
+                  setCurrentUser(user);
+                  setViewMode('hod');
+                  navigateTo('/hod/staff-workspace');
+                  return;
+                }
+                if (user.role === 'hod') {
+                  storeUserSession(user, null, 'hod');
+                  setCurrentUser(user);
+                  setViewMode('hod');
+                  navigateTo('/hod/overview');
+                  return;
+                }
+                if (user.role === 'admin') {
+                  storeUserSession(user, null, 'admin');
+                  setCurrentUser(user);
+                  setViewMode('admin');
+                  navigateTo('/admin/overview');
+                  return;
+                }
                 const studentUser = {
                   ...user,
                   role: 'student',

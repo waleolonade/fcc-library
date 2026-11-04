@@ -526,10 +526,10 @@ export default function HodLogin({ onLogin, onBackToPublic }) {
           </button>
 
           <a
-            href="#/scholar/library_search"
+            href="#/opac"
             className="text-emerald-400 hover:text-emerald-300 font-semibold"
           >
-            Student Catalog
+            Public Catalog
           </a>
 
           <a

@@ -2895,13 +2895,15 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
             role="hod"
           />
 
-          <button
-            onClick={() => navigateTo('/scholar/library_search')}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition"
-          >
-            <Compass size={14} style={{ color: theme.accent }} />
-            <span>Scholar View</span>
-          </button>
+          {!isStaffUser && (
+            <button
+              onClick={() => navigateTo('/scholar/library_search')}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition"
+            >
+              <Compass size={14} style={{ color: theme.accent }} />
+              <span>Scholar View</span>
+            </button>
+          )}
 
           {/* Interactive HOD Profile Pill (or Staff Identity Pill for staff) */}
           {!isStaffUser ? (
