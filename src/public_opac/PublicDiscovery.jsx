@@ -355,9 +355,9 @@ export default function PublicDiscovery({
     return JSON.parse(localStorage.getItem('fcc_saved_books_list') || '[]');
   });
 
-  // Server-side / Client Pagination State (Prompt 34: 20, 50, 100 per page)
+  // Server-side / Client Pagination State (Prompt: 12 per page default for well-organized view)
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(12);
   const [sortBy, setSortBy] = useState(''); // '' (Relevance) | 'new' | 'old' | 'random' | 'rating'
 
   // Resource Category Filter: 'LocalBooks' (Default Books Only) | 'Journal' | 'LocalJournals' | 'OnlineJournals' | 'Student Project'
@@ -689,6 +689,72 @@ export default function PublicDiscovery({
     }
   };
 
+  // Provenance & Origin Details for well-organized books display (HODs, Admin, Staff, Developer)
+  const getProvenanceDetails = (item) => {
+    const upBy = String(item.uploaded_by || item.uploadedBy || '').toLowerCase();
+    const upId = String(item.id || item.upload_id || '').toUpperCase();
+    const notes = String(item.review_notes || '').toLowerCase();
+    const rights = String(item.rights_status || '').toLowerCase();
+
+    if (upBy.includes('staff') || notes.includes('staff') || upBy.includes('stf/') || upId.includes('STF')) {
+      return {
+        type: 'staff',
+        label: 'STAFF HANDOUT',
+        icon: '👨‍🏫',
+        badgeClass: 'bg-indigo-950/90 text-indigo-300 border-indigo-500/80',
+        authorTag: 'Staff under HOD',
+        accentText: 'text-indigo-300 font-semibold'
+      };
+    }
+    if (upBy.includes('developer') || notes.includes('developer') || upId.includes('DEV')) {
+      return {
+        type: 'developer',
+        label: 'DEVELOPER VAULT',
+        icon: '⚙️',
+        badgeClass: 'bg-purple-950/90 text-purple-300 border-purple-500/80',
+        authorTag: 'System Developer Repository',
+        accentText: 'text-purple-300 font-semibold'
+      };
+    }
+    if (upBy.includes('admin') || upBy.includes('librarian') || upBy.includes('chief') || upId.startsWith('FCC-LIB-')) {
+      return {
+        type: 'admin',
+        label: 'ADMIN STACK',
+        icon: '⭐',
+        badgeClass: 'bg-amber-950/90 text-amber-300 border-amber-500/80',
+        authorTag: 'Library Administration',
+        accentText: 'text-amber-300 font-semibold'
+      };
+    }
+    if (upBy.includes('hod') || upId.startsWith('FCC-HOD-') || upId.startsWith('HOD-') || rights.includes('hod')) {
+      return {
+        type: 'hod',
+        label: 'HOD CURRICULUM',
+        icon: '🏛️',
+        badgeClass: 'bg-emerald-950/90 text-emerald-300 border-emerald-500/80',
+        authorTag: 'Department Head (HOD)',
+        accentText: 'text-emerald-300 font-semibold'
+      };
+    }
+    return {
+      type: 'general',
+      label: 'CAMPUS STACK',
+      icon: '📚',
+      badgeClass: 'bg-teal-950/90 text-teal-300 border-teal-600/80',
+      authorTag: 'Institutional Collection',
+      accentText: 'text-teal-300 font-semibold'
+    };
+  };
+
+  const isRecentlyUploaded = (item) => {
+    const rawTime = item.uploaded_at || item.uploadedAt || item.created_at;
+    if (!rawTime) return false;
+    const itemDate = new Date(rawTime).getTime();
+    if (isNaN(itemDate) || itemDate <= 0) return false;
+    const diffDays = (Date.now() - itemDate) / (1000 * 60 * 60 * 24);
+    return diffDays >= 0 && diffDays <= 30; // Added in the last 30 days
+  };
+
   // Filtered Books with Multi-Field, Category, and Advanced Facets
   const filteredBooks = useMemo(() => {
     return books.filter(b => {
@@ -881,11 +947,22 @@ export default function PublicDiscovery({
       return matchQuery && matchSubject && matchDepartment && matchFormat && matchAvail;
     });
 
-    // Apply Sorting: Relevance (''), Newest First ('new'), Oldest First ('old'), Random ('random'), Rating ('rating')
-    if (sortBy === 'new') {
+    // Apply Sorting: Newest Uploads First by default ('', 'new'), Oldest First ('old'), Rating ('rating'), Random ('random')
+    if (sortBy === 'new' || sortBy === '' || !sortBy) {
       result.sort((a, b) => {
-        const yA = parseInt(a.year || a.publication_year || a.publish_year || a.first_publish_year || 0);
-        const yB = parseInt(b.year || b.publication_year || b.publish_year || b.first_publish_year || 0);
+        const parseTime = (item) => {
+          const t = item.uploaded_at || item.uploadedAt || item.created_at;
+          if (t) {
+            const ms = new Date(t).getTime();
+            if (!isNaN(ms) && ms > 0) return ms;
+          }
+          const yr = parseInt(item.year || item.publication_year || 0);
+          return yr > 0 ? yr * 10000000000 : 0;
+        };
+        const diff = parseTime(b) - parseTime(a);
+        if (diff !== 0) return diff;
+        const yA = parseInt(a.year || a.publication_year || 0);
+        const yB = parseInt(b.year || b.publication_year || 0);
         return yB - yA;
       });
     } else if (sortBy === 'old') {
@@ -2144,6 +2221,9 @@ export default function PublicDiscovery({
                     const isSaved = savedBooks.includes(b.id);
                     const isAvailable = (b.copiesAvailable || 0) > 0;
 
+                    const provenance = getProvenanceDetails(b);
+                    const isNew = isRecentlyUploaded(b);
+
                     return (
                       <div
                         key={b.id}
@@ -2158,13 +2238,18 @@ export default function PublicDiscovery({
                           {/* Top Badges: Origin Tag (LOCAL vs ONLINE API) & Call Number */}
                           <div className="flex justify-between items-center gap-2">
                             <div className="flex items-center gap-1.5 truncate">
+                              {isNew && (
+                                <span className="px-1.5 py-0.5 rounded bg-gradient-to-r from-amber-400 to-emerald-400 text-slate-950 text-[9px] font-black font-mono shadow flex items-center gap-0.5 shrink-0 animate-pulse">
+                                  <Sparkles size={9} /> NEW
+                                </span>
+                              )}
                               {isOnline ? (
                                 <span className="px-2 py-0.5 rounded bg-sky-950/90 text-sky-300 text-[10px] font-black border border-sky-600 flex items-center gap-1 shadow-sm shrink-0">
                                   🌐 ONLINE JOURNAL (API)
                                 </span>
                               ) : (
-                                <span className="px-2 py-0.5 rounded bg-emerald-950/90 text-emerald-300 text-[10px] font-black border border-emerald-600 flex items-center gap-1 shadow-sm shrink-0">
-                                  🏛️ LOCAL CAMPUS (HOD/ADMIN)
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-black border flex items-center gap-1 shadow-sm shrink-0 ${provenance.badgeClass}`}>
+                                  {provenance.icon} {provenance.label}
                                 </span>
                               )}
                               <span className="px-1.5 py-0.5 rounded bg-black/50 text-slate-300 text-[10px] font-mono font-bold border border-white/10 truncate">
@@ -2306,8 +2391,11 @@ export default function PublicDiscovery({
                               <div className="mt-1 space-y-0.5 text-[11px] text-emerald-300/80">
                                 <p className="truncate">Journal: <span className="text-emerald-200 font-semibold">{b.journalName || b.journal_name || b.publisher || 'Local Department Journal'}</span></p>
                                 {b.issn && <p className="truncate text-[10px] font-mono text-teal-300/80">ISSN: {b.issn}</p>}
-                                <p className="text-[10px] text-emerald-400/70 truncate">
-                                  Uploaded by: <span className="font-medium text-emerald-300">{b.uploadedBy || 'HOD / Library Admin'}</span>
+                                <p className="text-[10px] text-emerald-400/80 truncate flex items-center gap-1">
+                                  <span>Source:</span>
+                                  <span className={provenance.accentText}>
+                                    {provenance.icon} {b.uploadedBy || b.uploaded_by || provenance.authorTag}
+                                  </span>
                                 </p>
                               </div>
                             ) : (
@@ -2328,8 +2416,11 @@ export default function PublicDiscovery({
                                     {b.author}
                                   </button>
                                 </p>
-                                <p className="text-[10px] text-emerald-400/70 truncate">
-                                  Uploaded by: <span className="font-medium text-emerald-300">{b.uploadedBy || 'HOD / Library Admin'}</span>
+                                <p className="text-[10px] text-emerald-400/80 truncate flex items-center gap-1">
+                                  <span>Source:</span>
+                                  <span className={provenance.accentText}>
+                                    {provenance.icon} {b.uploadedBy || b.uploaded_by || provenance.authorTag}
+                                  </span>
                                 </p>
                               </div>
                             )}
@@ -2452,7 +2543,7 @@ export default function PublicDiscovery({
 
                     <div className="flex items-center gap-1.5 ml-2 border-l border-emerald-800/80 pl-3">
                       <span className="text-emerald-400/80">Page Size:</span>
-                      {[20, 50, 100].map(size => (
+                      {[12, 24, 48, 96].map(size => (
                         <button
                           key={size}
                           onClick={() => {

@@ -185,7 +185,7 @@ class CatalogController extends Controller
             'department', 'subject', 'shelf_location', 'shelfLocation', 'copies_total',
             'copies_available', 'cover_image', 'year', 'publisher', 'edition', 'category',
             'course_code', 'target_level', 'is_digital', 'abstract', 'pdf_pages', 'file_size',
-            'rights_status', 'status', 'description', 'file_name', 'uploaded_at', 'updated_at'
+            'rights_status', 'status', 'description', 'file_name', 'uploaded_at', 'uploaded_by', 'updated_at'
         ];
         $actualCols = array_filter($selectCols, fn($col) => Schema::hasColumn('books', $col));
         if (empty($actualCols)) {
@@ -263,6 +263,10 @@ class CatalogController extends Controller
             $data['hasBinaryPdf'] = true;
             $data['isDigital'] = true;
             $data['is_digital'] = 1;
+            $data['uploaded_by'] = $book->uploaded_by ?: ($linkedUpload?->hod_name ?: 'HOD / Department Faculty');
+            $data['uploadedBy'] = $data['uploaded_by'];
+            $data['uploaded_at'] = $book->uploaded_at ?? ($linkedUpload?->created_at ?? date('Y-m-d H:i:s'));
+            $data['uploadedAt'] = $data['uploaded_at'];
             $data['pdfUrl'] = "/api/catalog/{$book->id}/file";
             $data['courseCode'] = $book->course_code ?? $book->courseCode ?? '';
             $data['targetLevel'] = $book->target_level ?? $book->targetLevel ?? 'HND II';
