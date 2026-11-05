@@ -84,6 +84,51 @@ class CatalogController extends Controller
 
         $query = Book::query();
 
+        // Strict Separation of Books vs Journals at the query level
+        $filterType = strtolower(trim((string)$request->query('type', $request->query('category', $request->query('resource_type', '')))));
+        $hasCatCol = Schema::hasColumn('books', 'category');
+        if (in_array($filterType, ['book', 'books', 'ebook', 'ebooks', 'textbook', 'textbooks'])) {
+            if ($hasCatCol) {
+                $query->where(function($q) {
+                    $q->whereNull('category')
+                      ->orWhere('category', 'Book')
+                      ->orWhere('category', '')
+                      ->orWhereNotIn(DB::raw('LOWER(category)'), ['journal', 'student project', 'thesis', 'dissertation']);
+                });
+            }
+            $query->where('id', 'not like', 'FCC-JRN-%')
+              ->where('id', 'not like', 'FCC-PRJ-%')
+              ->where('id', 'not like', 'TH-%')
+              ->where(function($q) {
+                  $q->whereNull('call_number')
+                    ->orWhere(function($sub) {
+                        $sub->where('call_number', 'not like', 'JRN-%')
+                            ->where('call_number', 'not like', 'ETD-%');
+                    });
+              });
+        } elseif (in_array($filterType, ['journal', 'journals', 'periodical', 'periodicals', 'serial', 'serials', 'article', 'articles'])) {
+            $query->where(function($q) use ($hasCatCol) {
+                if ($hasCatCol) {
+                    $q->where(DB::raw('LOWER(category)'), 'like', '%journal%');
+                }
+                $q->orWhere('id', 'like', 'FCC-JRN-%')
+                  ->orWhere('call_number', 'like', 'JRN-%')
+                  ->orWhere(DB::raw('LOWER(rights_status)'), 'like', '%journal%');
+            });
+        } elseif (in_array($filterType, ['project', 'projects', 'thesis', 'theses', 'dissertation', 'dissertations', 'student project'])) {
+            $query->where(function($q) use ($hasCatCol) {
+                if ($hasCatCol) {
+                    $q->where(DB::raw('LOWER(category)'), 'like', '%project%')
+                      ->orWhere(DB::raw('LOWER(category)'), 'like', '%thesis%');
+                }
+                $q->orWhere('id', 'like', 'FCC-PRJ-%')
+                  ->orWhere('id', 'like', 'TH-%')
+                  ->orWhere('call_number', 'like', 'ETD-%')
+                  ->orWhere(DB::raw('LOWER(rights_status)'), 'like', '%project%')
+                  ->orWhere(DB::raw('LOWER(rights_status)'), 'like', '%thesis%');
+            });
+        }
+
         if ($branch = $request->query('branch')) {
             if ($branch !== 'All' && $branch !== 'All Libraries') {
                 $query->where('branch', 'like', "%{$branch}%");
@@ -250,8 +295,18 @@ class CatalogController extends Controller
 
         if (Schema::hasTable('department_uploads')) {
             try {
-                $extraUploads = \App\Models\DepartmentUpload::whereNotIn('status', ['deleted', 'withdrawn', 'purged', 'rejected', 'declined'])
-                    ->get();
+                $extraUploadsQuery = \App\Models\DepartmentUpload::whereNotIn('status', ['deleted', 'withdrawn', 'purged', 'rejected', 'declined']);
+                if ($search = $request->query('search')) {
+                    $s = "%{$search}%";
+                    $extraUploadsQuery->where(function ($q) use ($s) {
+                        $q->where('title', 'like', $s)
+                          ->orWhere('author', 'like', $s)
+                          ->orWhere('course_code', 'like', $s)
+                          ->orWhere('department_name', 'like', $s)
+                          ->orWhere('assigned_call_number', 'like', $s);
+                    });
+                }
+                $extraUploads = $extraUploadsQuery->get();
                 $extraItems = [];
                 foreach ($extraUploads as $u) {
                     $uId = strtolower((string)$u->id);
@@ -259,6 +314,20 @@ class CatalogController extends Controller
                     if (!isset($existingCatalogIds[$uId]) && (!empty($bId) ? !isset($existingCatalogIds[$bId]) : true)) {
                         $cId = $u->book_id ?: $u->id;
                         $resType = $u->resource_type ?: 'Book';
+                        $isJrn = stripos($resType, 'Journal') !== false || stripos($resType, 'Article') !== false || stripos($resType, 'Periodical') !== false || stripos($resType, 'Serial') !== false;
+                        $isPrj = stripos($resType, 'Project') !== false || stripos($resType, 'Thesis') !== false || stripos($resType, 'Dissertation') !== false || stripos($resType, 'Capstone') !== false;
+                        $isBk = !$isJrn && !$isPrj;
+
+                        if (in_array($filterType, ['book', 'books', 'ebook', 'ebooks', 'textbook', 'textbooks']) && !$isBk) {
+                            continue;
+                        }
+                        if (in_array($filterType, ['journal', 'journals', 'periodical', 'periodicals', 'serial', 'serials', 'article', 'articles']) && !$isJrn) {
+                            continue;
+                        }
+                        if (in_array($filterType, ['project', 'projects', 'thesis', 'theses', 'dissertation', 'dissertations', 'student project']) && !$isPrj) {
+                            continue;
+                        }
+
                         $extraItems[] = [
                             'id' => $cId,
                             'upload_id' => $u->id,
@@ -270,7 +339,7 @@ class CatalogController extends Controller
                             'author_affiliation' => "Federal Co-operative College, Ibadan ({$u->department_name})",
                             'department' => $u->department_name ?: 'Academic Department',
                             'subject' => $u->department_name ?: 'Academic Studies',
-                            'category' => stripos($resType, 'Journal') !== false ? 'Journal' : (stripos($resType, 'Project') !== false ? 'Student Project' : 'Book'),
+                            'category' => $isJrn ? 'Journal' : ($isPrj ? 'Student Project' : 'Book'),
                             'resource_type' => $resType,
                             'course_code' => $u->course_code ?: '',
                             'courseCode' => $u->course_code ?: '',
@@ -300,7 +369,7 @@ class CatalogController extends Controller
                             'has_file' => true,
                             'hasBinaryPdf' => true,
                             'pdfUrl' => "/api/department-uploads/{$u->id}/file",
-                            'rights_status' => 'Approved Academic Book',
+                            'rights_status' => $isJrn ? 'Academic Research Journal' : ($isPrj ? 'Student Capstone Project / Thesis' : 'Approved Academic Book'),
                             'status' => 'approved',
                             'uploaded_at' => $u->created_at ?? date('Y-m-d H:i:s'),
                             'uploaded_by' => $u->hod_name ?: 'Department HOD'
@@ -314,7 +383,77 @@ class CatalogController extends Controller
             } catch (\Throwable $e) {}
         }
 
-        return response()->json($books);
+        $rawItems = is_array($books) ? $books : (method_exists($books, 'all') ? $books->all() : (array) $books);
+
+        // Strict Separation: Guarantee that books and journals are NEVER merged
+        if (!empty($filterType)) {
+            $rawItems = array_values(array_filter($rawItems, function($item) use ($filterType) {
+                $itemCat = strtolower((string)($item['category'] ?? ''));
+                $itemRes = strtolower((string)($item['resource_type'] ?? ''));
+                $itemId = strtoupper((string)($item['id'] ?? ''));
+                $callStr = strtoupper((string)($item['call_number'] ?? ''));
+                $rightsStr = strtolower((string)($item['rights_status'] ?? ''));
+                $subStr = strtolower((string)($item['subtitle'] ?? ''));
+
+                $isJournal = $itemCat === 'journal' ||
+                    str_contains($itemRes, 'journal') ||
+                    str_contains($itemRes, 'periodical') ||
+                    str_contains($itemRes, 'serial') ||
+                    str_contains($itemRes, 'article') ||
+                    str_starts_with($itemId, 'FCC-JRN-') ||
+                    str_starts_with($callStr, 'JRN-') ||
+                    str_contains($rightsStr, 'journal') ||
+                    str_contains($subStr, 'journal') ||
+                    !empty($item['issn']);
+
+                $isProject = $itemCat === 'student project' ||
+                    str_contains($itemRes, 'project') ||
+                    str_contains($itemRes, 'thesis') ||
+                    str_contains($itemRes, 'dissertation') ||
+                    str_contains($itemRes, 'capstone') ||
+                    str_starts_with($itemId, 'FCC-PRJ-') ||
+                    str_starts_with($itemId, 'TH-') ||
+                    str_starts_with($callStr, 'ETD-') ||
+                    str_contains($rightsStr, 'project') ||
+                    str_contains($rightsStr, 'thesis') ||
+                    str_contains($subStr, 'student research project');
+
+                $isBook = !$isJournal && !$isProject;
+
+                if (in_array($filterType, ['book', 'books', 'ebook', 'ebooks', 'textbook', 'textbooks'])) {
+                    return $isBook;
+                }
+                if (in_array($filterType, ['journal', 'journals', 'periodical', 'periodicals', 'serial', 'serials', 'article', 'articles'])) {
+                    return $isJournal;
+                }
+                if (in_array($filterType, ['project', 'projects', 'thesis', 'theses', 'dissertation', 'dissertations', 'student project'])) {
+                    return $isProject;
+                }
+                return true;
+            }));
+        }
+
+        return response()->json($rawItems);
+    }
+
+    /**
+     * Dedicated Journals Endpoint (/api/journals or /api/catalog/journals)
+     * Strictly returns ONLY academic journals, serials, and periodicals.
+     */
+    public function journals(Request $request)
+    {
+        $request->merge(['type' => 'journal', 'category' => 'journal']);
+        return $this->index($request);
+    }
+
+    /**
+     * Dedicated Books Endpoint (/api/catalog/books)
+     * Strictly returns ONLY academic books, textbooks, and lecture handouts.
+     */
+    public function books(Request $request)
+    {
+        $request->merge(['type' => 'book', 'category' => 'book']);
+        return $this->index($request);
     }
 
     public function show($id)

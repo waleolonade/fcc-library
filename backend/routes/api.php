@@ -244,6 +244,9 @@ Route::put('/rbac/roles/{id}/permissions', [PolicyController::class, 'updateRole
 
 // 6. Backward Compatibility Catalog API
 Route::get('/catalog', [CatalogController::class, 'index']);
+Route::get('/catalog/journals', [CatalogController::class, 'journals']);
+Route::get('/catalog/books', [CatalogController::class, 'books']);
+Route::get('/journals', [CatalogController::class, 'journals']);
 Route::get('/catalog/categories', [CatalogController::class, 'categories']);
 Route::get('/catalog/departments', [CatalogController::class, 'departments']);
 Route::get('/catalog/locations', [CatalogController::class, 'locations']);

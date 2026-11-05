@@ -267,7 +267,7 @@ export default function SmartCatalogSearch({
   const [authorFilter, setAuthorFilter] = useState('All');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchContainerRef = useRef(null);
-  const [activeCategory, setActiveCategory] = useState('Everything');
+  const [activeCategory, setActiveCategory] = useState('Books');
   const [selectedBranch, setSelectedBranch] = useState('All Branches');
   const [availabilityFilter, setAvailabilityFilter] = useState('all'); // 'all' | 'available'
   const [sortBy, setSortBy] = useState('relevance');
@@ -368,16 +368,15 @@ export default function SmartCatalogSearch({
     }).catch(() => {});
   };
 
-  // Friendly student categories
+  // Friendly student categories (Strictly Separates Books vs Journals)
   const categories = [
-    { id: 'Everything', label: 'All Holdings', icon: Sparkles },
-    { id: 'Books', label: 'Books & Textbooks', icon: BookOpen },
-    { id: 'eBooks & PDFs', label: 'E-Books & PDFs', icon: Zap },
-    { id: 'Journals', label: 'Academic Journals', icon: Layers },
-    { id: 'Theses & Projects', label: 'Student Projects & Theses', icon: GraduationCap },
-    { id: 'Course Materials', label: 'Course Materials', icon: FileText },
-    { id: 'Scholarly', label: 'E-Resources (AGORA • JSTOR • ScienceDirect • EBSCO)', icon: Globe },
-    { id: 'Bookmarked', label: `Bookmarked (${savedBooks.length})`, icon: Bookmark }
+    { id: 'Books', label: '📚 Books & Textbooks Only', icon: BookOpen },
+    { id: 'Journals', label: '📰 Academic Journals Only', icon: Layers },
+    { id: 'Theses & Projects', label: '🎓 Student Projects & Theses', icon: GraduationCap },
+    { id: 'eBooks & PDFs', label: '⚡ E-Books & PDFs', icon: Zap },
+    { id: 'Course Materials', label: '📑 Course Materials', icon: FileText },
+    { id: 'Scholarly', label: '🌐 E-Resources (AGORA • JSTOR • ScienceDirect)', icon: Globe },
+    { id: 'Bookmarked', label: `🔖 Bookmarked (${savedBooks.length})`, icon: Bookmark }
   ];
 
   // State for live database sync + live Open-Access Journals & Theses API
@@ -806,18 +805,35 @@ export default function SmartCatalogSearch({
       });
     }
 
-    // 1. Category Filter
+    // 1. Category Filter (Strict Separation of Books vs Journals)
     if (activeCategory === 'Books') {
-      results = results.filter(b => b.format === 'Book' || (b.category !== 'Student Project' && b.category !== 'Journal' && b.format !== 'Thesis' && b.format !== 'Journal'));
+      results = results.filter(b => {
+        const cat = (b.category || '').toLowerCase();
+        const fmt = (b.format || '').toLowerCase();
+        const res = (b.resource_type || b.resourceType || '').toLowerCase();
+        const id = String(b.id || '').toUpperCase();
+        const isJournal = cat === 'journal' || fmt === 'journal' || res.includes('journal') || res.includes('periodical') || id.startsWith('FCC-JRN-') || id.startsWith('JRN-') || Boolean(b.issn);
+        const isProject = cat === 'student project' || fmt === 'student project' || fmt === 'thesis' || res.includes('project') || res.includes('thesis') || id.startsWith('FCC-PRJ-') || id.startsWith('TH-');
+        return !isJournal && !isProject;
+      });
     } else if (activeCategory === 'eBooks & PDFs') {
       results = results.filter(b => b.isDigital || b.pdfUrl || b.format === 'PDF' || b.format === 'E-Book');
     } else if (activeCategory === 'Journals') {
-      results = results.filter(b => 
-        b.format === 'Journal' || 
-        b.category === 'Journal' ||
-        (b.subject && b.subject.toLowerCase().includes('journal')) ||
-        (b.title && b.title.toLowerCase().includes('journal'))
-      );
+      results = results.filter(b => {
+        const cat = (b.category || '').toLowerCase();
+        const fmt = (b.format || '').toLowerCase();
+        const res = (b.resource_type || b.resourceType || '').toLowerCase();
+        const id = String(b.id || '').toUpperCase();
+        return cat === 'journal' || 
+          fmt === 'journal' || 
+          res.includes('journal') || 
+          res.includes('periodical') || 
+          id.startsWith('FCC-JRN-') || 
+          id.startsWith('JRN-') || 
+          Boolean(b.issn) ||
+          (b.subject && b.subject.toLowerCase().includes('journal')) ||
+          (b.title && b.title.toLowerCase().includes('journal'));
+      });
     } else if (activeCategory === 'Theses & Projects') {
       results = results.filter(b => 
         b.format === 'Student Project' || 

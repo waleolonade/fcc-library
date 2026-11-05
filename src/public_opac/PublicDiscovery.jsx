@@ -6,7 +6,7 @@ import {
   Check, Copy, Star, Bookmark, BookCheck, Sliders, ChevronDown,
   ChevronUp, Database, FileText, Newspaper, Radio, Video, Award,
   Volume2, Shield, AlertCircle, RefreshCw, Send, X, Share2, Tag, Scan,
-  BookMarked, Library, Eye, Loader2, AlertTriangle, Download, Zap
+  BookMarked, Library, Eye, Loader2, AlertTriangle, Download, Zap, GraduationCap
 } from 'lucide-react';
 import { INSTITUTION, INITIAL_PARTNER_LIBRARIES } from '../data/institutionalSeedData';
 import PartnerLibrariesGateway from '../common/PartnerLibrariesGateway';
@@ -360,8 +360,8 @@ export default function PublicDiscovery({
   const [pageSize, setPageSize] = useState(20);
   const [sortBy, setSortBy] = useState(''); // '' (Relevance) | 'new' | 'old' | 'random' | 'rating'
 
-  // Resource Category Filter: 'All' | 'Book' | 'Journal' | 'Student Project'
-  const [resourceCategory, setResourceCategory] = useState('All');
+  // Resource Category Filter: 'LocalBooks' (Default Books Only) | 'Journal' | 'LocalJournals' | 'OnlineJournals' | 'Student Project'
+  const [resourceCategory, setResourceCategory] = useState('LocalBooks');
 
   // Ask a Librarian Modal State
   const [showAskLibrarianModal, setShowAskLibrarianModal] = useState(false);
@@ -1023,6 +1023,7 @@ export default function PublicDiscovery({
             <button
               onClick={() => {
                 setActiveTab('home');
+                setResourceCategory('LocalBooks');
                 sounds.playClick();
               }}
               className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shrink-0 ${
@@ -1032,7 +1033,7 @@ export default function PublicDiscovery({
               }`}
             >
               <BookOpen size={12} className={activeTab === 'home' || activeTab === 'catalog' ? 'text-white' : 'text-emerald-400'} />
-              <span>College Catalog ({books.length})</span>
+              <span>College Catalog Books ({localBooksCount})</span>
             </button>
 
             {/* 2. Federated Search (Live APIs) */}
@@ -1140,7 +1141,11 @@ export default function PublicDiscovery({
             <button
               onClick={() => {
                 setActiveTab('journals');
+                setResourceCategory('Journal');
                 sounds.playClick();
+                if (liveApiJournals.length === 0) {
+                  loadLiveOpenSourceJournalsAndProjects(searchQuery);
+                }
               }}
               className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shrink-0 ${
                 activeTab === 'journals'
@@ -1149,7 +1154,7 @@ export default function PublicDiscovery({
               }`}
             >
               <Newspaper size={12} className={activeTab === 'journals' ? 'text-white' : 'text-emerald-400'} />
-              <span>Serials & Repositories</span>
+              <span>Serials & Journals ({localJournalsCount + onlineJournalsCount})</span>
             </button>
 
             {/* 9. Self-Service Kiosk */}
@@ -1440,9 +1445,9 @@ export default function PublicDiscovery({
                 <div className="flex flex-wrap items-center gap-1.5 pb-1">
                   <span className="text-[11px] font-mono font-bold text-emerald-400 uppercase tracking-wider mr-1">Search Target:</span>
                   {[
-                    { id: 'stacks', label: `College Stacks (${books.length})`, icon: BookOpen, badge: 'On-Campus' },
+                    { id: 'stacks', label: `College Stacks (${localBooksCount})`, icon: BookOpen, badge: 'Books Only' },
                     { id: 'all', label: 'All Sources (Federated)', icon: Sparkles, badge: 'Multi-API' },
-                    { id: 'scholarly', label: 'E-Resources (AGORA • JSTOR • ScienceDirect • EBSCO)', icon: Layers, badge: 'Peer-Reviewed' },
+                    { id: 'scholarly', label: 'E-Resources (AGORA • JSTOR • ScienceDirect • EBSCO)', icon: Layers, badge: 'Peer-Reviewed Journals' },
                     { id: 'google_books', label: 'Google Books', icon: Sparkles, badge: 'Previews' },
                     { id: 'openlibrary', label: 'Open Library', icon: Globe, badge: '30M+ Items' },
                     { id: 'gutenberg', label: 'Project Gutenberg', icon: BookMarked, badge: '70k+ E-Books' },
@@ -1463,8 +1468,13 @@ export default function PublicDiscovery({
                           else if (src.id === 'gutenberg') setActiveTab('gutenberg');
                           else if (src.id === 'archive') setActiveTab('archive');
                           else if (src.id === 'trove') setActiveTab('trove');
-                          else if (src.id === 'stacks') setActiveTab('catalog');
-                          else {
+                          else if (src.id === 'stacks') {
+                            setActiveTab('catalog');
+                            setResourceCategory('LocalBooks');
+                          } else if (src.id === 'scholarly') {
+                            setResourceCategory('Journal');
+                            if (searchQuery) fetchLiveExternalResources(searchQuery);
+                          } else {
                             setActiveTab('home');
                             if (searchQuery) fetchLiveExternalResources(searchQuery);
                           }
@@ -1487,6 +1497,68 @@ export default function PublicDiscovery({
                       </button>
                     );
                   })}
+                </div>
+
+                {/* STRICT SEPARATION TOGGLE: BOOKS vs JOURNALS */}
+                <div className="flex flex-wrap items-center justify-between gap-2 p-1.5 rounded-2xl bg-[#021810] border border-emerald-700/80 shadow-inner">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-2">Mode:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResourceCategory('LocalBooks');
+                        sounds.playClick();
+                      }}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        (resourceCategory === 'LocalBooks' || resourceCategory === 'Book')
+                          ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md ring-1 ring-emerald-400'
+                          : 'text-emerald-300/80 hover:text-white hover:bg-emerald-900/40'
+                      }`}
+                    >
+                      <BookOpen size={13} />
+                      <span>📚 Books Only ({localBooksCount})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResourceCategory('Journal');
+                        sounds.playClick();
+                        if (liveApiJournals.length === 0) {
+                          loadLiveOpenSourceJournalsAndProjects(searchQuery);
+                        }
+                      }}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        (resourceCategory === 'Journal' || resourceCategory === 'LocalJournals' || resourceCategory === 'OnlineJournals')
+                          ? 'bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-md ring-1 ring-teal-400'
+                          : 'text-emerald-300/80 hover:text-white hover:bg-emerald-900/40'
+                      }`}
+                    >
+                      <Newspaper size={13} />
+                      <span>📰 Academic Journals Only ({localJournalsCount + onlineJournalsCount})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResourceCategory('Student Project');
+                        sounds.playClick();
+                      }}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        resourceCategory === 'Student Project'
+                          ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md ring-1 ring-blue-400'
+                          : 'text-emerald-300/80 hover:text-white hover:bg-emerald-900/40'
+                      }`}
+                    >
+                      <GraduationCap size={13} />
+                      <span>🎓 Projects & Theses ({projectCount})</span>
+                    </button>
+                  </div>
+                  <span className="text-[11px] font-mono text-emerald-300/80 hidden sm:inline px-2">
+                    {(resourceCategory === 'Journal' || resourceCategory === 'LocalJournals' || resourceCategory === 'OnlineJournals')
+                      ? '⚡ Peer-Reviewed Academic Journals (Zero books)'
+                      : (resourceCategory === 'Student Project'
+                        ? '⚡ Capstone Theses & Projects (Zero textbooks)'
+                        : '⚡ Library Books & Handouts (Zero journals)')}
+                  </span>
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-2 bg-[#01140d]/90 p-2 rounded-2xl border border-emerald-700/60 shadow-2xl">
@@ -1518,7 +1590,13 @@ export default function PublicDiscovery({
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') handlePerformSearch(e);
                       }}
-                      placeholder="Search title, author, keyword, ISBN (e.g. 978-0198826729), Call Number (HD 2963)..."
+                      placeholder={
+                        (resourceCategory === 'Journal' || resourceCategory === 'LocalJournals' || resourceCategory === 'OnlineJournals')
+                          ? "Search Academic Journals by article title, ISSN, DOI, author, publisher (Zero books)..."
+                          : (resourceCategory === 'Student Project'
+                            ? "Search Student Projects & Theses by title, author, matric, supervisor (Zero textbooks)..."
+                            : "Search Books by title, author, ISBN (e.g. 978-0198826729), Call Number (Zero journals)...")
+                      }
                       className="w-full bg-[#021810] border border-emerald-800/80 rounded-xl pl-10 pr-24 py-3 text-sm text-white placeholder-emerald-500/60 focus:outline-none focus:border-emerald-400 font-medium transition"
                     />
 
@@ -1949,10 +2027,11 @@ export default function PublicDiscovery({
               <div className="flex flex-wrap items-center justify-between gap-2 p-1.5 rounded-2xl bg-[#021810] border border-emerald-800/80">
                 <div className="flex flex-wrap items-center gap-2">
                   {[
-                    { id: 'LocalBooks', label: '📚 Local Campus Books (HODs / Admin)', icon: BookOpen, count: localBooksCount },
-                    { id: 'LocalJournals', label: '🏛️ Local Research & Theses (HODs / Faculty)', icon: Building2, count: localJournalsCount },
-                    { id: 'OnlineJournals', label: '🌐 Online Academic Journals (OpenAlex API)', icon: Globe, count: onlineJournalsCount },
-                    { id: 'All', label: '🌟 All Collections', icon: Layers, count: books.length },
+                    { id: 'LocalBooks', label: '📚 Books Only (College Stacks & E-Books)', icon: BookOpen, count: localBooksCount },
+                    { id: 'Journal', label: '📰 All Academic Journals (Local & Online)', icon: Newspaper, count: localJournalsCount + onlineJournalsCount },
+                    { id: 'LocalJournals', label: '🏛️ Local Research Serials (HODs / Faculty)', icon: Building2, count: localJournalsCount },
+                    { id: 'OnlineJournals', label: '🌐 Online E-Journals (OpenAlex & DOAJ)', icon: Globe, count: onlineJournalsCount },
+                    { id: 'Student Project', label: '🎓 Student Projects & Theses', icon: GraduationCap, count: projectCount },
                     { id: 'Bookmarked', label: '🔖 Bookmarked Titles', icon: Bookmark, count: savedBooks.length }
                   ].map(cat => {
                     const Icon = cat.icon;
@@ -1997,7 +2076,7 @@ export default function PublicDiscovery({
                   })}
                 </div>
 
-                {(resourceCategory === 'OnlineJournals' || resourceCategory === 'All') && (
+                {(resourceCategory === 'OnlineJournals' || resourceCategory === 'Journal' || resourceCategory === 'LocalJournals') && (
                   <button
                     type="button"
                     onClick={() => {

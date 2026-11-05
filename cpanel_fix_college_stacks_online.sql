@@ -57,7 +57,12 @@ SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_S
 SET @query = IF(@col_exists = 0, 'ALTER TABLE `books` ADD COLUMN `status` varchar(50) DEFAULT "approved" AFTER `rights_status`', 'SELECT 1');
 PREPARE stmt FROM @query; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- 2E. `department_uploads`.`file_path`
+-- 2E. `books`.`category`
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'books' AND COLUMN_NAME = 'category');
+SET @query = IF(@col_exists = 0, 'ALTER TABLE `books` ADD COLUMN `category` varchar(100) DEFAULT "Book" AFTER `edition`', 'SELECT 1');
+PREPARE stmt FROM @query; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 2F. `department_uploads`.`file_path`
 SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'department_uploads' AND COLUMN_NAME = 'file_path');
 SET @query = IF(@col_exists = 0, 'ALTER TABLE `department_uploads` ADD COLUMN `file_path` varchar(500) DEFAULT NULL AFTER `file_name`', 'SELECT 1');
 PREPARE stmt FROM @query; EXECUTE stmt; DEALLOCATE PREPARE stmt;
@@ -86,10 +91,23 @@ WHERE (`book_id` IS NULL OR `book_id` = '')
 
 -- -------------------------------------------------------------------------
 -- STEP 4: ENSURE ALL EXISTING BOOKS ARE SET TO 'APPROVED' (VISIBLE)
+-- AND CLASSIFY PROPERLY INTO BOOKS VS JOURNALS
 -- -------------------------------------------------------------------------
 UPDATE `books`
 SET `status` = 'approved'
 WHERE `status` IS NULL OR `status` = '' OR `status` = 'pending';
+
+UPDATE `books` 
+SET `category` = 'Journal' 
+WHERE `id` LIKE 'FCC-JRN-%' OR `call_number` LIKE 'JRN-%' OR LOWER(`rights_status`) LIKE '%journal%';
+
+UPDATE `books` 
+SET `category` = 'Student Project' 
+WHERE `id` LIKE 'FCC-PRJ-%' OR `id` LIKE 'TH-%' OR `call_number` LIKE 'ETD-%' OR LOWER(`rights_status`) LIKE '%project%';
+
+UPDATE `books` 
+SET `category` = 'Book' 
+WHERE `category` IS NULL OR `category` = '' OR (`category` != 'Journal' AND `category` != 'Student Project');
 
 -- -------------------------------------------------------------------------
 -- STEP 5: PROMOTE ALL ACTIVE DEPARTMENT UPLOADS INTO THE `books` TABLE
@@ -98,7 +116,7 @@ WHERE `status` IS NULL OR `status` = '' OR `status` = 'pending';
 INSERT INTO `books` (
     `id`, `title`, `subtitle`, `author`, `author_credentials`, `author_affiliation`,
     `subject`, `department`, `course_code`, `target_level`, `branch`,
-    `shelf_location`, `call_number`, `publisher`, `year`, `edition`,
+    `shelf_location`, `call_number`, `publisher`, `year`, `edition`, `category`,
     `pdf_pages`, `file_size`, `file_name`, `file_path`, `file_data_url`,
     `cover_image`, `is_digital`, `access_level`, `rights_status`, `status`,
     `copies_total`, `copies_available`, `rating`, `citations`, `abstract`,
@@ -121,6 +139,7 @@ SELECT
     CONCAT('FCC Department of ', IFNULL(du.department_name, 'Academic Studies'), ' Press'),
     YEAR(IFNULL(du.created_at, NOW())),
     '1st Official Edition',
+    IF(du.resource_type LIKE '%Journal%' OR du.resource_type LIKE '%Article%' OR du.resource_type LIKE '%Periodical%' OR du.book_id LIKE 'FCC-JRN-%', 'Journal', IF(du.resource_type LIKE '%Project%' OR du.resource_type LIKE '%Thesis%' OR du.book_id LIKE 'FCC-PRJ-%', 'Student Project', 'Book')),
     120,
     '4.5 MB',
     du.file_name,

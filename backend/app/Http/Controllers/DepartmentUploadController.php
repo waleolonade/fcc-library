@@ -850,6 +850,30 @@ class DepartmentUploadController extends Controller
             });
         }
 
+        // Strict Separation of Books vs Journals
+        $filterType = strtolower(trim((string)$request->query('type', $request->query('category', ''))));
+        if (in_array($filterType, ['book', 'books', 'ebook', 'ebooks', 'textbook', 'textbooks'])) {
+            $query->where(function($q) {
+                $q->whereNull('resource_type')
+                  ->orWhere('resource_type', '')
+                  ->orWhere(function($sub) {
+                      $sub->where('resource_type', 'not like', '%journal%')
+                          ->where('resource_type', 'not like', '%article%')
+                          ->where('resource_type', 'not like', '%periodical%')
+                          ->where('resource_type', 'not like', '%project%')
+                          ->where('resource_type', 'not like', '%thesis%');
+                  });
+            })->where('id', 'not like', 'FCC-JRN-%')
+              ->where('id', 'not like', 'FCC-PRJ-%');
+        } elseif (in_array($filterType, ['journal', 'journals'])) {
+            $query->where(function($q) {
+                $q->where('resource_type', 'like', '%journal%')
+                  ->orWhere('resource_type', 'like', '%article%')
+                  ->orWhere('resource_type', 'like', '%periodical%')
+                  ->orWhere('id', 'like', 'FCC-JRN-%');
+            });
+        }
+
         $uploads = $query->orderBy('created_at', 'desc')->get()->map(fn ($u) => $this->formatHodBook($u));
 
         return response()->json($uploads);
@@ -1066,12 +1090,17 @@ class DepartmentUploadController extends Controller
             $bookId = $u->book_id ?: ('FCC-' . $u->id);
             $hasPdf = !empty($u->file_name) || !empty($u->file_data_url);
             $callNumber = $u->assigned_call_number ?: ("FCC.HOD." . strtoupper(str_replace('DEP-', '', $u->department_id)) . "." . substr($u->id, -4));
+            $resType = $u->resource_type ?: 'Textbook';
+            $isJournal = stripos($resType, 'Journal') !== false || stripos($resType, 'Article') !== false || stripos($resType, 'Periodical') !== false || str_starts_with(strtoupper($bookId), 'FCC-JRN-');
+            $isProject = stripos($resType, 'Project') !== false || stripos($resType, 'Thesis') !== false || stripos($resType, 'Dissertation') !== false || str_starts_with(strtoupper($bookId), 'FCC-PRJ-');
+            $category = $isJournal ? 'Journal' : ($isProject ? 'Student Project' : 'Book');
 
             return [
                 'id' => $bookId,
                 'upload_id' => $u->id,
                 'book_id' => $bookId,
                 'title' => $u->title,
+                'category' => $category,
                 'subtitle' => $u->course_code ? "Curriculum Course Text - {$u->course_code}" : 'Departmental Monograph & Textbook',
                 'author' => $u->author ?: ($u->hod_name ?: 'HOD / Department Faculty Scholar'),
                 'department' => $u->department_name,
