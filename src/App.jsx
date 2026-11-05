@@ -276,7 +276,7 @@ export default function App() {
       .then(backendBooks => {
         if (Array.isArray(backendBooks)) {
           const normalized = backendBooks
-            .filter(b => b && (!b.status || ['approved', 'published', 'active'].includes(String(b.status).toLowerCase())))
+            .filter(b => b && (!b.status || !['deleted', 'withdrawn', 'purged', 'rejected', 'declined'].includes(String(b.status).toLowerCase())))
             .map(b => ({
               ...b,
               callNumber: b.call_number || b.callNumber,

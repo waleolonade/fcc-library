@@ -8,6 +8,7 @@ import { getApiBase } from '../api/libraryApi';
 import { getActiveUserSession } from '../utils/authSessionManager';
 import { sounds } from '../utils/soundEffects';
 import { navigateTo } from '../utils/router';
+import { subscribeRealtimeEvents } from '../services/realtimeSync';
 
 /**
  * Universal User-Scoped Notification Icon & Real-Time Notification Center
@@ -36,13 +37,18 @@ export default function UniversalNotificationCenter({
 
   // Compute canonical user identifiers for strict user-scoped notification lookup
   const userIdentifiers = useMemo(() => {
-    if (!activeUser) return { primary: '', matric: '', email: '', deptCode: '', userId: '' };
-    const matric = activeUser.matric || activeUser.username || (activeUser.department_code ? `HOD/${activeUser.department_code}/001` : '') || '';
-    const email = activeUser.email || (activeUser.department_code ? `hod_${String(activeUser.department_code).toLowerCase()}@fccibadan.edu.ng` : '') || '';
+    if (!activeUser) return { primary: '', matric: '', email: '', deptCode: '', userId: '', staffCode: '', username: '', isStaff: false };
+    const isStaff = activeRole === 'hod_staff' || activeUser?.role === 'hod_staff';
+    const staffCode = activeUser.staff_code || (isStaff ? activeUser.id : '') || '';
+    const username = activeUser.username || '';
+    const matric = isStaff
+      ? (staffCode || username || activeUser.id || '')
+      : (activeUser.matric || activeUser.username || (activeUser.department_code ? `HOD/${activeUser.department_code}/001` : '') || '');
+    const email = activeUser.email || (!isStaff && activeUser.department_code ? `hod_${String(activeUser.department_code).toLowerCase()}@fccibadan.edu.ng` : '') || '';
     const deptCode = activeUser.department_code || '';
-    const userId = String(activeUser.id || matric || email || activeRole);
-    const primary = matric || email || deptCode || userId;
-    return { primary, matric, email, deptCode, userId };
+    const userId = String(activeUser.id || activeUser.staff_id || matric || email || activeRole);
+    const primary = staffCode || matric || username || email || userId;
+    return { primary, matric, email, deptCode, userId, staffCode, username, isStaff };
   }, [activeUser, activeRole]);
 
   const localCacheKey = useMemo(() => {
@@ -95,7 +101,9 @@ export default function UniversalNotificationCenter({
         email: userIdentifiers.email || '',
         user_id: userIdentifiers.userId || '',
         role: activeRole || '',
-        department_code: userIdentifiers.deptCode || ''
+        department_code: userIdentifiers.deptCode || '',
+        staff_code: userIdentifiers.staffCode || '',
+        username: userIdentifiers.username || ''
       }).toString();
 
       const res = await fetch(`${getApiBase()}/notifications?${qs}`, {
@@ -139,21 +147,54 @@ export default function UniversalNotificationCenter({
 
   useEffect(() => {
     fetchUserNotifications(false);
-    const interval = setInterval(() => fetchUserNotifications(true), 20000);
+    const interval = setInterval(() => fetchUserNotifications(true), 15000);
 
     const handleLiveNotif = (e) => {
       fetchUserNotifications(true);
       if (e.detail?.notification) {
         setToastBanner(e.detail.notification);
+        sounds.playSuccessChime();
         setTimeout(() => setToastBanner(null), 5500);
       }
     };
     window.addEventListener('fcc-notifications-updated', handleLiveNotif);
+
+    // Subscribe to cross-device and cross-tab Real-time Sync Engine
+    const unsubRealtime = subscribeRealtimeEvents((evt) => {
+      if (!evt) return;
+      // If event matches this user, their department, or staff workspace
+      const matchesUser =
+        evt.id === userIdentifiers.staffCode ||
+        evt.id === userIdentifiers.userId ||
+        evt.id === userIdentifiers.matric ||
+        evt.data?.staff_code === userIdentifiers.staffCode ||
+        evt.data?.staff_id === userIdentifiers.userId ||
+        evt.data?.department_code === userIdentifiers.deptCode ||
+        evt.entity === 'hod_staff' ||
+        evt.entity === 'notification';
+
+      if (matchesUser) {
+        fetchUserNotifications(true);
+        if (evt.action === 'STAFF_PERMISSIONS_UPDATED' || evt.action === 'STAFF_CREATED' || evt.action === 'STAFF_STATUS_UPDATED') {
+          setToastBanner({
+            title: evt.title || 'Workspace Updated by HOD',
+            message: evt.data?.status === 'suspended'
+              ? 'Your workspace has been suspended by the Head of Department.'
+              : 'Your Head of Department updated your workspace permissions in real-time.',
+            type: 'staff_permissions'
+          });
+          sounds.playSuccessChime();
+          setTimeout(() => setToastBanner(null), 6000);
+        }
+      }
+    });
+
     return () => {
       clearInterval(interval);
       window.removeEventListener('fcc-notifications-updated', handleLiveNotif);
+      unsubRealtime();
     };
-  }, [userIdentifiers.primary, localCacheKey]);
+  }, [userIdentifiers.primary, userIdentifiers.staffCode, userIdentifiers.deptCode, localCacheKey]);
 
   const unreadCount = useMemo(
     () => notifications.filter(n => !n.read).length,

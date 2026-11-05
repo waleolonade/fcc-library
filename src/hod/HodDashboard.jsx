@@ -1737,6 +1737,28 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
         fetchDepartmentUploads();
         fetchCatalogBooks();
         setActiveReaderBook(prev => (prev && matchesTarget(prev) && event.data ? { ...prev, ...event.data } : prev));
+      } else if (event.action && String(event.action).startsWith('STAFF_')) {
+        fetchStaffList();
+        if (isStaffUser && currentUser) {
+          const currentCode = (currentUser.staff_code || '').toUpperCase();
+          const eventCode = (event.staff_code || '').toUpperCase();
+          const currentId = String(currentUser.id || currentUser.staff_id || '');
+          const eventId = String(event.id || '');
+          if ((currentCode && currentCode === eventCode) || (currentId && currentId === eventId)) {
+            try { sounds.playNotificationChime(); } catch (e) {}
+            if (event.action === 'STAFF_STATUS_UPDATED' && event?.data?.status === 'suspended') {
+              setSubmissionNotification({
+                type: 'error',
+                message: `⚠️ Workspace Suspended: Your departmental staff access has been temporarily suspended by the Head of Department.`
+              });
+            } else if (event.action === 'STAFF_PERMISSIONS_UPDATED' || event.action === 'STAFF_PACKAGE_APPLIED' || event.action === 'STAFF_PRESET_APPLIED') {
+              setSubmissionNotification({
+                type: 'success',
+                message: `⚡ Live Permissions Updated: Your assigned workspace functions have been updated in real-time by the HOD.`
+              });
+            }
+          }
+        }
       }
     });
 
@@ -2225,7 +2247,12 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
         file_data_url: quickUploadForm.file_data_url || undefined,
         cover_image: quickUploadForm.cover_image || undefined,
         access_scope: quickUploadForm.access_scope || 'Public Institution-Wide',
-        abstract: quickUploadForm.abstract || `Official course material published for ${quickUploadForm.course_code} (${effectiveLevel}) students.`
+        abstract: quickUploadForm.abstract || `Official course material published for ${quickUploadForm.course_code} (${effectiveLevel}) students.`,
+        approval_mode: 'direct',
+        destination: 'direct',
+        direct_publish: true,
+        publishing_mode: 'direct',
+        status: 'approved'
       };
 
       const endpoint = editingQuickUploadId
@@ -2926,14 +2953,24 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
         {/* Right User Actions */}
         <div className="flex items-center gap-3">
           <UniversalNotificationCenter
-            user={{
+            user={isStaffUser ? {
+              ...(currentUser || {}),
+              name: currentUser?.name || 'Departmental Staff',
+              email: currentUser?.email || '',
+              matric: currentUser?.staff_code || currentUser?.username || currentUser?.id,
+              staff_code: currentUser?.staff_code || '',
+              username: currentUser?.username || '',
+              department_code: currentDept.code,
+              role: 'hod_staff'
+            } : {
               ...(currentUser || {}),
               name: currentDept.hod_name || currentDept.hod || currentUser?.name,
               email: currentDept.hod_email || currentUser?.email,
               department_code: currentDept.code,
               role: 'hod'
             }}
-            role="hod"
+            role={isStaffUser ? 'hod_staff' : 'hod'}
+            accentColor={theme.solidPrimary || '#10b981'}
           />
 
           {!isStaffUser && (

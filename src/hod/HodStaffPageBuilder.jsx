@@ -7,6 +7,7 @@ import {
   FileText, ShieldAlert, Cpu, ArrowRight
 } from 'lucide-react';
 import { sounds } from '../utils/soundEffects';
+import { publishRealtimeEvent } from '../services/realtimeSync';
 
 export const STAFF_PAGE_CATALOG = [
   { id: 'overview', label: 'Department Overview & Holdings', desc: 'Departmental metrics, quick catalog search & Gora/InneAI tools', icon: Building2, badge: 'Core' },
@@ -313,6 +314,19 @@ export default function HodStaffPageBuilder({
       const res = await onUpdateStaff(activeStaff.id, payload);
       if (res && res.success) {
         showToast('success', `Updated permissions for ${activeStaff.name}. Staff live dashboard updated!`);
+        publishRealtimeEvent({
+          action: 'STAFF_PERMISSIONS_UPDATED',
+          entity: 'hod_staff',
+          id: activeStaff.id,
+          staff_code: activeStaff.staff_code,
+          username: activeStaff.username,
+          data: {
+            allowed_pages: updatedPages,
+            allowed_features: updatedFeatures,
+            staff_name: activeStaff.name,
+            timestamp: new Date().toISOString()
+          }
+        });
       } else {
         showToast('error', res?.message || 'Failed to update permission in database.');
       }
@@ -346,6 +360,20 @@ export default function HodStaffPageBuilder({
       });
       if (res && res.success) {
         showToast('success', `Assigned "${pkg.title}" to ${activeStaff.name}! Workspace synchronized.`);
+        publishRealtimeEvent({
+          action: 'STAFF_PACKAGE_APPLIED',
+          entity: 'hod_staff',
+          id: activeStaff.id,
+          staff_code: activeStaff.staff_code,
+          username: activeStaff.username,
+          data: {
+            package_title: pkg.title,
+            allowed_pages: newPages,
+            allowed_features: newFeatures,
+            staff_name: activeStaff.name,
+            timestamp: new Date().toISOString()
+          }
+        });
       } else {
         showToast('error', res?.message || 'Could not apply function package.');
       }
@@ -370,6 +398,21 @@ export default function HodStaffPageBuilder({
       });
       if (res && res.success) {
         showToast('success', `Applied "${preset.name}" permission template to ${activeStaff.name}!`);
+        publishRealtimeEvent({
+          action: 'STAFF_PRESET_APPLIED',
+          entity: 'hod_staff',
+          id: activeStaff.id,
+          staff_code: activeStaff.staff_code,
+          username: activeStaff.username,
+          data: {
+            preset_name: preset.name,
+            designation: preset.designation,
+            allowed_pages: { ...preset.pages },
+            allowed_features: { ...preset.features },
+            staff_name: activeStaff.name,
+            timestamp: new Date().toISOString()
+          }
+        });
       } else {
         showToast('error', res?.message || 'Could not apply role template.');
       }
@@ -413,6 +456,17 @@ export default function HodStaffPageBuilder({
       const res = await onDeleteStaff(activeStaff.id);
       if (res && res.success) {
         showToast('success', `Staff workspace for ${activeStaff.name} removed from central database.`);
+        publishRealtimeEvent({
+          action: 'STAFF_REMOVED',
+          entity: 'hod_staff',
+          id: activeStaff.id,
+          staff_code: activeStaff.staff_code,
+          username: activeStaff.username,
+          data: {
+            staff_name: activeStaff.name,
+            timestamp: new Date().toISOString()
+          }
+        });
         const remaining = staffList.filter(s => s.id !== activeStaff.id);
         if (remaining.length > 0) {
           setSelectedStaffId(remaining[0].id);
@@ -444,6 +498,18 @@ export default function HodStaffPageBuilder({
             ? `Workspace for ${activeStaff.name} reactivated in database.`
             : `Workspace for ${activeStaff.name} suspended. Staff login is now blocked in database.`
         );
+        publishRealtimeEvent({
+          action: 'STAFF_STATUS_UPDATED',
+          entity: 'hod_staff',
+          id: activeStaff.id,
+          staff_code: activeStaff.staff_code,
+          username: activeStaff.username,
+          data: {
+            status: newStatus,
+            staff_name: activeStaff.name,
+            timestamp: new Date().toISOString()
+          }
+        });
         if (onRefreshStaff) await onRefreshStaff(deptCode);
       } else {
         showToast('error', res?.message || 'Failed to update workspace status in database.');
@@ -468,6 +534,17 @@ export default function HodStaffPageBuilder({
       if (res && res.success) {
         setShowPasswordMap(p => ({ ...p, [activeStaff.id]: true }));
         showToast('success', `Password for ${activeStaff.name} updated to "${newPass.trim()}" and saved to database.`);
+        publishRealtimeEvent({
+          action: 'STAFF_PASSWORD_UPDATED',
+          entity: 'hod_staff',
+          id: activeStaff.id,
+          staff_code: activeStaff.staff_code,
+          username: activeStaff.username,
+          data: {
+            staff_name: activeStaff.name,
+            timestamp: new Date().toISOString()
+          }
+        });
         if (onRefreshStaff) await onRefreshStaff(deptCode);
       } else {
         showToast('error', res?.message || 'Failed to update password in database.');
@@ -558,6 +635,20 @@ export default function HodStaffPageBuilder({
         if (onRefreshStaff) {
           await onRefreshStaff(targetDept);
         }
+
+        publishRealtimeEvent({
+          action: 'STAFF_CREATED',
+          entity: 'hod_staff',
+          id: createdStaff?.id,
+          staff_code: createdStaff?.staff_code || newStaffForm.staff_code,
+          username: createdStaff?.username || newStaffForm.username,
+          data: {
+            staff_name: createdStaff?.name || newStaffForm.name,
+            department_code: targetDept,
+            designation: createdStaff?.designation || newStaffForm.designation,
+            timestamp: new Date().toISOString()
+          }
+        });
 
         const nextIdx = (staffList?.length || 0) + 2;
         setNewStaffForm({

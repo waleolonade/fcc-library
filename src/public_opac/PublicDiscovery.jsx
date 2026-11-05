@@ -102,47 +102,105 @@ export default function PublicDiscovery({
       } catch (e) {
         res = await fetch('/api/catalog');
       }
+      let backendBooks = [];
       if (res && res.ok) {
-        const backendBooks = await res.json();
-        if (Array.isArray(backendBooks)) {
-          const normalized = backendBooks
-            .filter(b => !b.status || ['approved', 'published', 'active'].includes(String(b.status).toLowerCase()))
-            .map(b => ({
-              ...b,
-              callNumber: b.call_number || b.callNumber || 'FCC.LIB',
-              shelfLocation: b.shelf_location || b.shelfLocation || 'Digital E-Library',
-              courseCode: b.course_code || b.courseCode || '',
-              targetLevel: b.target_level || b.targetLevel || 'HND II',
-              copiesTotal: b.copies_total !== undefined ? b.copies_total : (b.copiesTotal || 1),
-              copiesAvailable: b.copies_available !== undefined ? b.copies_available : (b.copiesAvailable || 1),
-              pdfPages: b.pdf_pages || b.pdfPages || 120,
-              fileSize: b.file_size || b.fileSize || '4.5 MB',
-              fileName: b.file_name || b.fileName,
-              fileDataUrl: b.file_data_url || b.fileDataUrl || '',
-              cover_image: b.cover_image || b.coverImage || b.cover || '/assets/fcc-logo.png',
-              coverImage: b.cover_image || b.coverImage || b.cover || '/assets/fcc-logo.png',
-              isDigital: true,
-              hasPdf: true,
-              has_file: true
-            }));
-          setCatalogBooks(normalized);
-          setLastSyncTime(new Date());
-          try {
-            const slim = normalized.map(b => {
-              if (!b) return b;
-              const c = { ...b, file_data_url: '', fileDataUrl: '' };
-              if (typeof c.cover_image === 'string' && c.cover_image.startsWith('data:')) {
-                c.cover_image = c.id ? `/api/catalog/${c.id}/cover` : '/assets/fcc-logo.png';
-              }
-              if (typeof c.coverImage === 'string' && c.coverImage.startsWith('data:')) {
-                c.coverImage = c.id ? `/api/catalog/${c.id}/cover` : '/assets/fcc-logo.png';
-              }
-              return c;
-            });
-            localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(slim));
-            localStorage.setItem('fcc_db_catalog', JSON.stringify(slim));
-          } catch (e) {}
+        backendBooks = await res.json().catch(() => []);
+      }
+
+      // Supplementary resilience: Also fetch active department uploads to ensure zero missing items across all systems
+      try {
+        let upRes;
+        try {
+          upRes = await fetch(`${base}/department-uploads?scope=all`);
+        } catch (e) {
+          upRes = await fetch('/api/department-uploads?scope=all');
         }
+        if (upRes && upRes.ok) {
+          const uploads = await upRes.json().catch(() => []);
+          if (Array.isArray(uploads) && uploads.length > 0) {
+            const existingBookIds = new Set(
+              (Array.isArray(backendBooks) ? backendBooks : []).map(b => String(b?.id || b?.book_id || '').toLowerCase())
+            );
+            const extraFromUploads = uploads
+              .filter(u => u && !['deleted', 'withdrawn', 'purged', 'rejected', 'declined'].includes(String(u.status || '').toLowerCase()))
+              .filter(u => {
+                const uId = String(u.id || '').toLowerCase();
+                const bId = String(u.book_id || '').toLowerCase();
+                return (!existingBookIds.has(uId) && (!bId || !existingBookIds.has(bId)));
+              })
+              .map(u => ({
+                id: u.book_id || u.id,
+                upload_id: u.id,
+                book_id: u.book_id || u.id,
+                title: u.title,
+                author: u.author || u.hod_name || 'Faculty Lecturer',
+                department: u.department_name || 'Academic Department',
+                subject: u.department_name || 'Academic Studies',
+                courseCode: u.course_code || '',
+                targetLevel: u.target_level || 'HND II',
+                callNumber: u.assigned_call_number || u.call_number || 'FCC.LIB',
+                shelfLocation: u.assigned_shelf || u.shelf_location || 'Digital E-Library',
+                copiesTotal: 10,
+                copiesAvailable: 10,
+                pdfPages: 120,
+                fileSize: '4.5 MB',
+                fileName: u.file_name,
+                fileDataUrl: u.file_data_url || '',
+                cover_image: u.cover_image || '/assets/fcc-logo.png',
+                coverImage: u.cover_image || '/assets/fcc-logo.png',
+                isDigital: true,
+                hasPdf: true,
+                has_file: true,
+                status: 'approved',
+                uploaded_at: u.created_at || new Date().toISOString(),
+                uploaded_by: u.hod_name || 'Department HOD'
+              }));
+
+            if (extraFromUploads.length > 0) {
+              backendBooks = [...(Array.isArray(backendBooks) ? backendBooks : []), ...extraFromUploads];
+            }
+          }
+        }
+      } catch (upErr) {}
+
+      if (Array.isArray(backendBooks)) {
+        const normalized = backendBooks
+          .filter(b => b && (!b.status || !['deleted', 'withdrawn', 'purged', 'rejected', 'declined'].includes(String(b.status).toLowerCase())))
+          .map(b => ({
+            ...b,
+            callNumber: b.call_number || b.callNumber || 'FCC.LIB',
+            shelfLocation: b.shelf_location || b.shelfLocation || 'Digital E-Library',
+            courseCode: b.course_code || b.courseCode || '',
+            targetLevel: b.target_level || b.targetLevel || 'HND II',
+            copiesTotal: b.copies_total !== undefined ? b.copies_total : (b.copiesTotal || 1),
+            copiesAvailable: b.copies_available !== undefined ? b.copies_available : (b.copiesAvailable || 1),
+            pdfPages: b.pdf_pages || b.pdfPages || 120,
+            fileSize: b.file_size || b.fileSize || '4.5 MB',
+            fileName: b.file_name || b.fileName,
+            fileDataUrl: b.file_data_url || b.fileDataUrl || '',
+            cover_image: b.cover_image || b.coverImage || b.cover || '/assets/fcc-logo.png',
+            coverImage: b.cover_image || b.coverImage || b.cover || '/assets/fcc-logo.png',
+            isDigital: true,
+            hasPdf: true,
+            has_file: true
+          }));
+        setCatalogBooks(normalized);
+        setLastSyncTime(new Date());
+        try {
+          const slim = normalized.map(b => {
+            if (!b) return b;
+            const c = { ...b, file_data_url: '', fileDataUrl: '' };
+            if (typeof c.cover_image === 'string' && c.cover_image.startsWith('data:')) {
+              c.cover_image = c.id ? `/api/catalog/${c.id}/cover` : '/assets/fcc-logo.png';
+            }
+            if (typeof c.coverImage === 'string' && c.coverImage.startsWith('data:')) {
+              c.coverImage = c.id ? `/api/catalog/${c.id}/cover` : '/assets/fcc-logo.png';
+            }
+            return c;
+          });
+          localStorage.setItem('fcc_catalog_v48_gov', JSON.stringify(slim));
+          localStorage.setItem('fcc_db_catalog', JSON.stringify(slim));
+        } catch (e) {}
       }
     } catch (err) {
       console.warn('OPAC could not fetch live catalog from backend API:', err);

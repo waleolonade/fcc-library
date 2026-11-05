@@ -12,6 +12,8 @@ import { libraryApi } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
 import { logStaffActivity } from '../services/developerApi';
 import MaintenanceBroadcastBanner from '../common/MaintenanceBroadcastBanner';
+import UniversalNotificationCenter from '../common/UniversalNotificationCenter';
+import { subscribeRealtimeEvents } from '../services/realtimeSync';
 
 export default function HodStaffLiveWorkspace({
   currentDept,
@@ -61,6 +63,8 @@ export default function HodStaffLiveWorkspace({
   }, [staffList, selectedStaffId, isStaffUser, currentUser]);
 
   // Real-time synchronization when HOD modifies staff permissions or assigns new functions
+  const [realtimeAlert, setRealtimeAlert] = useState(null);
+
   useEffect(() => {
     const handleStaffUpdated = () => {
       if (onRefreshStaff) onRefreshStaff();
@@ -68,6 +72,73 @@ export default function HodStaffLiveWorkspace({
     window.addEventListener('fcc-staff-updated', handleStaffUpdated);
     return () => window.removeEventListener('fcc-staff-updated', handleStaffUpdated);
   }, [onRefreshStaff]);
+
+  // Dedicated real-time listener for all staff changes, permissions, presets & status updates
+  useEffect(() => {
+    const unsubscribe = subscribeRealtimeEvents((event) => {
+      if (!event || !event.action) return;
+
+      const eventAction = String(event.action).toUpperCase();
+      const eventStaffId = String(event.id || '');
+      const eventStaffCode = String(event.staff_code || '').toUpperCase();
+      const currentStaffId = String(activeStaff?.id || '');
+      const currentStaffCode = String(activeStaff?.staff_code || '').toUpperCase();
+
+      const isTarget =
+        eventStaffId === currentStaffId ||
+        (eventStaffCode && eventStaffCode === currentStaffCode) ||
+        eventAction === 'STAFF_BULK_PERMISSIONS_UPDATED';
+
+      if (eventAction.startsWith('STAFF_')) {
+        if (onRefreshStaff) {
+          onRefreshStaff(currentDept?.code);
+        }
+
+        if (isTarget) {
+          try { sounds.playNotificationChime(); } catch (e) {}
+
+          let alertMsg = 'HOD updated workspace permissions in real time.';
+          let alertType = 'info';
+
+          if (eventAction === 'STAFF_PERMISSIONS_UPDATED') {
+            alertMsg = `⚡ Permissions updated in real time by HOD (${event?.data?.staff_name || 'Staff'}).`;
+          } else if (eventAction === 'STAFF_STATUS_UPDATED') {
+            const newStatus = event?.data?.status;
+            if (newStatus === 'suspended') {
+              alertMsg = `⚠️ Workspace has been SUSPENDED by HOD. Access is locked.`;
+              alertType = 'error';
+            } else {
+              alertMsg = `✅ Workspace reactivated by HOD. All assigned features live.`;
+              alertType = 'success';
+            }
+          } else if (eventAction === 'STAFF_PACKAGE_APPLIED') {
+            alertMsg = `📦 HOD assigned "${event?.data?.package_title || 'New Package'}" to your workspace.`;
+            alertType = 'success';
+          } else if (eventAction === 'STAFF_PRESET_APPLIED') {
+            alertMsg = `🎖️ HOD applied role template "${event?.data?.preset_name || 'Role'}" to your workspace.`;
+            alertType = 'success';
+          } else if (eventAction === 'STAFF_PASSWORD_UPDATED') {
+            alertMsg = `🔑 HOD updated access password for this workspace.`;
+            alertType = 'warning';
+          } else if (eventAction === 'STAFF_REMOVED') {
+            alertMsg = `🚫 This staff workspace was removed by HOD.`;
+            alertType = 'error';
+          }
+
+          setRealtimeAlert({
+            type: alertType,
+            message: alertMsg,
+            timestamp: new Date().toLocaleTimeString()
+          });
+          setTimeout(() => setRealtimeAlert(null), 8000);
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [activeStaff?.id, activeStaff?.staff_code, currentDept?.code, onRefreshStaff]);
 
   const allowedPages = activeStaff?.allowed_pages || { overview: true };
   const allowedFeatures = activeStaff?.allowed_features || {};
@@ -212,6 +283,34 @@ export default function HodStaffLiveWorkspace({
       {/* Targeted Developer Broadcast Banner & Maintenance Lock */}
       <MaintenanceBroadcastBanner role="hod_staff" currentPage={activeSubPage} />
 
+      {/* Live Real-Time Instant Notification Banner */}
+      {realtimeAlert && (
+        <div
+          className={`p-4 rounded-2xl border text-xs font-bold flex items-center justify-between gap-3 shadow-2xl transition-all ${
+            realtimeAlert.type === 'error'
+              ? 'bg-red-950/90 border-red-500/80 text-red-200'
+              : realtimeAlert.type === 'warning'
+              ? 'bg-amber-950/90 border-amber-500/80 text-amber-200'
+              : realtimeAlert.type === 'success'
+              ? 'bg-emerald-950/90 border-emerald-500/80 text-emerald-200'
+              : 'bg-cyan-950/90 border-cyan-500/80 text-cyan-200'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-current animate-ping shrink-0" />
+            <span>{realtimeAlert.message}</span>
+            <span className="text-[10px] opacity-70 font-mono ml-2">({realtimeAlert.timestamp})</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setRealtimeAlert(null)}
+            className="text-xs font-mono opacity-80 hover:opacity-100 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* 1. TOP STAFF WORKSPACE IDENTITY & HOD EMULATOR SWITCHER BAR */}
       <div className="p-5 sm:p-6 rounded-3xl bg-[#0a1324] border-2 border-slate-800 shadow-2xl space-y-4 relative overflow-hidden">
         <div
@@ -251,9 +350,11 @@ export default function HodStaffLiveWorkspace({
             </div>
           </div>
 
-          {/* Right Controls: If HOD, switch staff or edit in builder; If Staff member, show official session badge */}
+          {/* Right Controls: Notification Center, Switcher & Navigation */}
           {!isStaffUser ? (
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+              <UniversalNotificationCenter user={activeStaff} role="hod_staff" />
+
               <div className="bg-[#0f172a] border border-slate-700 rounded-2xl p-2 flex items-center gap-2">
                 <span className="text-[10px] font-mono text-slate-400 uppercase pl-1">Active Staff:</span>
                 <select
@@ -293,6 +394,8 @@ export default function HodStaffLiveWorkspace({
             </div>
           ) : (
             <div className="flex items-center gap-2 shrink-0">
+              <UniversalNotificationCenter user={activeStaff} role="hod_staff" />
+
               <div className="px-3.5 py-2 rounded-2xl bg-emerald-950/80 border border-emerald-600 text-emerald-300 text-xs font-mono font-bold flex items-center gap-2 shadow-lg">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                 <span>Verified Faculty Session</span>

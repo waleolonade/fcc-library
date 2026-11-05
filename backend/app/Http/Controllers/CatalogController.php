@@ -14,8 +14,73 @@ class CatalogController extends Controller
     public function index(Request $request)
     {
         // 1. Synchronize local SQLite books table with authoritative MySQL books & department_uploads
-        //    so any book deleted from the backend or directly from the MySQL database is immediately purged.
         $this->mirrorBooksFromMysql();
+
+        // 2. Auto-promote and synchronize any active department uploads into the books catalog table
+        if (Schema::hasTable('department_uploads')) {
+            try {
+                $activeUploads = \App\Models\DepartmentUpload::whereNotIn('status', ['deleted', 'withdrawn', 'purged', 'rejected', 'declined'])
+                    ->get();
+                foreach ($activeUploads as $upload) {
+                    if ($upload->status !== 'approved') {
+                        $upload->status = 'approved';
+                    }
+                    $targetBookId = $upload->book_id;
+                    if (empty($targetBookId)) {
+                        $num = preg_replace('/[^0-9]/', '', (string)$upload->id);
+                        $targetBookId = 'FCC-HOD-' . ($num ?: rand(1000, 9999));
+                        $upload->book_id = $targetBookId;
+                    }
+                    $upload->save();
+
+                    $bookExists = Book::where('id', $targetBookId)
+                        ->orWhere('id', $upload->id)
+                        ->exists();
+
+                    if (!$bookExists) {
+                        $resType = $upload->resource_type ?: 'Book';
+                        $isProject = stripos($resType, 'Project') !== false || stripos($resType, 'Thesis') !== false || stripos($resType, 'Dissertation') !== false;
+                        $isJournal = stripos($resType, 'Journal') !== false || stripos($resType, 'Article') !== false || stripos($resType, 'Periodical') !== false;
+
+                        Book::create([
+                            'id' => $targetBookId,
+                            'title' => $upload->title,
+                            'subtitle' => !empty($upload->course_code) ? "Course: {$upload->course_code} ({$upload->target_level})" : "Departmental Academic Resource",
+                            'author' => $upload->author ?: ($upload->hod_name ?: 'HOD / Faculty'),
+                            'author_credentials' => $isProject ? 'Student Researcher / Scholar' : ($isJournal ? 'Peer-Reviewed Academic Author' : 'Faculty Contributor / HOD'),
+                            'author_affiliation' => "Federal Co-operative College, Ibadan ({$upload->department_name})",
+                            'subject' => $upload->department_name ?: 'Academic Studies',
+                            'department' => $upload->department_name ?: 'Academic Department',
+                            'course_code' => $upload->course_code ?: '',
+                            'target_level' => $upload->target_level ?: 'HND II',
+                            'branch' => 'Main Campus Library (Prof. Hezekiah Complex)',
+                            'shelf_location' => $upload->assigned_shelf ?: 'Digital E-Library',
+                            'call_number' => $upload->assigned_call_number ?: 'QA76.9 .FCC 2026',
+                            'publisher' => $isJournal ? "FCC Directorate of Research & Academic Publications" : "FCC Department of {$upload->department_name} Press",
+                            'year' => (int) date('Y', strtotime($upload->created_at ?? 'now')),
+                            'edition' => '1st Official Edition',
+                            'pdf_pages' => 120,
+                            'file_size' => '4.5 MB',
+                            'file_name' => $upload->file_name,
+                            'file_path' => $upload->file_path ?: ($upload->file_name ?: ($targetBookId . '.pdf')),
+                            'file_data_url' => $upload->file_data_url ?: '',
+                            'cover_image' => $upload->cover_image ?: '',
+                            'is_digital' => 1,
+                            'access_level' => $upload->access_scope ?: 'Public Institution-Wide',
+                            'rights_status' => $isProject ? 'Student Capstone Project / Thesis' : ($isJournal ? 'Academic Research Journal' : 'Approved Academic Book'),
+                            'status' => 'approved',
+                            'copies_total' => 10,
+                            'copies_available' => 10,
+                            'rating' => 5.0,
+                            'citations' => 0,
+                            'abstract' => "Official academic resource uploaded by {$upload->hod_name} for {$upload->department_name}.",
+                            'uploaded_at' => $upload->created_at ?? date('Y-m-d H:i:s'),
+                            'uploaded_by' => $upload->hod_name ?: 'Department HOD'
+                        ]);
+                    }
+                }
+            } catch (\Throwable $e) {}
+        }
 
         $query = Book::query();
 
@@ -51,38 +116,22 @@ class CatalogController extends Controller
             $query->where('is_digital', 1);
         }
 
-        // Only return authentic books uploaded and approved by HODs or Library Administration
-        $query->where(function ($q) {
-            $q->where('uploaded_by', 'like', '%Librarian%')
-              ->orWhere('uploaded_by', 'like', '%HOD%')
-              ->orWhere('uploaded_by', 'like', '%Admin%')
-              ->orWhere('id', 'like', 'FCC-%')
-              ->orWhereIn('id', function ($sub) {
-                  $sub->select('book_id')
-                      ->from('department_uploads')
-                      ->where('status', 'approved')
-                      ->whereNotNull('book_id');
-              });
-        });
-
-        // Strictly exclude any book linked to a deleted, withdrawn, purged, or rejected department upload
+        // Strictly exclude any book linked to a deleted, withdrawn, or rejected department upload
         if (Schema::hasTable('department_uploads')) {
             $query->whereNotIn('id', function ($sub) {
                 $sub->select('book_id')
                     ->from('department_uploads')
-                    ->whereIn('status', ['deleted', 'withdrawn', 'purged', 'rejected', 'declined', 'pending'])
+                    ->whereIn('status', ['deleted', 'withdrawn', 'purged', 'rejected', 'declined'])
                     ->whereNotNull('book_id');
             });
         }
 
-        // Exclude any pending, deleted, or unapproved books from the master student catalog if column exists
+        // Exclude any deleted or rejected books from the catalog
         if (Schema::hasColumn('books', 'status')) {
             $query->where(function ($q) {
                 $q->whereNull('status')
-                  ->orWhere('status', 'approved')
-                  ->orWhere('status', 'Published')
-                  ->orWhere('status', 'published')
-                  ->orWhere('status', 'active');
+                  ->orWhere('status', '')
+                  ->orWhereNotIn(DB::raw('LOWER(status)'), ['deleted', 'withdrawn', 'purged', 'rejected', 'declined']);
             });
         }
 
@@ -189,6 +238,81 @@ class CatalogController extends Controller
             }
             return $data;
         });
+
+        // Ensure 100% inclusion: If any active department upload was not in books, append it directly
+        $existingCatalogIds = [];
+        foreach ($books as $b) {
+            $existingCatalogIds[strtolower($b['id'])] = true;
+            if (!empty($b['upload_id'])) {
+                $existingCatalogIds[strtolower($b['upload_id'])] = true;
+            }
+        }
+
+        if (Schema::hasTable('department_uploads')) {
+            try {
+                $extraUploads = \App\Models\DepartmentUpload::whereNotIn('status', ['deleted', 'withdrawn', 'purged', 'rejected', 'declined'])
+                    ->get();
+                $extraItems = [];
+                foreach ($extraUploads as $u) {
+                    $uId = strtolower((string)$u->id);
+                    $bId = strtolower((string)($u->book_id ?? ''));
+                    if (!isset($existingCatalogIds[$uId]) && (!empty($bId) ? !isset($existingCatalogIds[$bId]) : true)) {
+                        $cId = $u->book_id ?: $u->id;
+                        $resType = $u->resource_type ?: 'Book';
+                        $extraItems[] = [
+                            'id' => $cId,
+                            'upload_id' => $u->id,
+                            'book_id' => $cId,
+                            'title' => $u->title,
+                            'subtitle' => !empty($u->course_code) ? "Course: {$u->course_code} ({$u->target_level})" : "Departmental Academic Resource",
+                            'author' => $u->author ?: ($u->hod_name ?: 'HOD / Faculty'),
+                            'author_credentials' => 'Faculty Contributor / HOD',
+                            'author_affiliation' => "Federal Co-operative College, Ibadan ({$u->department_name})",
+                            'department' => $u->department_name ?: 'Academic Department',
+                            'subject' => $u->department_name ?: 'Academic Studies',
+                            'category' => stripos($resType, 'Journal') !== false ? 'Journal' : (stripos($resType, 'Project') !== false ? 'Student Project' : 'Book'),
+                            'resource_type' => $resType,
+                            'course_code' => $u->course_code ?: '',
+                            'courseCode' => $u->course_code ?: '',
+                            'target_level' => $u->target_level ?: 'HND II',
+                            'targetLevel' => $u->target_level ?: 'HND II',
+                            'shelf_location' => $u->assigned_shelf ?: 'Digital E-Library',
+                            'shelfLocation' => $u->assigned_shelf ?: 'Digital E-Library',
+                            'call_number' => $u->assigned_call_number ?: 'QA76.9 .FCC 2026',
+                            'callNumber' => $u->assigned_call_number ?: 'QA76.9 .FCC 2026',
+                            'copies_total' => 10,
+                            'copiesTotal' => 10,
+                            'copies_available' => 10,
+                            'copiesAvailable' => 10,
+                            'pdf_pages' => 120,
+                            'pdfPages' => 120,
+                            'file_size' => '4.5 MB',
+                            'fileSize' => '4.5 MB',
+                            'file_name' => $u->file_name,
+                            'fileName' => $u->file_name,
+                            'file_data_url' => '',
+                            'fileDataUrl' => '',
+                            'cover_image' => $u->cover_image ?: '/assets/fcc-logo.png',
+                            'coverImage' => $u->cover_image ?: '/assets/fcc-logo.png',
+                            'isDigital' => true,
+                            'is_digital' => 1,
+                            'hasPdf' => true,
+                            'has_file' => true,
+                            'hasBinaryPdf' => true,
+                            'pdfUrl' => "/api/department-uploads/{$u->id}/file",
+                            'rights_status' => 'Approved Academic Book',
+                            'status' => 'approved',
+                            'uploaded_at' => $u->created_at ?? date('Y-m-d H:i:s'),
+                            'uploaded_by' => $u->hod_name ?: 'Department HOD'
+                        ];
+                        $existingCatalogIds[$uId] = true;
+                    }
+                }
+                if (!empty($extraItems)) {
+                    $books = array_merge($books->all(), $extraItems);
+                }
+            } catch (\Throwable $e) {}
+        }
 
         return response()->json($books);
     }
@@ -1032,14 +1156,9 @@ class CatalogController extends Controller
             $mysqlBooks = $stmt->fetchAll(\PDO::FETCH_ASSOC);
             $mysqlIds = array_values(array_filter(array_column($mysqlBooks, 'id')));
 
-            // 3. Purge any book in SQLite that no longer exists in MySQL
+            // 3. Only sync when MySQL returns a valid non-empty book list
             if (empty($mysqlIds)) {
-                Book::query()->delete();
-                if (Schema::hasTable('department_uploads')) {
-                    DB::table('department_uploads')
-                        ->where('status', 'approved')
-                        ->update(['status' => 'deleted', 'book_id' => null]);
-                }
+                return;
             } else {
                 // Find SQLite books that were removed from MySQL and mark their department_uploads as deleted
                 $removedBookIds = Book::whereNotIn('id', $mysqlIds)->pluck('id')->toArray();

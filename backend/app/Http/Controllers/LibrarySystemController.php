@@ -996,14 +996,21 @@ class LibrarySystemController extends Controller
         $userId = trim((string)$request->query('user_id', ''));
         $role = strtolower(trim((string)$request->query('role', '')));
         $deptCode = strtoupper(trim((string)$request->query('department_code', '')));
+        $staffCode = trim((string)$request->query('staff_code', ''));
+        $username = trim((string)$request->query('username', ''));
+
+        $isStaff = $role === 'hod_staff';
 
         $identifiers = array_values(array_unique(array_filter([
             $matric,
             $email,
             $userId,
-            $deptCode ? "HOD/{$deptCode}/001" : '',
-            $deptCode ? "hod_" . strtolower($deptCode) : '',
-            $role ? "role:{$role}" : ''
+            $staffCode,
+            $username,
+            (!$isStaff && $deptCode) ? "HOD/{$deptCode}/001" : '',
+            (!$isStaff && $deptCode) ? "hod_" . strtolower($deptCode) : '',
+            $role ? "role:{$role}" : '',
+            $isStaff ? 'role:hod_staff' : ''
         ])));
 
         $query = DB::table('notifications');

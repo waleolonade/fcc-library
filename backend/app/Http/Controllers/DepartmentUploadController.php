@@ -648,6 +648,7 @@ class DepartmentUploadController extends Controller
             $val = DB::table('library_settings')
                 ->where('setting_key', 'hod_upload_approval_mode')
                 ->value('setting_value');
+            if ($val === 'approval') return false;
             if ($val === 'direct') return true;
 
             $cfgRow = DB::table('library_settings')
@@ -655,14 +656,13 @@ class DepartmentUploadController extends Controller
                 ->value('setting_value');
             if ($cfgRow) {
                 $cfg = json_decode($cfgRow, true);
-                if (!empty($cfg['hodFeatures']['directPublishToStudents']['enabled']) || 
-                    ($cfg['hodUploadWorkflow']['mode'] ?? '') === 'direct' || 
-                    !empty($cfg['features']['hodFeatures']['directPublishToStudents'])) {
-                    return true;
+                if (isset($cfg['hodUploadWorkflow']['mode']) && $cfg['hodUploadWorkflow']['mode'] === 'approval') {
+                    return false;
                 }
             }
         } catch (\Throwable $e) {}
-        return false;
+        // Default to TRUE so every HOD upload is immediately live in the student catalog & OPAC across all devices
+        return true;
     }
 
     public function getPublishingMode()

@@ -448,17 +448,44 @@ class HodStaffPortalController extends Controller
             ], 500);
         }
 
-        // Create an actionable notification for the HOD and staff member
+        // Create actionable notifications for both the HOD and the new staff member
         try {
             DB::table('notifications')->insert([
-                'id' => 'NOTIF-STF-' . strtoupper(Str::random(8)),
-                'matric' => "HOD/{$deptCode}/001",
-                'type' => 'hod_staff_workspace',
-                'title' => "Staff Workspace Created: {$name} ({$designation})",
-                'message' => "Custom staff page '{$pageTitle}' has been provisioned under {$deptName} with Staff ID {$staffCode}. Click to open the Staff Workspace.",
-                'date' => $now,
-                'read' => 0,
-                'action_url' => "#/hod/staff-workspace?staffId={$id}"
+                [
+                    'id' => 'NOTIF-HOD-' . strtoupper(Str::random(8)),
+                    'matric' => "HOD/{$deptCode}/001",
+                    'type' => 'hod_staff_workspace',
+                    'title' => "Staff Workspace Created: {$name} ({$designation})",
+                    'message' => "Custom staff page '{$pageTitle}' has been provisioned under {$deptName} with Staff ID {$staffCode}. Click to open the Staff Workspace.",
+                    'date' => $now,
+                    'read' => 0,
+                    'action_url' => "#/hod/staff-workspace?staffId={$id}"
+                ],
+                [
+                    'id' => 'NOTIF-STF-' . strtoupper(Str::random(8)),
+                    'matric' => $staffCode,
+                    'type' => 'staff_workspace_welcome',
+                    'title' => "Welcome to {$deptCode} Faculty Workspace",
+                    'message' => "Your Head of Department provisioned your official academic staff portal with Staff ID {$staffCode}. Initial password: {$passwordPlain}.",
+                    'date' => $now,
+                    'read' => 0,
+                    'action_url' => "#/hod/staff-workspace"
+                ]
+            ]);
+        } catch (\Throwable $e) {}
+
+        try {
+            \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+                'action' => 'STAFF_CREATED',
+                'entity' => 'hod_staff',
+                'id' => $id,
+                'title' => "New staff workspace provisioned: {$name} ({$staffCode})",
+                'data' => [
+                    'staff_id' => $id,
+                    'staff_code' => $staffCode,
+                    'department_code' => $deptCode,
+                    'name' => $name
+                ]
             ]);
         } catch (\Throwable $e) {}
 
@@ -541,6 +568,46 @@ class HodStaffPortalController extends Controller
         DB::table('hod_department_staff')->where('id', $id)->update($updatedRow);
         $this->syncStaffRowToMysql($updatedRow);
 
+        // Record high-speed real-time event for LAN & multi-device sync
+        try {
+            \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+                'action' => 'STAFF_PERMISSIONS_UPDATED',
+                'entity' => 'hod_staff',
+                'id' => $id,
+                'title' => "Updated permissions for {$updatedRow['name']}",
+                'data' => [
+                    'staff_id' => $id,
+                    'staff_code' => $updatedRow['staff_code'],
+                    'department_code' => $updatedRow['department_code'],
+                    'status' => $updatedRow['status'],
+                    'allowed_pages' => is_string($updatedRow['allowed_pages']) ? json_decode($updatedRow['allowed_pages'], true) : $updatedRow['allowed_pages'],
+                    'allowed_features' => is_string($updatedRow['allowed_features']) ? json_decode($updatedRow['allowed_features'], true) : $updatedRow['allowed_features'],
+                    'assigned_courses' => is_string($updatedRow['assigned_courses']) ? json_decode($updatedRow['assigned_courses'], true) : $updatedRow['assigned_courses'],
+                    'updated_at' => $now
+                ]
+            ]);
+        } catch (\Throwable $e) {}
+
+        // Add real-time notification specifically for this staff member
+        try {
+            $isSuspended = ($updatedRow['status'] ?? 'active') === 'suspended';
+            $notifTitle = $isSuspended ? "Workspace Access Suspended" : "HOD Updated Your Workspace Permissions";
+            $notifMsg = $isSuspended
+                ? "Your Head of Department has temporarily suspended this academic staff workspace. Direct cataloging and upload tools are currently restricted."
+                : "Your Head of Department ({$updatedRow['department_code']}) updated your delegated duties, active pages, and function access. Changes are active immediately.";
+
+            DB::table('notifications')->insert([
+                'id' => 'NOTIF-STF-' . strtoupper(Str::random(8)),
+                'matric' => $updatedRow['staff_code'],
+                'type' => 'staff_workspace_update',
+                'title' => $notifTitle,
+                'message' => $notifMsg,
+                'date' => $now,
+                'read' => 0,
+                'action_url' => "#/hod/staff-workspace"
+            ]);
+        } catch (\Throwable $e) {}
+
         return response()->json([
             'status' => 'success',
             'success' => true,
@@ -613,6 +680,20 @@ class HodStaffPortalController extends Controller
             $updatedList[] = $this->formatStaffRecord($curr);
         }
 
+        try {
+            \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+                'action' => 'STAFF_BULK_PERMISSIONS_UPDATED',
+                'entity' => 'hod_staff',
+                'id' => $deptCode,
+                'title' => "Bulk staff permissions updated for {$deptCode}",
+                'data' => [
+                    'department_code' => $deptCode,
+                    'staff_ids' => array_column($updatedList, 'id'),
+                    'count' => count($updatedList)
+                ]
+            ]);
+        } catch (\Throwable $e) {}
+
         return response()->json([
             'status' => 'success',
             'success' => true,
@@ -635,6 +716,16 @@ class HodStaffPortalController extends Controller
                 $stmt = $pdo->prepare("DELETE FROM hod_department_staff WHERE id = :id");
                 $stmt->execute([':id' => $id]);
             }
+        } catch (\Throwable $e) {}
+
+        try {
+            \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+                'action' => 'STAFF_REMOVED',
+                'entity' => 'hod_staff',
+                'id' => $id,
+                'title' => "Staff workspace removed: {$id}",
+                'data' => ['staff_id' => $id]
+            ]);
         } catch (\Throwable $e) {}
 
         return response()->json([

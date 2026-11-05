@@ -126,7 +126,7 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
   };
 
   // Developer Publishing Mode: 'direct' (straight to student catalog) vs 'approval' (wait for admin review)
-  const [publishingMode, setPublishingMode] = useState('approval');
+  const [publishingMode, setPublishingMode] = useState('direct');
 
   const fetchPublishingMode = async () => {
     try {
@@ -152,15 +152,17 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
       console.warn('Publishing mode fetch warning:', err);
     }
 
-    // Local developer config cache fallback
+    // Local developer config cache fallback: default to 'direct' for instant live cataloging
     try {
       const devConfig = JSON.parse(localStorage.getItem('fcc_developer_master_config') || '{}');
-      if (devConfig?.features?.hodFeatures?.directPublishToStudents) {
-        setPublishingMode('direct');
-      } else {
+      if (devConfig?.hodUploadWorkflow?.mode === 'approval' || devConfig?.features?.hodFeatures?.requireAdminApproval) {
         setPublishingMode('approval');
+      } else {
+        setPublishingMode('direct');
       }
-    } catch (e) {}
+    } catch (e) {
+      setPublishingMode('direct');
+    }
   };
 
   useEffect(() => {
