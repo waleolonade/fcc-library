@@ -151,3 +151,4 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- =========================================================================
 SELECT COUNT(*) AS total_books_in_catalog FROM `books` WHERE `status` = 'approved';
 SELECT COUNT(*) AS total_approved_department_uploads FROM `department_uploads` WHERE `status` = 'approved';
+

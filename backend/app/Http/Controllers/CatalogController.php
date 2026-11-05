@@ -1072,6 +1072,9 @@ class CatalogController extends Controller
     private function mirrorBooksFromMysql(): void
     {
         try {
+            if (config('database.default') === 'sqlite' && !env('ENABLE_MYSQL_MIRROR', false)) {
+                return;
+            }
             $pdo = \App\Services\DatabaseService::getPdo();
             if (!$pdo) {
                 return;
