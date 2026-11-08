@@ -20,6 +20,9 @@ import TroveExplorer from '../student/TroveExplorer';
 import InternetArchiveExplorer from '../student/InternetArchiveExplorer';
 import GoogleBooksExplorer from '../student/GoogleBooksExplorer';
 import ApiOverlayDiscovery from '../student/ApiOverlayDiscovery';
+import ScholarlyEResourcesPanel from './ScholarlyEResourcesPanel';
+import IntegratedMediaCatalog from '../multimedia/IntegratedMediaCatalog';
+import MultimediaStudioPlayer from '../multimedia/MultimediaStudioPlayer';
 import DigitalBookReader from '../common/DigitalBookReader';
 import { getApiBase } from '../api/libraryApi';
 import { subscribeRealtimeEvents } from '../services/realtimeSync';
@@ -331,8 +334,15 @@ export default function PublicDiscovery({
     });
   }, [catalogBooks, liveApiJournals, liveApiProjects]);
 
-  // Navigation: 'home' | 'catalog' | 'openlibrary' | 'gutenberg' | 'trove' | 'journals' | 'databases' | 'repository' | 'partner_libraries'
-  const [activeTab, setActiveTab] = useState('home');
+  // Navigation: 'home' | 'catalog' | 'multimedia' | 'scholarly' | 'openlibrary' | 'gutenberg' | 'trove' | 'journals' | 'databases' | 'repository' | 'partner_libraries'
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const h = window.location.hash || '';
+      if (h.includes('/media') || h.includes('/multimedia') || h.includes('/video') || h.includes('/audio')) return 'multimedia';
+      if (h.includes('/scholarly') || h.includes('/e-resources')) return 'scholarly';
+    }
+    return 'home';
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [searchField, setSearchField] = useState('all'); // 'all' | 'title' | 'author' | 'isbn' | 'subject' | 'call' | 'doi' | 'publisher'
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
@@ -342,23 +352,101 @@ export default function PublicDiscovery({
   const [activeDetectedBadge, setActiveDetectedBadge] = useState(null); // 'isbn' | 'doi' | 'synonym'
 
   // Live External Repository Integration State (Public Access without login)
-  const [searchTarget, setSearchTarget] = useState('all'); // 'all' | 'stacks' | 'openlibrary' | 'gutenberg' | 'trove' | 'scholarly'
+  const [searchTarget, setSearchTarget] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const h = window.location.hash || '';
+      if (h.includes('/media') || h.includes('/multimedia') || h.includes('/video') || h.includes('/audio')) return 'multimedia';
+      if (h.includes('/scholarly') || h.includes('/e-resources')) return 'scholarly';
+    }
+    return 'all';
+  });
+
+  // Listen to hash route navigation for direct linking to #/media, #/multimedia, #/scholarly
+  useEffect(() => {
+    const handleHash = () => {
+      const h = window.location.hash || '';
+      if (h.includes('/media') || h.includes('/multimedia') || h.includes('/video') || h.includes('/audio')) {
+        setActiveTab('multimedia');
+        setSearchTarget('multimedia');
+      } else if (h.includes('/scholarly') || h.includes('/e-resources')) {
+        setActiveTab('scholarly');
+        setSearchTarget('scholarly');
+      }
+    };
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
   const [liveFederatedLoading, setLiveFederatedLoading] = useState(false);
   const [liveOpenLibraryResults, setLiveOpenLibraryResults] = useState([]);
   const [liveGutenbergResults, setLiveGutenbergResults] = useState([]);
   const [liveInternetArchiveResults, setLiveInternetArchiveResults] = useState([]);
   const [liveGoogleBooksResults, setLiveGoogleBooksResults] = useState([]);
   const [liveScholarlyResults, setLiveScholarlyResults] = useState([]);
+  const [scholarlySearchNonce, setScholarlySearchNonce] = useState(0);
   const [hasQueriedLiveApi, setHasQueriedLiveApi] = useState(false);
   const [activeLiveReader, setActiveLiveReader] = useState(null); // { url, directUrl, title, source }
   const [savedBooks, setSavedBooks] = useState(() => {
     return JSON.parse(localStorage.getItem('fcc_saved_books_list') || '[]');
   });
 
-  // Server-side / Client Pagination State (Prompt: 12 per page default for well-organized view)
+  // Server-side / Client Pagination State (Configured from database / developer page)
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(12);
+  const [pageSize, setPageSize] = useState(() => {
+    try {
+      const saved = localStorage.getItem('fcc_opac_page_size');
+      const parsed = parseInt(saved, 10);
+      return (!isNaN(parsed) && parsed > 0) ? parsed : 12;
+    } catch {
+      return 12;
+    }
+  });
   const [sortBy, setSortBy] = useState(''); // '' (Relevance) | 'new' | 'old' | 'random' | 'rating'
+
+  // Live synchronization of OPAC Page Size with Database & Developer Master Controls
+  useEffect(() => {
+    let isMounted = true;
+    const fetchOpacConfig = async () => {
+      try {
+        const base = getApiBase();
+        let res;
+        try {
+          res = await fetch(`${base}/opac/config`);
+        } catch {
+          res = await fetch('/api/opac/config');
+        }
+        if (res && res.ok && isMounted) {
+          const data = await res.json().catch(() => null);
+          if (data && data.opac_books_per_page) {
+            const count = parseInt(data.opac_books_per_page, 10);
+            if (!isNaN(count) && count > 0) {
+              setPageSize(count);
+              localStorage.setItem('fcc_opac_page_size', String(count));
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load OPAC config:', e);
+      }
+    };
+
+    fetchOpacConfig();
+
+    const handleOpacConfigUpdated = (e) => {
+      const newSize = e?.detail?.pageSize || parseInt(localStorage.getItem('fcc_opac_page_size'), 10);
+      if (newSize && !isNaN(newSize) && newSize > 0 && isMounted) {
+        setPageSize(newSize);
+        setCurrentPage(1);
+      }
+    };
+
+    window.addEventListener('fcc-opac-config-updated', handleOpacConfigUpdated);
+    window.addEventListener('storage', handleOpacConfigUpdated);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('fcc-opac-config-updated', handleOpacConfigUpdated);
+      window.removeEventListener('storage', handleOpacConfigUpdated);
+    };
+  }, []);
 
   // Resource Category Filter: 'LocalBooks' (Default Books Only) | 'Journal' | 'LocalJournals' | 'OnlineJournals' | 'Student Project'
   const [resourceCategory, setResourceCategory] = useState('LocalBooks');
@@ -682,6 +770,10 @@ export default function PublicDiscovery({
       setActiveTab('trove');
     } else if (searchTarget === 'stacks') {
       setActiveTab('catalog');
+    } else if (searchTarget === 'scholarly') {
+      // Dedicated E-Resources engine (AGORA • JSTOR • ScienceDirect • EBSCO)
+      setActiveTab('home');
+      setScholarlySearchNonce(n => n + 1);
     } else {
       // 'all' (Federated)
       setActiveTab('home');
@@ -1024,9 +1116,18 @@ export default function PublicDiscovery({
 
   const totalResults = filteredBooks.length;
   const totalPages = Math.max(1, Math.ceil(totalResults / pageSize));
-  const startIndex = (currentPage - 1) * pageSize;
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = totalResults === 0 ? 0 : (safeCurrentPage - 1) * pageSize;
   const endIndex = Math.min(startIndex + pageSize, totalResults);
+  const startDisplay = totalResults === 0 ? 0 : startIndex + 1;
   const displayedBooks = filteredBooks.slice(startIndex, endIndex);
+
+  // Clamp current page if total pages shrinks
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(Math.max(1, totalPages));
+    }
+  }, [totalPages, currentPage]);
 
   // E-Journals
   const eJournals = [
@@ -1131,6 +1232,50 @@ export default function PublicDiscovery({
                 activeTab === 'overlay' ? 'bg-black/30 text-emerald-100' : 'bg-emerald-950 text-emerald-400 border border-emerald-800'
               }`}>
                 Live APIs
+              </span>
+            </button>
+
+            {/* 2b. E-Resources (AGORA • JSTOR • ScienceDirect • EBSCO) */}
+            <button
+              onClick={() => {
+                setActiveTab('scholarly');
+                setSearchTarget('scholarly');
+                sounds.playClick();
+              }}
+              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shrink-0 ${
+                activeTab === 'scholarly'
+                  ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-bold shadow-sm shadow-emerald-950 border border-teal-400/40'
+                  : 'text-emerald-300/80 hover:text-white hover:bg-emerald-900/40 border border-transparent'
+              }`}
+            >
+              <Database size={12} className={activeTab === 'scholarly' ? 'text-white' : 'text-teal-400'} />
+              <span>E-Resources (AGORA • JSTOR • ScienceDirect • EBSCO)</span>
+              <span className={`text-[8.5px] px-1 py-0.2 rounded font-mono ${
+                activeTab === 'scholarly' ? 'bg-black/30 text-teal-100' : 'bg-emerald-950 text-teal-400 border border-teal-800'
+              }`}>
+                Peer-Reviewed
+              </span>
+            </button>
+
+            {/* 2c. Audio & Video Stacks (AV Lectures & Audiobooks) */}
+            <button
+              onClick={() => {
+                setActiveTab('multimedia');
+                setSearchTarget('multimedia');
+                sounds.playClick();
+              }}
+              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shrink-0 ${
+                activeTab === 'multimedia'
+                  ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-600 text-white font-bold shadow-sm shadow-indigo-950 border border-purple-400/40'
+                  : 'text-emerald-300/80 hover:text-white hover:bg-emerald-900/40 border border-transparent'
+              }`}
+            >
+              <Video size={12} className={activeTab === 'multimedia' ? 'text-white' : 'text-purple-400'} />
+              <span>Audio &amp; Video Stacks</span>
+              <span className={`text-[8.5px] px-1 py-0.2 rounded font-mono ${
+                activeTab === 'multimedia' ? 'bg-black/30 text-purple-100' : 'bg-purple-950 text-purple-300 border border-purple-800'
+              }`}>
+                Streaming
               </span>
             </button>
 
@@ -1523,6 +1668,7 @@ export default function PublicDiscovery({
                   <span className="text-[11px] font-mono font-bold text-emerald-400 uppercase tracking-wider mr-1">Search Target:</span>
                   {[
                     { id: 'stacks', label: `College Stacks (${localBooksCount})`, icon: BookOpen, badge: 'Books Only' },
+                    { id: 'multimedia', label: 'Audio & Video (Lectures & Audiobooks)', icon: Video, badge: 'AV Stacks' },
                     { id: 'all', label: 'All Sources (Federated)', icon: Sparkles, badge: 'Multi-API' },
                     { id: 'scholarly', label: 'E-Resources (AGORA • JSTOR • ScienceDirect • EBSCO)', icon: Layers, badge: 'Peer-Reviewed Journals' },
                     { id: 'google_books', label: 'Google Books', icon: Sparkles, badge: 'Previews' },
@@ -1540,7 +1686,8 @@ export default function PublicDiscovery({
                         onClick={() => {
                           setSearchTarget(src.id);
                           sounds.playClick();
-                          if (src.id === 'google_books') setActiveTab('google_books');
+                          if (src.id === 'multimedia') setActiveTab('multimedia');
+                          else if (src.id === 'google_books') setActiveTab('google_books');
                           else if (src.id === 'openlibrary') setActiveTab('openlibrary');
                           else if (src.id === 'gutenberg') setActiveTab('gutenberg');
                           else if (src.id === 'archive') setActiveTab('archive');
@@ -1549,8 +1696,8 @@ export default function PublicDiscovery({
                             setActiveTab('catalog');
                             setResourceCategory('LocalBooks');
                           } else if (src.id === 'scholarly') {
-                            setResourceCategory('Journal');
-                            if (searchQuery) fetchLiveExternalResources(searchQuery);
+                            setActiveTab('home');
+                            setScholarlySearchNonce(n => n + 1);
                           } else {
                             setActiveTab('home');
                             if (searchQuery) fetchLiveExternalResources(searchQuery);
@@ -2033,6 +2180,11 @@ export default function PublicDiscovery({
                 </div>
               )}
             </div>
+
+            {/* SCHOLARLY E-RESOURCES ENGINE (AGORA • JSTOR • ScienceDirect • EBSCO) */}
+            {searchTarget === 'scholarly' && (
+              <ScholarlyEResourcesPanel query={searchQuery} searchNonce={scholarlySearchNonce} />
+            )}
 
             {/* CATALOG SEARCH RESULTS / BROWSE STACKS */}
             <div className="space-y-5">
@@ -2538,28 +2690,33 @@ export default function PublicDiscovery({
                 <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-[#032317] border border-emerald-800/80 shadow-md">
                   <div className="flex items-center gap-3 text-xs text-emerald-300">
                     <span>
-                      Showing <strong className="text-white font-mono">{startIndex + 1}</strong> to <strong className="text-white font-mono">{endIndex}</strong> of <strong className="text-white font-mono">{totalResults}</strong> catalogue records
+                      Showing <strong className="text-white font-mono">{startDisplay}</strong> to <strong className="text-white font-mono">{endIndex}</strong> of <strong className="text-white font-mono">{totalResults}</strong> catalogue records
                     </span>
 
                     <div className="flex items-center gap-1.5 ml-2 border-l border-emerald-800/80 pl-3">
                       <span className="text-emerald-400/80">Page Size:</span>
-                      {[12, 24, 48, 96].map(size => (
-                        <button
-                          key={size}
-                          onClick={() => {
-                            setPageSize(size);
-                            setCurrentPage(1);
-                            sounds.playClick();
-                          }}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition ${
-                            pageSize === size
-                              ? 'bg-emerald-600 text-white shadow'
-                              : 'bg-[#021810] text-emerald-300 border border-emerald-800 hover:bg-emerald-900/40'
-                          }`}
-                        >
-                          {size}
-                        </button>
-                      ))}
+                      {(() => {
+                        const standardSizes = [12, 24, 48, 96];
+                        const options = Array.from(new Set([pageSize, ...standardSizes])).filter(n => n > 0).sort((a, b) => a - b);
+                        return options.map(size => (
+                          <button
+                            key={size}
+                            onClick={() => {
+                              setPageSize(size);
+                              setCurrentPage(1);
+                              localStorage.setItem('fcc_opac_page_size', String(size));
+                              sounds.playClick();
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition ${
+                              pageSize === size
+                                ? 'bg-emerald-600 text-white shadow'
+                                : 'bg-[#021810] text-emerald-300 border border-emerald-800 hover:bg-emerald-900/40'
+                            }`}
+                          >
+                            {size}
+                          </button>
+                        ));
+                      })()}
                     </div>
                   </div>
 
@@ -3254,6 +3411,20 @@ export default function PublicDiscovery({
             <div className="relative z-10">
                <InternetArchiveExplorer />
             </div>
+          </div>
+        )}
+
+        {/* VIEW: SCHOLARLY E-RESOURCES ENGINE (AGORA • JSTOR • ScienceDirect • EBSCOhost • DOAJ • Europe PMC) */}
+        {activeTab === 'scholarly' && (
+          <div className="h-full mt-4 animate-fadeIn">
+            <ScholarlyEResourcesPanel query={searchQuery} searchNonce={scholarlySearchNonce} />
+          </div>
+        )}
+
+        {/* VIEW: AUDIO & VIDEO MULTIMEDIA DIGITAL REPOSITORY (IIIF AV & AVALON ARCHITECTURE) */}
+        {activeTab === 'multimedia' && (
+          <div className="h-full mt-4 animate-fadeIn">
+            <IntegratedMediaCatalog activeUser={activeUser} onOpenCompanionBook={onOpenReader} initialSearch={searchQuery} />
           </div>
         )}
       </main>

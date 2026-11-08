@@ -93,6 +93,55 @@ class SettingsController extends Controller
     }
 
     /**
+     * GET /api/opac/config
+     * Returns OPAC configuration including default books per page.
+     */
+    public function getOpacConfig()
+    {
+        $pageSize = 12;
+        try {
+            $row = DB::table('library_settings')->where('setting_key', 'opac_books_per_page')->first();
+            if ($row && !empty($row->setting_value)) {
+                $pageSize = max(1, (int)$row->setting_value);
+            }
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'opac_books_per_page' => $pageSize,
+            'default_page_size' => $pageSize
+        ]);
+    }
+
+    /**
+     * POST /api/developer/opac-config or POST /api/opac/config
+     * Updates OPAC configuration (books per page increase/decrease) from developer page.
+     */
+    public function saveOpacConfig(Request $request)
+    {
+        $pageSize = max(1, min(500, (int)($request->input('opac_books_per_page', $request->input('pageSize', $request->input('page_size', 12))))));
+
+        try {
+            DB::table('library_settings')->updateOrInsert(
+                ['setting_key' => 'opac_books_per_page'],
+                [
+                    'setting_value' => (string)$pageSize,
+                    'setting_group' => 'opac',
+                    'value_type' => 'integer',
+                    'is_public' => 1,
+                    'description' => 'Default number of books displayed per page on OPAC College Stacks',
+                    'updated_at' => now()
+                ]
+            );
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => true,
+            'opac_books_per_page' => $pageSize,
+            'message' => "OPAC display limit updated to {$pageSize} books per page."
+        ]);
+    }
+
+    /**
      * GET /api/branches
      * Multi-library branches endpoint (Prompt 48).
      */

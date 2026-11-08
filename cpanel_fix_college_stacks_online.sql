@@ -32,6 +32,10 @@ INSERT INTO `library_settings` (`setting_key`, `setting_value`, `setting_group`,
 VALUES ('hod_upload_approval_mode', 'direct', 'hod_publishing', 'string', 1, 'HOD Upload Direct Publishing Mode')
 ON DUPLICATE KEY UPDATE `setting_value` = 'direct', `updated_at` = current_timestamp();
 
+INSERT INTO `library_settings` (`setting_key`, `setting_value`, `setting_group`, `value_type`, `is_public`, `description`)
+VALUES ('opac_books_per_page', '12', 'opac', 'integer', 1, 'Default number of books displayed per page on OPAC College Stacks')
+ON DUPLICATE KEY UPDATE `setting_value` = IF(`setting_value` IS NULL OR `setting_value` = '', '12', `setting_value`), `updated_at` = current_timestamp();
+
 -- -------------------------------------------------------------------------
 -- STEP 2: ENSURE CRITICAL COLUMNS EXIST IN `books` AND `department_uploads`
 -- -------------------------------------------------------------------------

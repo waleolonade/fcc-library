@@ -64,7 +64,7 @@ export default function App() {
         return 'login';
       }
       if (h.includes('/login')) return 'login';
-      if (h.includes('/opac')) return 'public_opac';
+      if (h.includes('/opac') || h.includes('/media') || h.includes('/multimedia')) return 'public_opac';
     }
     return 'public_opac';
   });

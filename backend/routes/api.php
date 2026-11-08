@@ -224,6 +224,9 @@ Route::post('/copies', [CopiesBarcodeController::class, 'store']);
 // 5. Configurable Library Settings & Multi-Library Branches (Prompt 48, 49)
 Route::get('/settings', [SettingsController::class, 'index']);
 Route::post('/settings', [SettingsController::class, 'update']);
+Route::get('/opac/config', [SettingsController::class, 'getOpacConfig']);
+Route::post('/opac/config', [SettingsController::class, 'saveOpacConfig']);
+Route::post('/developer/opac-config', [SettingsController::class, 'saveOpacConfig']);
 Route::get('/branches', [SettingsController::class, 'getBranches']);
 Route::get('/institution/config', [SettingsController::class, 'getInstitutionConfig']);
 Route::post('/institution/config', [SettingsController::class, 'updateInstitutionConfig']);
@@ -705,6 +708,24 @@ Route::prefix('ebsco')->group(function () {
 // =========================================================================
 Route::prefix('scholarly')->group(function () {
     Route::get('/search', [\App\Http\Controllers\Api\ScholarlyResourcesController::class, 'search']);
+    Route::get('/platforms', [\App\Http\Controllers\Api\ScholarlyResourcesController::class, 'platforms']);
+});
+
+// =========================================================================
+// INTEGRATED MULTIMEDIA DIGITAL REPOSITORY (AUDIO & VIDEO STREAMING)
+// Avalon Media System & IIIF Presentation 3.0 AV Standard
+// =========================================================================
+Route::prefix('media')->group(function () {
+    Route::get('/', [\App\Http\Controllers\MediaResourceController::class, 'index']);
+    Route::get('/collections', [\App\Http\Controllers\MediaResourceController::class, 'collections']);
+    Route::get('/{id}', [\App\Http\Controllers\MediaResourceController::class, 'show']);
+    Route::get('/{id}/stream', [\App\Http\Controllers\MediaResourceController::class, 'stream']);
+    Route::get('/{id}/iiif-manifest', [\App\Http\Controllers\MediaResourceController::class, 'iiifManifest']);
+    Route::get('/{id}/progress', [\App\Http\Controllers\MediaResourceController::class, 'getProgress']);
+    Route::post('/{id}/progress', [\App\Http\Controllers\MediaResourceController::class, 'saveProgress']);
+    Route::post('/', [\App\Http\Controllers\MediaResourceController::class, 'store']);
+    Route::put('/{id}', [\App\Http\Controllers\MediaResourceController::class, 'update']);
+    Route::delete('/{id}', [\App\Http\Controllers\MediaResourceController::class, 'destroy']);
 });
 
 

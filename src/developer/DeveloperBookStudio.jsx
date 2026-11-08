@@ -4,7 +4,7 @@ import {
   Sparkles, Layers, Tag, Copy, Check, ArrowRight, Eye, RefreshCw,
   FileUp, Hash, Library, Search, AlertTriangle, ShieldCheck,
   Building2, Trash2, Edit3, ExternalLink, Image as ImageIcon,
-  BookCheck, Bookmark, Download, Plus
+  BookCheck, Bookmark, Download, Plus, Minus, Sliders
 } from 'lucide-react';
 import { INSTITUTION } from '../data/institutionalSeedData';
 import { sounds } from '../utils/soundEffects';
@@ -52,6 +52,88 @@ export default function DeveloperBookStudio({ passkey, showToast, departments: p
   const [editingBook, setEditingBook] = useState(null);
   const [isUpdatingBook, setIsUpdatingBook] = useState(false);
 
+  // OPAC Books Per Page State (Database & Live Broadcast)
+  const [opacPageSize, setOpacPageSize] = useState(() => {
+    try {
+      const saved = localStorage.getItem('fcc_opac_page_size');
+      const parsed = parseInt(saved, 10);
+      return (!isNaN(parsed) && parsed > 0) ? parsed : 12;
+    } catch {
+      return 12;
+    }
+  });
+  const [isSavingOpacSize, setIsSavingOpacSize] = useState(false);
+  const [opacSaveSuccess, setOpacSaveSuccess] = useState(false);
+
+  // Load OPAC config from database on mount
+  useEffect(() => {
+    let isMounted = true;
+    const fetchOpacConfig = async () => {
+      try {
+        const res = await fetch('/api/opac/config').catch(() => null);
+        if (res && res.ok && isMounted) {
+          const data = await res.json().catch(() => null);
+          if (data && data.opac_books_per_page) {
+            const count = parseInt(data.opac_books_per_page, 10);
+            if (!isNaN(count) && count > 0) {
+              setOpacPageSize(count);
+              localStorage.setItem('fcc_opac_page_size', String(count));
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load OPAC config in Developer Portal:', e);
+      }
+    };
+    fetchOpacConfig();
+    return () => { isMounted = false; };
+  }, []);
+
+  // Save OPAC page size to Database and dispatch real-time broadcast
+  const handleSaveOpacPageSize = async (newSize) => {
+    const size = Math.max(1, Math.min(200, parseInt(newSize, 10) || 12));
+    setOpacPageSize(size);
+    setIsSavingOpacSize(true);
+    setOpacSaveSuccess(false);
+
+    try {
+      localStorage.setItem('fcc_opac_page_size', String(size));
+      window.dispatchEvent(new CustomEvent('fcc-opac-config-updated', { detail: { pageSize: size } }));
+
+      // Send to backend developer endpoint
+      let res;
+      try {
+        res = await developerApiCall('/api/developer/opac-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ opac_books_per_page: size }),
+          passkey
+        });
+      } catch (e) {
+        // Fallback direct POST to /api/opac/config
+        res = await fetch('/api/opac/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ opac_books_per_page: size })
+        }).catch(() => null);
+      }
+
+      setOpacSaveSuccess(true);
+      sounds.playSuccessChime();
+      if (showToast) {
+        showToast(`OPAC display updated: ${size} books per page broadcast live!`, 'success');
+      }
+      setTimeout(() => setOpacSaveSuccess(false), 2500);
+    } catch (err) {
+      console.error('Failed to save OPAC page size:', err);
+      if (showToast) {
+        showToast('Error saving OPAC page size to database', 'error');
+      }
+    } finally {
+      setIsSavingOpacSize(false);
+    }
+  };
+
   // Ingestion Form State (Cleaned of all dummy, demo, and mock values)
   const [formData, setFormData] = useState({
     title: '',
@@ -60,8 +142,8 @@ export default function DeveloperBookStudio({ passkey, showToast, departments: p
     author_credentials: '',
     department: '',
     course_code: '',
-    target_level: 'ND I',
-    semester: 'First Semester',
+    target_level: '',
+    semester: '',
     isbn: '',
     call_number: '',
     publisher: 'Federal Co-operative College Press',
@@ -492,6 +574,126 @@ export default function DeveloperBookStudio({ passkey, showToast, departments: p
               <RefreshCw size={14} className={booksLoading ? 'animate-spin text-cyan-400' : ''} />
               <span>Refresh Catalog</span>
             </button>
+          </div>
+        </div>
+
+        {/* OPAC Books Per Page Controller (Database & Live Realtime Sync) */}
+        <div className="mt-6 p-4 rounded-2xl bg-gradient-to-r from-slate-900/90 via-slate-900/80 to-cyan-950/40 border border-cyan-500/30 shadow-xl flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+              <Sliders size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-white tracking-wide">Public OPAC Books Per Page</span>
+                <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-[10px] font-mono border border-cyan-500/30 font-semibold">
+                  Live Database Synced
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">
+                Increase or decrease default catalogue records on the OPAC page (<span className="text-cyan-300 font-mono">/#/opac</span>). Persists to database.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Quick Presets */}
+            <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
+              {[6, 12, 16, 24, 48].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => handleSaveOpacPageSize(preset)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition cursor-pointer ${
+                    opacPageSize === preset
+                      ? 'bg-cyan-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
+                  }`}
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+
+            {/* Stepper Controls: Decrease (-) / Input / Increase (+) */}
+            <div className="flex items-center gap-1.5 bg-slate-950/90 px-2 py-1 rounded-xl border border-cyan-500/40">
+              <button
+                type="button"
+                onClick={() => handleSaveOpacPageSize(Math.max(1, opacPageSize - 1))}
+                disabled={opacPageSize <= 1 || isSavingOpacSize}
+                title="Decrease page size by 1"
+                className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-cyan-300 flex items-center justify-center text-base font-bold transition cursor-pointer"
+              >
+                <Minus size={14} />
+              </button>
+
+              <input
+                type="number"
+                min="1"
+                max="200"
+                value={opacPageSize}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  if (!isNaN(val)) setOpacPageSize(val);
+                }}
+                onBlur={() => handleSaveOpacPageSize(opacPageSize)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveOpacPageSize(opacPageSize);
+                }}
+                className="w-14 text-center bg-slate-900 border border-slate-700 rounded-lg py-1 text-xs font-mono font-bold text-white focus:outline-none focus:border-cyan-400"
+              />
+
+              <button
+                type="button"
+                onClick={() => handleSaveOpacPageSize(Math.min(200, opacPageSize + 1))}
+                disabled={opacPageSize >= 200 || isSavingOpacSize}
+                title="Increase page size by 1"
+                className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-cyan-300 flex items-center justify-center text-base font-bold transition cursor-pointer"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+
+            {/* Save Button */}
+            <button
+              type="button"
+              onClick={() => handleSaveOpacPageSize(opacPageSize)}
+              disabled={isSavingOpacSize}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-lg cursor-pointer ${
+                opacSaveSuccess
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-950/50'
+              }`}
+            >
+              {opacSaveSuccess ? (
+                <>
+                  <Check size={14} />
+                  <span>Saved Live!</span>
+                </>
+              ) : isSavingOpacSize ? (
+                <>
+                  <RefreshCw size={14} className="animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles size={14} />
+                  <span>Update OPAC</span>
+                </>
+              )}
+            </button>
+
+            {/* View Live OPAC Link */}
+            <a
+              href="#/opac"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition"
+              title="Open OPAC in new tab to test"
+            >
+              <ExternalLink size={13} />
+              <span>Preview OPAC</span>
+            </a>
           </div>
         </div>
 

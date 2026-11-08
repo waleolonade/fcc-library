@@ -375,7 +375,7 @@ export default function SmartCatalogSearch({
     { id: 'Theses & Projects', label: '🎓 Student Projects & Theses', icon: GraduationCap },
     { id: 'eBooks & PDFs', label: '⚡ E-Books & PDFs', icon: Zap },
     { id: 'Course Materials', label: '📑 Course Materials', icon: FileText },
-    { id: 'Scholarly', label: '🌐 E-Resources (AGORA • JSTOR • ScienceDirect)', icon: Globe },
+    { id: 'Scholarly', label: '🌐 E-Resources (AGORA • JSTOR • ScienceDirect • EBSCO)', icon: Globe },
     { id: 'Bookmarked', label: `🔖 Bookmarked (${savedBooks.length})`, icon: Bookmark }
   ];
 
@@ -440,14 +440,17 @@ export default function SmartCatalogSearch({
           isOpenAccess: s.is_open_access,
           accessType: s.access_type || 'Scholarly Research',
           externalUrl: s.url,
-          portalUrl: s.url,
-          pdfUrl: s.pdf_url || s.url,
+          portalUrl: s.portal_url || s.url,
+          pdfUrl: s.pdf_url || s.oa_url || s.url,
           coverImage: s.coverUrl || '/assets/no-cover.png',
           callNumber: s.doi ? `DOI: ${s.doi}` : (s.issn ? `ISSN: ${s.issn}` : `${(s.platform || 'API').toUpperCase()}-HOLDING`),
           rating: 5.0,
           copiesAvailable: 1,
           copiesTotal: 1,
-          abstract: `Scholarly peer-reviewed literature indexed across ${s.platformName || s.platform} research portal.`
+          citations: s.citations || 0,
+          citationApa: s.citation_apa || null,
+          doi: s.doi || null,
+          abstract: s.abstract || `Scholarly peer-reviewed literature indexed across ${s.platformName || s.platform || 'Academic'} research portal.`
         })));
       }
     }).catch(() => {});

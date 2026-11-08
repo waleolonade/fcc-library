@@ -199,95 +199,56 @@ function sanitizeSearchQuery(query) {
 }
 
 // -------------------------------------------------------------
+// Helper: Unified Scholarly Search via Backend Engine v3
+// -------------------------------------------------------------
+async function fetchScholarlyPlatform(query, platform, limit = 8) {
+  if (!isApiActive(platform)) return [];
+  const cleanQ = sanitizeSearchQuery(query);
+  const base = getApiBase();
+  const endpoints = [
+    `${base}/scholarly/search?query=${encodeURIComponent(cleanQ)}&platform=${platform}&per_page=${limit}`,
+    `/api/scholarly/search?query=${encodeURIComponent(cleanQ)}&platform=${platform}&per_page=${limit}`
+  ];
+
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (res.ok) {
+        const data = await res.json();
+        const results = Array.isArray(data?.results) ? data.results : [];
+        if (results.length > 0) return results;
+      }
+    } catch {}
+  }
+  return [];
+}
+
+// -------------------------------------------------------------
 // 1. Elsevier ScienceDirect & Scopus
 // -------------------------------------------------------------
 async function fetchScienceDirect(query, limit = 8) {
-  if (!isApiActive('sciencedirect')) return [];
-  try {
-    const res = await fetch(`/api/scholarly/search?query=${encodeURIComponent(query)}&platform=sciencedirect&per_page=${limit}`, {
-      headers: { Accept: 'application/json' }
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.results || []).map(item => ({
-      ...item,
-      platform: 'sciencedirect',
-      platformName: 'Elsevier ScienceDirect',
-      platformBadge: '🔬 ScienceDirect',
-      platformColor: '#ff6f00'
-    }));
-  } catch {
-    return [];
-  }
+  return fetchScholarlyPlatform(query, 'sciencedirect', limit);
 }
 
 // -------------------------------------------------------------
 // 2. AGORA (Research4Life / FAO AGRIS)
 // -------------------------------------------------------------
 async function fetchAgora(query, limit = 8) {
-  if (!isApiActive('agora')) return [];
-  try {
-    const res = await fetch(`/api/scholarly/search?query=${encodeURIComponent(query)}&platform=agora&per_page=${limit}`, {
-      headers: { Accept: 'application/json' }
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.results || []).map(item => ({
-      ...item,
-      platform: 'agora',
-      platformName: 'AGORA (Research4Life)',
-      platformBadge: '🌾 AGORA',
-      platformColor: '#16a34a'
-    }));
-  } catch {
-    return [];
-  }
+  return fetchScholarlyPlatform(query, 'agora', limit);
 }
 
 // -------------------------------------------------------------
 // 3. JSTOR Academic Digital Repository
 // -------------------------------------------------------------
 async function fetchJstor(query, limit = 8) {
-  if (!isApiActive('jstor')) return [];
-  try {
-    const res = await fetch(`/api/scholarly/search?query=${encodeURIComponent(query)}&platform=jstor&per_page=${limit}`, {
-      headers: { Accept: 'application/json' }
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.results || []).map(item => ({
-      ...item,
-      platform: 'jstor',
-      platformName: 'JSTOR Academic Archive',
-      platformBadge: '🏛️ JSTOR',
-      platformColor: '#991b1b'
-    }));
-  } catch {
-    return [];
-  }
+  return fetchScholarlyPlatform(query, 'jstor', limit);
 }
 
 // -------------------------------------------------------------
 // 4. EBSCOhost Discovery & Research Databases
 // -------------------------------------------------------------
 async function fetchEbsco(query, limit = 8) {
-  if (!isApiActive('ebsco')) return [];
-  try {
-    const res = await fetch(`/api/scholarly/search?query=${encodeURIComponent(query)}&platform=ebsco&per_page=${limit}`, {
-      headers: { Accept: 'application/json' }
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.results || []).map(item => ({
-      ...item,
-      platform: 'ebsco',
-      platformName: 'EBSCOhost Discovery',
-      platformBadge: '📚 EBSCOhost',
-      platformColor: '#0284c7'
-    }));
-  } catch {
-    return [];
-  }
+  return fetchScholarlyPlatform(query, 'ebsco', limit);
 }
 
 // -------------------------------------------------------------

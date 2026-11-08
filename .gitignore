@@ -4,6 +4,7 @@ node_modules/
 # Production build
 dist/
 build/
+public_html/
 
 # Logs & Environment
 *.log
@@ -26,6 +27,11 @@ scratch/
 *.sqlite3
 backend/database/*.sqlite
 /gsashtub_brainfeels_library.sql
+backend/public/uploads/*
+!backend/public/uploads/.gitkeep
+public_html/storage/
+public_html/uploads/
+public_html/backend/storage/
 
 # Archives & Staging
 *.zip

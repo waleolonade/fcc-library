@@ -6,8 +6,9 @@ import {
   Menu, ChevronLeft, ChevronRight, ChevronDown, X, User, GraduationCap, Barcode,
   Home, Library, Clock, Star, History, Bell, Quote, Compass, BookMarked,
   ExternalLink, Check, Copy, AlertCircle, RefreshCw, Send, Sparkle, Zap, Database,
-  ArrowLeft, ArrowRight
+  ArrowLeft, ArrowRight, Video
 } from 'lucide-react';
+import IntegratedMediaCatalog from '../multimedia/IntegratedMediaCatalog';
 import { pwaHistory } from '../utils/pwaHistoryManager';
 import { INSTITUTION, INITIAL_PARTNER_LIBRARIES } from '../data/institutionalSeedData';
 import DigitalBookReader from './DigitalBookReader';
@@ -408,6 +409,7 @@ export default function StudentPortal({
     library_ebooks: { label: 'eBooks & Digital Texts', category: 'LIBRARY', icon: BookOpen },
     library_journals: { label: 'Academic Journals', category: 'LIBRARY', icon: Layers },
     library_digital: { label: 'Digital Resources & Notes', category: 'LIBRARY', icon: GraduationCap },
+    library_multimedia: { label: 'Audio & Video Lectures', category: 'LIBRARY', icon: Video },
     my_borrowed: { label: 'Borrowed Books', category: 'MY LIBRARY', icon: QrCode },
     my_reserved: { label: 'Reserved Books', category: 'MY LIBRARY', icon: Layers },
     my_due_soon: { label: 'Due Soon & Overdue Warnings', category: 'MY LIBRARY', icon: Clock },
@@ -1207,6 +1209,17 @@ export default function StudentPortal({
               onOpenReader={(b) => {
                 setActiveBookDetails(null);
                 setActiveBookForReader(b);
+              }}
+            />
+          ) : activeTab === 'library_multimedia' ? (
+            /* ============================================================== */
+            /* 2b. LIBRARY └── Audio & Video Lectures & Audiobooks            */
+            /* ============================================================== */
+            <IntegratedMediaCatalog
+              activeUser={user}
+              embedded={true}
+              onOpenCompanionBook={(bookId) => {
+                setActiveBookForReader({ id: bookId });
               }}
             />
           ) : activeTab === 'library_lms' ? (

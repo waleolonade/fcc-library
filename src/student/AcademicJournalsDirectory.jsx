@@ -3,10 +3,12 @@ import {
   Layers, BookOpen, ExternalLink, Search, Globe, Building, Award,
   CheckCircle, Download, Share2, Sparkles, Filter, RefreshCw, Loader2,
   Bookmark, ChevronRight, FileText, Star, ShieldCheck, Check, Database,
-  ArrowUpRight, Copy, BookMarked, Hash, Info, Library
+  ArrowUpRight, Copy, BookMarked, Hash, Info, Library, Quote, TrendingUp,
+  Unlock, Lock, ChevronDown, ChevronUp
 } from 'lucide-react';
 import TroveExplorer from './TroveExplorer';
 import { isApiActive } from '../services/federatedLibrarySearchService';
+import { getApiBase } from '../api/libraryApi';
 
 // FCC Flagship Institutional Scholar Journals
 const SCHOLARLY_JOURNALS = [
@@ -121,6 +123,7 @@ export default function AcademicJournalsDirectory({
 
   // Citation copying notification state
   const [copiedId, setCopiedId] = useState(null);
+  const [expandedAbstracts, setExpandedAbstracts] = useState({});
 
   // Load HOD Approved & Local Serials from backend database
   useEffect(() => {
@@ -229,16 +232,44 @@ export default function AcademicJournalsDirectory({
     setScholarlyLoading(true);
     try {
       const q = (query || '').trim() || 'cooperative agriculture economics business finance';
-      const res = await fetch(`/api/scholarly/search?query=${encodeURIComponent(q)}&platform=${platform}&per_page=12`);
-      if (res.ok) {
-        const data = await res.json();
-        setScholarlyJournals(data.results || []);
+      const base = getApiBase();
+      const urls = [
+        `${base}/scholarly/search?query=${encodeURIComponent(q)}&platform=${platform}&per_page=12`,
+        `/api/scholarly/search?query=${encodeURIComponent(q)}&platform=${platform}&per_page=12`
+      ];
+      let data = null;
+      for (const u of urls) {
+        try {
+          const res = await fetch(u, { headers: { Accept: 'application/json' } });
+          if (res.ok) {
+            data = await res.json();
+            break;
+          }
+        } catch {}
+      }
+      if (data && Array.isArray(data.results)) {
+        setScholarlyJournals(data.results);
       }
     } catch (e) {
       console.warn('Error fetching scholarly journals:', e);
     } finally {
       setScholarlyLoading(false);
     }
+  };
+
+  const handleCopyCitation = (item) => {
+    if (!item) return;
+    let text = '';
+    if (item.citation_apa) {
+      text = item.citation_apa;
+    } else if (item.publisher && item.latestIssue) {
+      text = `${item.publisher} (2026). ${item.title}. ${item.latestIssue}. ISSN: ${item.issn || 'N/A'}. Available via Federal Co-operative College Academic Repository.`;
+    } else {
+      text = `${item.author || item.publisher || 'Scholar'} (${item.year || '2026'}). ${item.title}. ${item.source || ''}. ${item.doi ? `https://doi.org/${item.doi}` : item.url || ''}`;
+    }
+    navigator.clipboard?.writeText(text);
+    setCopiedId(item.id);
+    setTimeout(() => setCopiedId(null), 2500);
   };
 
   // Initial & Debounced Search for OpenAlex Journals and Federated E-Resources
@@ -310,13 +341,6 @@ export default function AcademicJournalsDirectory({
       return matchQuery && matchDiscipline && matchOa;
     });
   }, [normalizedInstitutionalJournals, searchQuery, selectedDiscipline, openAccessOnly]);
-
-  const handleCopyCitation = (j) => {
-    const citation = `${j.publisher} (2026). ${j.title}. ${j.latestIssue}. ISSN: ${j.issn}. Available via Federal Co-operative College Academic Repository.`;
-    navigator.clipboard.writeText(citation);
-    setCopiedId(j.id);
-    setTimeout(() => setCopiedId(null), 2500);
-  };
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
@@ -534,7 +558,9 @@ export default function AcademicJournalsDirectory({
                 { id: 'sciencedirect', label: '🔬 ScienceDirect' },
                 { id: 'agora', label: '🌾 AGORA / FAO' },
                 { id: 'jstor', label: '🏛️ JSTOR' },
-                { id: 'ebsco', label: '📚 EBSCOhost' }
+                { id: 'ebsco', label: '📚 EBSCOhost' },
+                { id: 'doaj', label: '🌐 DOAJ' },
+                { id: 'europe_pmc', label: '🧬 Europe PMC' }
               ].map(p => (
                 <button
                   key={p.id}
@@ -558,76 +584,144 @@ export default function AcademicJournalsDirectory({
           {scholarlyLoading ? (
             <div className="py-14 text-center space-y-3 bg-slate-900/40 rounded-3xl border border-slate-800">
               <Loader2 size={32} className="animate-spin text-amber-400 mx-auto" />
-              <p className="text-slate-300 font-serif text-sm">Querying AGORA, JSTOR, ScienceDirect, and EBSCOhost APIs...</p>
+              <p className="text-slate-300 font-serif text-sm">Querying AGORA, JSTOR, ScienceDirect, and EBSCOhost APIs concurrently…</p>
             </div>
           ) : scholarlyJournals.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {scholarlyJournals.map((item, idx) => (
-                <div
-                  key={item.id || idx}
-                  className="bg-slate-900/90 border border-slate-800 hover:border-amber-500/60 rounded-3xl p-5 space-y-3 shadow-lg flex flex-col justify-between transition group"
-                >
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between gap-1.5 text-xs">
-                      <span
-                        className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold text-white shadow-sm"
-                        style={{ backgroundColor: item.platform_color || '#d97706' }}
-                      >
-                        {item.platform_badge}
-                      </span>
-                      {item.is_open_access ? (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono font-bold">
-                          🔓 Open Access
+              {scholarlyJournals.map((item, idx) => {
+                const cardId = item.id || `sch-${idx}`;
+                const isExpanded = !!expandedAbstracts[cardId];
+                const fullTextUrl = item.pdf_url || item.oa_url || null;
+                const isCopied = copiedId === cardId;
+
+                return (
+                  <div
+                    key={cardId}
+                    className="bg-slate-900/90 border border-slate-800 hover:border-amber-500/60 rounded-3xl p-5 space-y-3 shadow-lg flex flex-col justify-between transition group relative overflow-hidden"
+                  >
+                    <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: item.platform_color || '#d97706' }} />
+
+                    <div className="space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-1.5 text-xs">
+                        <span
+                          className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold text-white shadow-sm"
+                          style={{ backgroundColor: item.platform_color || '#d97706' }}
+                        >
+                          {item.platform_badge}
                         </span>
-                      ) : (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-950 text-amber-300 border border-amber-900 font-mono">
-                          Institutional Gate
-                        </span>
+                        <div className="flex items-center gap-1">
+                          {item.is_open_access ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono font-bold inline-flex items-center gap-1">
+                              <Unlock size={9} /> Open Access
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-950 text-amber-300 border border-amber-900 font-mono inline-flex items-center gap-1">
+                              <Lock size={9} /> Institutional
+                            </span>
+                          )}
+                          {item.year && (
+                            <span className="text-[10px] font-mono text-slate-400 ml-1">
+                              {item.year}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <h4 className="text-sm font-bold text-white line-clamp-2 group-hover:text-amber-300 transition leading-snug">
+                        <a href={item.url} target="_blank" rel="noreferrer" className="hover:underline">
+                          {item.title}
+                        </a>
+                      </h4>
+
+                      <div className="text-xs text-slate-300 line-clamp-1">
+                        <span>Authors: <strong className="text-white">{item.author}</strong></span>
+                      </div>
+
+                      <div className="text-[11px] text-slate-400 bg-slate-950/80 p-3 rounded-2xl border border-slate-800 space-y-1 font-sans">
+                        <div className="text-slate-200">
+                          <strong>Source:</strong> <span className="italic">{item.source}</span>
+                          {item.volume_issue ? `, ${item.volume_issue}` : ''}
+                          {item.pages ? `, pp. ${item.pages}` : ''}
+                        </div>
+                        {item.doi && (
+                          <div className="font-mono text-amber-300/80 truncate text-[10px]">
+                            DOI: {item.doi}
+                          </div>
+                        )}
+                        <div className="flex flex-wrap items-center justify-between text-[10px] font-mono pt-1 text-slate-400">
+                          <span>{item.access_type || 'Academic Resource'}</span>
+                          {item.citations !== undefined && (
+                            <span className="text-amber-300 inline-flex items-center gap-1">
+                              <TrendingUp size={11} /> {item.citations} citations
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Abstract preview */}
+                      {item.abstract && (
+                        <div className="text-[11px] text-slate-300/90 leading-relaxed bg-black/20 p-2.5 rounded-xl border border-slate-800/60">
+                          <p className={isExpanded ? '' : 'line-clamp-2'}>
+                            {item.abstract}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedAbstracts(prev => ({ ...prev, [cardId]: !prev[cardId] }))}
+                            className="mt-1 text-[10px] text-amber-400 font-bold hover:underline inline-flex items-center gap-0.5"
+                          >
+                            {isExpanded ? <>Show less <ChevronUp size={10} /></> : <>Read abstract <ChevronDown size={10} /></>}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Keywords */}
+                      {Array.isArray(item.keywords) && item.keywords.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {item.keywords.slice(0, 4).map(k => (
+                            <span key={k} className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                              {k}
+                            </span>
+                          ))}
+                        </div>
                       )}
                     </div>
 
-                    <h4 className="text-sm font-bold text-white line-clamp-2 group-hover:text-amber-300 transition leading-snug">
-                      {item.title}
-                    </h4>
-
-                    <div className="text-xs text-slate-300 line-clamp-1">
-                      <span>Authors: <strong className="text-white">{item.author}</strong></span>
-                    </div>
-
-                    <div className="text-[11px] text-slate-400 bg-slate-950/80 p-3 rounded-2xl border border-slate-800 space-y-1">
-                      <div className="text-slate-200"><strong>Source:</strong> {item.source}</div>
-                      {item.doi && <div className="font-mono text-amber-300/80 truncate">DOI: {item.doi}</div>}
-                      {item.discipline && <div className="text-slate-400 font-mono text-[10px]">{item.discipline}</div>}
-                      <div className="text-emerald-400 font-mono text-[10px]">{item.access_type}</div>
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-2 mt-2">
-                    {item.url && (
+                    <div className="pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 mt-2">
                       <a
-                        href={item.url}
+                        href={fullTextUrl || item.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex-1 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs text-center transition flex items-center justify-center gap-1.5 shadow"
+                        className="flex-1 min-w-[120px] py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs text-center transition flex items-center justify-center gap-1.5 shadow"
                       >
-                        <span>{item.is_open_access ? 'Read Full Article' : 'Access Gateway'}</span>
-                        <ExternalLink size={12} />
+                        {fullTextUrl ? <FileText size={12} /> : <ExternalLink size={12} />}
+                        <span>{fullTextUrl ? 'Read Full Text' : (item.is_open_access ? 'Open Article' : 'Access Gateway')}</span>
                       </a>
-                    )}
-                    {item.portal_url && (
-                      <a
-                        href={item.portal_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono border border-slate-700 transition"
-                        title="Open Institutional Research Portal"
+
+                      <button
+                        type="button"
+                        onClick={() => handleCopyCitation(item)}
+                        className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition inline-flex items-center gap-1"
+                        title="Copy APA 7th Edition Citation"
                       >
-                        Portal
-                      </a>
-                    )}
+                        {isCopied ? <Check size={12} className="text-emerald-400" /> : <Quote size={12} />}
+                        <span>{isCopied ? 'Copied' : 'Cite'}</span>
+                      </button>
+
+                      {item.portal_url && (
+                        <a
+                          href={item.portal_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono border border-slate-700 transition"
+                          title="Open Institutional Research Portal"
+                        >
+                          Portal
+                        </a>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="p-8 text-center text-xs text-slate-400 bg-slate-900/30 rounded-2xl border border-slate-800">
@@ -769,7 +863,9 @@ export default function AcademicJournalsDirectory({
                 { id: 'sciencedirect', label: '🔬 ScienceDirect' },
                 { id: 'agora', label: '🌾 AGORA / FAO' },
                 { id: 'jstor', label: '🏛️ JSTOR' },
-                { id: 'ebsco', label: '📚 EBSCOhost' }
+                { id: 'ebsco', label: '📚 EBSCOhost' },
+                { id: 'doaj', label: '🌐 DOAJ' },
+                { id: 'europe_pmc', label: '🧬 Europe PMC' }
               ].map(p => (
                 <button
                   key={p.id}
@@ -793,76 +889,144 @@ export default function AcademicJournalsDirectory({
           {scholarlyLoading ? (
             <div className="py-14 text-center space-y-3 bg-slate-900/40 rounded-3xl border border-slate-800">
               <Loader2 size={32} className="animate-spin text-amber-400 mx-auto" />
-              <p className="text-slate-300 font-serif text-sm">Querying AGORA, JSTOR, ScienceDirect, and EBSCOhost APIs...</p>
+              <p className="text-slate-300 font-serif text-sm">Querying AGORA, JSTOR, ScienceDirect, and EBSCOhost APIs concurrently…</p>
             </div>
           ) : scholarlyJournals.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {scholarlyJournals.map((item, idx) => (
-                <div
-                  key={item.id || idx}
-                  className="bg-slate-900/90 border border-slate-800 hover:border-amber-500/60 rounded-3xl p-5 space-y-3 shadow-lg flex flex-col justify-between transition group"
-                >
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between gap-1.5 text-xs">
-                      <span
-                        className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold text-white shadow-sm"
-                        style={{ backgroundColor: item.platform_color || '#d97706' }}
-                      >
-                        {item.platform_badge}
-                      </span>
-                      {item.is_open_access ? (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono font-bold">
-                          🔓 Open Access
+              {scholarlyJournals.map((item, idx) => {
+                const cardId = item.id || `sch-${idx}`;
+                const isExpanded = !!expandedAbstracts[cardId];
+                const fullTextUrl = item.pdf_url || item.oa_url || null;
+                const isCopied = copiedId === cardId;
+
+                return (
+                  <div
+                    key={cardId}
+                    className="bg-slate-900/90 border border-slate-800 hover:border-amber-500/60 rounded-3xl p-5 space-y-3 shadow-lg flex flex-col justify-between transition group relative overflow-hidden"
+                  >
+                    <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: item.platform_color || '#d97706' }} />
+
+                    <div className="space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-1.5 text-xs">
+                        <span
+                          className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold text-white shadow-sm"
+                          style={{ backgroundColor: item.platform_color || '#d97706' }}
+                        >
+                          {item.platform_badge}
                         </span>
-                      ) : (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-950 text-amber-300 border border-amber-900 font-mono">
-                          Institutional Gate
-                        </span>
+                        <div className="flex items-center gap-1">
+                          {item.is_open_access ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono font-bold inline-flex items-center gap-1">
+                              <Unlock size={9} /> Open Access
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-950 text-amber-300 border border-amber-900 font-mono inline-flex items-center gap-1">
+                              <Lock size={9} /> Institutional
+                            </span>
+                          )}
+                          {item.year && (
+                            <span className="text-[10px] font-mono text-slate-400 ml-1">
+                              {item.year}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <h4 className="text-sm font-bold text-white line-clamp-2 group-hover:text-amber-300 transition leading-snug">
+                        <a href={item.url} target="_blank" rel="noreferrer" className="hover:underline">
+                          {item.title}
+                        </a>
+                      </h4>
+
+                      <div className="text-xs text-slate-300 line-clamp-1">
+                        <span>Authors: <strong className="text-white">{item.author}</strong></span>
+                      </div>
+
+                      <div className="text-[11px] text-slate-400 bg-slate-950/80 p-3 rounded-2xl border border-slate-800 space-y-1 font-sans">
+                        <div className="text-slate-200">
+                          <strong>Source:</strong> <span className="italic">{item.source}</span>
+                          {item.volume_issue ? `, ${item.volume_issue}` : ''}
+                          {item.pages ? `, pp. ${item.pages}` : ''}
+                        </div>
+                        {item.doi && (
+                          <div className="font-mono text-amber-300/80 truncate text-[10px]">
+                            DOI: {item.doi}
+                          </div>
+                        )}
+                        <div className="flex flex-wrap items-center justify-between text-[10px] font-mono pt-1 text-slate-400">
+                          <span>{item.access_type || 'Academic Resource'}</span>
+                          {item.citations !== undefined && (
+                            <span className="text-amber-300 inline-flex items-center gap-1">
+                              <TrendingUp size={11} /> {item.citations} citations
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Abstract preview */}
+                      {item.abstract && (
+                        <div className="text-[11px] text-slate-300/90 leading-relaxed bg-black/20 p-2.5 rounded-xl border border-slate-800/60">
+                          <p className={isExpanded ? '' : 'line-clamp-2'}>
+                            {item.abstract}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedAbstracts(prev => ({ ...prev, [cardId]: !prev[cardId] }))}
+                            className="mt-1 text-[10px] text-amber-400 font-bold hover:underline inline-flex items-center gap-0.5"
+                          >
+                            {isExpanded ? <>Show less <ChevronUp size={10} /></> : <>Read abstract <ChevronDown size={10} /></>}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Keywords */}
+                      {Array.isArray(item.keywords) && item.keywords.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {item.keywords.slice(0, 4).map(k => (
+                            <span key={k} className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                              {k}
+                            </span>
+                          ))}
+                        </div>
                       )}
                     </div>
 
-                    <h4 className="text-sm font-bold text-white line-clamp-2 group-hover:text-amber-300 transition leading-snug">
-                      {item.title}
-                    </h4>
-
-                    <div className="text-xs text-slate-300 line-clamp-1">
-                      <span>Authors: <strong className="text-white">{item.author}</strong></span>
-                    </div>
-
-                    <div className="text-[11px] text-slate-400 bg-slate-950/80 p-3 rounded-2xl border border-slate-800 space-y-1">
-                      <div className="text-slate-200"><strong>Source:</strong> {item.source}</div>
-                      {item.doi && <div className="font-mono text-amber-300/80 truncate">DOI: {item.doi}</div>}
-                      {item.discipline && <div className="text-slate-400 font-mono text-[10px]">{item.discipline}</div>}
-                      <div className="text-emerald-400 font-mono text-[10px]">{item.access_type}</div>
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-2 mt-2">
-                    {item.url && (
+                    <div className="pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 mt-2">
                       <a
-                        href={item.url}
+                        href={fullTextUrl || item.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex-1 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs text-center transition flex items-center justify-center gap-1.5 shadow"
+                        className="flex-1 min-w-[120px] py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs text-center transition flex items-center justify-center gap-1.5 shadow"
                       >
-                        <span>{item.is_open_access ? 'Read Full Article' : 'Access Gateway'}</span>
-                        <ExternalLink size={12} />
+                        {fullTextUrl ? <FileText size={12} /> : <ExternalLink size={12} />}
+                        <span>{fullTextUrl ? 'Read Full Text' : (item.is_open_access ? 'Open Article' : 'Access Gateway')}</span>
                       </a>
-                    )}
-                    {item.portal_url && (
-                      <a
-                        href={item.portal_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono border border-slate-700 transition"
-                        title="Open Institutional Research Portal"
+
+                      <button
+                        type="button"
+                        onClick={() => handleCopyCitation(item)}
+                        className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition inline-flex items-center gap-1"
+                        title="Copy APA 7th Edition Citation"
                       >
-                        Portal
-                      </a>
-                    )}
+                        {isCopied ? <Check size={12} className="text-emerald-400" /> : <Quote size={12} />}
+                        <span>{isCopied ? 'Copied' : 'Cite'}</span>
+                      </button>
+
+                      {item.portal_url && (
+                        <a
+                          href={item.portal_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono border border-slate-700 transition"
+                          title="Open Institutional Research Portal"
+                        >
+                          Portal
+                        </a>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="p-8 text-center text-xs text-slate-400 bg-slate-900/30 rounded-2xl border border-slate-800">
