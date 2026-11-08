@@ -721,6 +721,7 @@ Route::prefix('media')->group(function () {
     Route::get('/{id}', [\App\Http\Controllers\MediaResourceController::class, 'show']);
     Route::get('/{id}/stream', [\App\Http\Controllers\MediaResourceController::class, 'stream']);
     Route::get('/{id}/iiif-manifest', [\App\Http\Controllers\MediaResourceController::class, 'iiifManifest']);
+    Route::get('/{id}/manifest', [\App\Http\Controllers\MediaResourceController::class, 'iiifManifest']);
     Route::get('/{id}/progress', [\App\Http\Controllers\MediaResourceController::class, 'getProgress']);
     Route::post('/{id}/progress', [\App\Http\Controllers\MediaResourceController::class, 'saveProgress']);
     Route::post('/', [\App\Http\Controllers\MediaResourceController::class, 'store']);
