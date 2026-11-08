@@ -4,7 +4,7 @@ import {
   Lock, Unlock, Layers, BookOpen, Upload, Award, Bookmark, MessageSquare,
   Building2, Sparkles, Copy, Check, ExternalLink, Trash2, Edit3, Eye,
   EyeOff, RefreshCw, Search, KeyRound, Play, CheckSquare, AlertTriangle,
-  FileText, ShieldAlert, Cpu, ArrowRight
+  FileText, ShieldAlert, Cpu, ArrowRight, Video, Headphones
 } from 'lucide-react';
 import { sounds } from '../utils/soundEffects';
 import { publishRealtimeEvent } from '../services/realtimeSync';
@@ -13,6 +13,7 @@ export const STAFF_PAGE_CATALOG = [
   { id: 'overview', label: 'Department Overview & Holdings', desc: 'Departmental metrics, quick catalog search & Gora/InneAI tools', icon: Building2, badge: 'Core' },
   { id: 'courses', label: 'Curriculum & Syllabi Registry', desc: 'View and manage accredited department courses & reading lists', icon: BookOpen, badge: 'Academic' },
   { id: 'upload', label: 'Book & Academic Journal Upload Studio', desc: 'Single & bulk PDF book/journal upload with auto-metadata & cover scan', icon: Upload, badge: 'Studio' },
+  { id: 'multimedia', label: 'Audio & Video Lectures Studio', desc: 'Upload high-definition recorded lectures, practical demos & audiobooks', icon: Video, badge: 'Media' },
   { id: 'submissions', label: 'Ingestion Pipeline & Review Queue', desc: 'Track pending, approved, and rejected department uploads', icon: Layers, badge: 'Pipeline' },
   { id: 'dissertations', label: 'HND Dissertations & Student Projects', desc: 'Vet, endorse, or request revisions on student research projects', icon: Award, badge: 'Research' },
   { id: 'reserves', label: 'Course Reserves Shelf Desk', desc: 'Manage 2-hour restricted textbooks on reserve bays', icon: Bookmark, badge: 'Reserves' },
@@ -23,6 +24,7 @@ export const STAFF_PAGE_CATALOG = [
 export const STAFF_FEATURE_CATALOG = [
   { id: 'fn_upload_books', label: 'Upload Textbooks & Lecture Handouts', desc: 'Upload PDF materials with compression & cover extraction', page: 'upload', category: 'Publishing & Materials' },
   { id: 'fn_upload_journals', label: 'Bulk Upload Academic Journals & Auto-Scan', desc: 'Scan ISSN, DOI, volume, issue & cover picture automatically', page: 'upload', category: 'Publishing & Materials' },
+  { id: 'fn_upload_multimedia', label: 'Upload HD Video & Audio Lectures', desc: 'Upload high-definition video/audio lecture recordings, companion slides & chapters', page: 'multimedia', category: 'Publishing & Materials' },
   { id: 'fn_watermark_control', label: 'Digital Watermark Protection Seal', desc: 'Embed cryptographic institutional watermark on uploads', page: 'upload', category: 'Publishing & Materials' },
   { id: 'fn_edit_submissions', label: 'Edit Ingestion Pipeline Metadata', desc: 'Correct titles, authors, course codes & access scopes', page: 'submissions', category: 'Pipeline & Review' },
   { id: 'fn_delete_submissions', label: 'Withdraw / Delete Submissions', desc: 'Permanently remove submissions from the ingestion pipeline', page: 'submissions', category: 'Pipeline & Review' },

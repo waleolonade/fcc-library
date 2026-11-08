@@ -30,6 +30,7 @@ export default function MultimediaStudioPlayer({
   const [activeTab, setActiveTab] = useState('chapters'); // 'chapters' | 'transcript' | 'handout' | 'details'
   const [copiedCitation, setCopiedCitation] = useState(false);
   const [resumePrompt, setResumePrompt] = useState(null);
+  const [sizeMode, setSizeMode] = useState('auto'); // 'auto' | 'compact' | 'original'
 
   const videoRef = useRef(null);
   const audioRef = useRef(null);
@@ -384,19 +385,67 @@ export default function MultimediaStudioPlayer({
         {/* LEFT COLUMN: AUDIO/VIDEO PLAYER STAGE */}
         <div className="lg:col-span-8 bg-black flex flex-col justify-between overflow-hidden relative group" ref={playerContainerRef}>
           {/* MEDIA ELEMENT */}
-          <div className="flex-1 flex items-center justify-center bg-gradient-to-b from-slate-950 to-black relative overflow-hidden">
+          <div className="flex-1 flex items-center justify-center bg-gradient-to-b from-slate-950 to-black relative overflow-hidden p-2 sm:p-4">
             {isVideo ? (
-              <video
-                ref={videoRef}
-                src={streamSrc}
-                poster={resource.cover_image || '/assets/fcc-logo.png'}
-                className="w-full h-full max-h-[75vh] object-contain cursor-pointer"
-                onClick={togglePlay}
-                onTimeUpdate={handleTimeUpdate}
-                onLoadedMetadata={handleLoadedMetadata}
-                onEnded={() => setIsPlaying(false)}
-                playsInline
-              />
+              (() => {
+                const isReduced = sizeMode === 'compact' || (sizeMode === 'auto' && !isPlaying);
+                return (
+                  <div className={`transition-all duration-500 ease-out flex items-center justify-center ${
+                    isReduced
+                      ? 'w-full max-w-lg mx-auto py-4 px-2'
+                      : 'w-full h-full max-h-[75vh]'
+                  }`}>
+                    <div className={`relative overflow-hidden transition-all duration-500 shadow-2xl ${
+                      isReduced
+                        ? 'w-full rounded-3xl border-2 border-emerald-500/50 scale-95 hover:scale-100 hover:border-emerald-400 bg-black cursor-pointer group/compact shadow-emerald-950/60'
+                        : 'w-full h-full rounded-xl bg-black'
+                    }`}>
+                      <video
+                        ref={videoRef}
+                        src={streamSrc}
+                        poster={resource.cover_image || '/assets/fcc-logo.png'}
+                        className={`object-contain transition-all duration-500 ${
+                          isReduced
+                            ? 'w-full aspect-video max-h-[44vh]'
+                            : 'w-full h-full max-h-[75vh]'
+                        }`}
+                        onClick={() => {
+                          togglePlay();
+                          if (isReduced) sounds.playClick();
+                        }}
+                        onTimeUpdate={handleTimeUpdate}
+                        onLoadedMetadata={handleLoadedMetadata}
+                        onEnded={() => setIsPlaying(false)}
+                        playsInline
+                      />
+
+                      {/* REDUCED IDLE PREVIEW OVERLAY: Click to expand to Original Full HD */}
+                      {isReduced && (
+                        <div
+                          onClick={() => {
+                            togglePlay();
+                            sounds.playClick();
+                          }}
+                          className="absolute inset-0 bg-black/40 hover:bg-black/20 flex flex-col items-center justify-center gap-2.5 transition backdrop-blur-[1px] p-4 text-center cursor-pointer select-none"
+                        >
+                          <div className="w-14 h-14 rounded-2xl bg-emerald-600/90 group-hover/compact:bg-emerald-500 text-white flex items-center justify-center shadow-2xl transform group-hover/compact:scale-110 transition duration-300 border border-emerald-400">
+                            <Play size={26} className="ml-1 fill-white" />
+                          </div>
+                          <div className="bg-black/90 px-4 py-1.5 rounded-full border border-emerald-500/60 shadow-xl">
+                            <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
+                              <Sparkles size={13} className="text-emerald-400" />
+                              <span>Click to Play in Original Full Clarity (1080p HD)</span>
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-emerald-300/90 font-mono">
+                            Reduced preview saves data while paused • Click to stream full size
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()
             ) : (
               <div className="w-full max-w-md p-8 flex flex-col items-center justify-center text-center space-y-6">
                 <audio
@@ -559,6 +608,33 @@ export default function MultimediaStudioPlayer({
                   >
                     <Download size={16} />
                   </a>
+                )}
+
+                {isVideo && (
+                  <button
+                    onClick={() => {
+                      sounds.playClick();
+                      setSizeMode(prev => (prev === 'original' ? 'compact' : 'original'));
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 text-[10px] font-mono font-bold flex items-center gap-1.5 transition cursor-pointer"
+                    title={
+                      (sizeMode === 'compact' || (sizeMode === 'auto' && !isPlaying))
+                        ? 'Click to Expand to Original Full HD (1080p)'
+                        : 'Switch to Compact Bandwidth Saver'
+                    }
+                  >
+                    {(sizeMode === 'compact' || (sizeMode === 'auto' && !isPlaying)) ? (
+                      <>
+                        <Sparkles size={12} className="text-emerald-400" />
+                        <span className="hidden sm:inline">Original Full HD</span>
+                      </>
+                    ) : (
+                      <>
+                        <Minimize2 size={12} className="text-cyan-400" />
+                        <span className="hidden sm:inline">Compact Size</span>
+                      </>
+                    )}
+                  </button>
                 )}
 
                 {isVideo && (

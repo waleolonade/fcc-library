@@ -8,12 +8,14 @@ import {
   Menu, X, Zap, Bell, HelpCircle, Laptop, Cpu, ArrowUpRight, GraduationCap,
   Scan, CheckSquare, Plus, Trash2, Download, AlertTriangle,
   Fingerprint, BookDown, BookUp, ShieldAlert, ShieldCheck, Eye, Copy, Check,
-  ExternalLink, Share2, Filter, Upload, Sliders, CheckCheck, Tag, Barcode, QrCode, Settings, MessageSquare, Image, UserPlus, FileSpreadsheet, Edit3
+  ExternalLink, Share2, Filter, Upload, Sliders, CheckCheck, Tag, Barcode, QrCode, Settings, MessageSquare, Image, UserPlus, FileSpreadsheet, Edit3,
+  Video, Headphones
 } from 'lucide-react';
 import { INSTITUTION, BRANCHES, INITIAL_BOOKS, INITIAL_LOANS, INITIAL_PARTNER_LIBRARIES } from '../data/institutionalSeedData';
 import { libraryApi, getApiBase } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
 import { navigateTo, parseCurrentRoute } from '../utils/router';
+import MultimediaUploadStudio from '../multimedia/MultimediaUploadStudio';
 import { PATTERNS } from '../utils/backgroundPatterns';
 import BiometricScannerModal from '../common/BiometricScannerModal';
 import TraceBadge from '../common/TraceBadge';
@@ -1452,6 +1454,7 @@ export default function FccAdminLibrary({
             { id: 'hod_submissions', label: 'HOD Staging Queue', icon: Layers, badge: 'Staging' },
             { id: 'barcode_scanner', label: 'ISBN & Barcode Ingest', icon: Barcode, badge: 'Auto' },
             { id: 'pdf_upload', label: 'PDF Ingestion & AI', icon: FileUp, badge: 'Smart' },
+            { id: 'multimedia', label: 'Audio & Video Studio', icon: Video, badge: 'HD' },
             { id: 'marc', label: 'Cataloguing & MARC 21', icon: Tag, badge: 'LoC 42' },
             { id: 'policies', label: 'RBAC & Policies', icon: ShieldCheck, badge: 'Tiers' },
             { id: 'integrations', label: 'SIS & Integrations', icon: Link2, badge: 'Module 6' },
@@ -1530,6 +1533,7 @@ export default function FccAdminLibrary({
                   items: [
                     { id: 'marc', label: 'Cataloguing & MARC 21', icon: Tag },
                     { id: 'pdf_upload', label: 'PDF Smart Ingest & AI', icon: FileUp, badge: 'Smart' },
+                    { id: 'multimedia', label: 'Audio & Video Studio', icon: Video, badge: 'HD' },
                     { id: 'hod_submissions', label: 'HOD Staging Queue', icon: Layers, badge: 'Review' },
                     { id: 'shelves', label: 'Shelf Stacks & Map', icon: MapPin }
                   ]
@@ -2654,6 +2658,18 @@ export default function FccAdminLibrary({
                 </form>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* -------------------------------------------------------------
+            TAB: AUDIO & VIDEO MULTIMEDIA STUDIO
+        ------------------------------------------------------------- */}
+        {(activeTab === 'multimedia' || activeTab === 'media') && (
+          <div className="animate-fadeIn">
+            <MultimediaUploadStudio
+              role="admin"
+              currentUser={currentUser}
+            />
           </div>
         )}
 

@@ -360,7 +360,7 @@ class MediaResourceController extends Controller
     }
 
     /**
-     * Ingest New Media Resource (Librarian & HOD Upload API)
+     * Ingest New Media Resource (Librarian, HOD, Staff & Developer Direct Upload API)
      */
     public function store(Request $request)
     {
@@ -386,6 +386,40 @@ class MediaResourceController extends Controller
 
         $data['id'] = $id;
 
+        // Process direct media file upload (.mp4, .webm, .mov, .mkv, .mp3, .wav, .m4a)
+        if ($request->hasFile('media_file')) {
+            $mfile = $request->file('media_file');
+            $extension = $mfile->getClientOriginalExtension() ?: ($data['media_type'] === 'audio' ? 'mp3' : 'mp4');
+            $filename = 'FCC-MED-' . time() . '-' . uniqid() . '.' . $extension;
+            $mfile->storeAs('public/media', $filename);
+            $data['media_url'] = '/storage/media/' . $filename;
+            $data['mime_type'] = $mfile->getClientMimeType() ?: ($data['media_type'] === 'audio' ? 'audio/mpeg' : 'video/mp4');
+            $data['file_size_bytes'] = $mfile->getSize();
+            $data['file_size_formatted'] = round($mfile->getSize() / (1024 * 1024), 2) . ' MB';
+            if (empty($data['video_resolution']) && $data['media_type'] === 'video') {
+                $data['video_resolution'] = '1080p Full HD';
+            }
+        }
+
+        // Process direct cover / poster image upload
+        if ($request->hasFile('cover_file')) {
+            $cfile = $request->file('cover_file');
+            $cfilename = 'FCC-COV-' . time() . '-' . uniqid() . '.' . $cfile->getClientOriginalExtension();
+            $cfile->storeAs('public/media/covers', $cfilename);
+            $data['cover_image'] = '/storage/media/covers/' . $cfilename;
+        }
+
+        // Process companion lecture handout / slides PDF upload
+        if ($request->hasFile('companion_pdf_file')) {
+            $pfile = $request->file('companion_pdf_file');
+            $pfilename = 'FCC-HANDOUT-' . time() . '-' . uniqid() . '.' . $pfile->getClientOriginalExtension();
+            $pfile->storeAs('public/media/handouts', $pfilename);
+            $data['companion_pdf_url'] = '/storage/media/handouts/' . $pfilename;
+            if (empty($data['companion_pdf_title'])) {
+                $data['companion_pdf_title'] = $pfile->getClientOriginalName();
+            }
+        }
+
         // Auto-compute duration formatted if seconds provided
         if (!empty($data['duration_seconds']) && empty($data['duration_formatted'])) {
             $secs = intval($data['duration_seconds']);
@@ -397,39 +431,55 @@ class MediaResourceController extends Controller
                 : sprintf('%02d:%02d', $mins, $rem);
         }
 
+        // Normalize subject keywords if passed as array or JSON string
+        if (isset($data['subject_keywords']) && is_string($data['subject_keywords'])) {
+            $decoded = json_decode($data['subject_keywords'], true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $data['subject_keywords'] = $decoded;
+            }
+        }
+
         $resource = MediaResource::create($data);
 
-        // Store Chapters if provided
-        if ($request->has('chapters') && is_array($request->input('chapters'))) {
-            foreach ($request->input('chapters') as $idx => $chap) {
+        // Store Chapters if provided (handle array or JSON string from FormData)
+        $chaptersData = $request->input('chapters');
+        if (is_string($chaptersData)) {
+            $chaptersData = json_decode($chaptersData, true);
+        }
+        if (is_array($chaptersData)) {
+            foreach ($chaptersData as $idx => $chap) {
                 if (!empty($chap['title'])) {
                     MediaChapter::create([
                         'media_resource_id' => $id,
                         'chapter_index' => $idx + 1,
                         'title' => $chap['title'],
-                        'start_seconds' => $chap['start_seconds'] ?? 0,
-                        'end_seconds' => $chap['end_seconds'] ?? null,
+                        'start_seconds' => $chap['start_seconds'] ?? ($chap['start'] ?? 0),
+                        'end_seconds' => $chap['end_seconds'] ?? ($chap['end'] ?? null),
                         'timestamp_formatted' => $chap['timestamp_formatted'] ?? '00:00',
-                        'description' => $chap['description'] ?? null,
+                        'description' => $chap['description'] ?? ($chap['desc'] ?? null),
                     ]);
                 }
             }
         }
 
         // Store Transcript if provided
-        if ($request->filled('transcript_text') || $request->has('timed_cues')) {
+        $timedCues = $request->input('timed_cues');
+        if (is_string($timedCues)) {
+            $timedCues = json_decode($timedCues, true);
+        }
+        if ($request->filled('transcript_text') || !empty($timedCues)) {
             MediaTranscript::create([
                 'media_resource_id' => $id,
                 'language' => $request->input('transcript_language', 'en'),
                 'format' => $request->input('transcript_format', 'cues_json'),
                 'content' => $request->input('transcript_text', ''),
-                'timed_cues' => $request->input('timed_cues', []),
+                'timed_cues' => $timedCues ?? [],
             ]);
         }
 
         return response()->json([
             'success' => true,
-            'message' => 'Media resource catalogued successfully',
+            'message' => 'High-Definition Media Resource catalogued & published successfully',
             'resource' => $resource->load(['chapters', 'transcripts'])
         ], 201);
     }

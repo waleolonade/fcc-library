@@ -4,11 +4,12 @@ import {
   Sparkles, Layers, Tag, Copy, Check, ArrowRight, Eye, RefreshCw,
   FileUp, Hash, Library, Search, AlertTriangle, ShieldCheck,
   Building2, Trash2, Edit3, ExternalLink, Image as ImageIcon,
-  BookCheck, Bookmark, Download, Plus, Minus, Sliders
+  BookCheck, Bookmark, Download, Plus, Minus, Sliders, Video, Headphones
 } from 'lucide-react';
 import { INSTITUTION } from '../data/institutionalSeedData';
 import { sounds } from '../utils/soundEffects';
 import { developerApiCall } from '../services/developerApi';
+import MultimediaUploadStudio from '../multimedia/MultimediaUploadStudio';
 
 export default function DeveloperBookStudio({ passkey, showToast, departments: propDepts = [] }) {
   // Mode: 'ingest' (Catalog New Book) vs 'catalog' (Manage Existing Books) vs 'hod_pipeline' (HOD Review Queue)
@@ -734,8 +735,32 @@ export default function DeveloperBookStudio({ passkey, showToast, departments: p
             <Building2 size={14} />
             <span>HOD Ingestion Pipeline ({hodUploads.length})</span>
           </button>
+
+          <button
+            onClick={() => setActiveSubTab('multimedia_studio')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+              activeSubTab === 'multimedia_studio'
+                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950'
+                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+            }`}
+          >
+            <Video size={14} className="text-emerald-400" />
+            <span>Audio &amp; Video Media Studio</span>
+          </button>
         </div>
       </div>
+
+      {/* =========================================================================
+          SUB-TAB: MULTIMEDIA STUDIO (HIGH-DEFINITION LECTURE & AUDIO UPLOAD)
+      ========================================================================= */}
+      {activeSubTab === 'multimedia_studio' && (
+        <MultimediaUploadStudio
+          role="developer"
+          onUploadSuccess={(res) => {
+            showToast?.(`High-Definition ${res.media_type === 'video' ? 'Video' : 'Audio'} published to OPAC & Student Portal!`, 'success');
+          }}
+        />
+      )}
 
       {/* =========================================================================
           SUB-TAB 1: INGESTION FORM (CATALOG NEW RESOURCE)

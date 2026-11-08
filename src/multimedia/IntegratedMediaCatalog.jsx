@@ -7,6 +7,7 @@ import {
 import { getApiBase } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
 import MultimediaStudioPlayer from './MultimediaStudioPlayer';
+import MultimediaUploadStudio from './MultimediaUploadStudio';
 
 export default function IntegratedMediaCatalog({
   activeUser = null,
@@ -29,6 +30,7 @@ export default function IntegratedMediaCatalog({
   // Active player modal
   const [activePlaybackId, setActivePlaybackId] = useState(null);
   const [activeResource, setActiveResource] = useState(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   const fetchMedia = async () => {
     setLoading(true);
@@ -65,6 +67,15 @@ export default function IntegratedMediaCatalog({
     }, 250);
     return () => clearTimeout(timer);
   }, [mediaType, resourceType, selectedDept, selectedLevel, searchQuery, sortBy]);
+
+  // Real-time listener when a staff, HOD, admin, or developer uploads a new lecture
+  useEffect(() => {
+    const handleUpdated = () => {
+      fetchMedia();
+    };
+    window.addEventListener('fcc-media-catalog-updated', handleUpdated);
+    return () => window.removeEventListener('fcc-media-catalog-updated', handleUpdated);
+  }, []);
 
   const handlePlay = (item) => {
     sounds.playClick();
@@ -178,6 +189,18 @@ export default function IntegratedMediaCatalog({
               <span>Audio ({audioCount})</span>
             </button>
           </div>
+
+          <button
+            onClick={() => {
+              sounds.playClick();
+              setShowUploadModal(true);
+            }}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-950/60 transition cursor-pointer shrink-0"
+            title="Upload High-Definition Lecture Video or Audiobook"
+          >
+            <Sparkles size={14} />
+            <span>Upload AV Lecture</span>
+          </button>
         </div>
 
         {/* BOTTOM ROW: RESOURCE TYPES & DROPDOWN FILTERS */}
@@ -396,6 +419,23 @@ export default function IntegratedMediaCatalog({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* MULTIMEDIA UPLOAD STUDIO MODAL */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-fadeIn">
+          <div className="w-full max-w-4xl max-h-[92vh] overflow-y-auto my-auto">
+            <MultimediaUploadStudio
+              role={activeUser?.role || 'staff'}
+              currentUser={activeUser}
+              onClose={() => setShowUploadModal(false)}
+              onUploadSuccess={() => {
+                setShowUploadModal(false);
+                fetchMedia();
+              }}
+            />
+          </div>
         </div>
       )}
 

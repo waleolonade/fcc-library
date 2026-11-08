@@ -6,6 +6,7 @@ import {
   KeyRound, Play, FileSpreadsheet, UserPlus, Check, ExternalLink, Code2
 } from 'lucide-react';
 import HodUploadStudio from './HodUploadStudio';
+import MultimediaUploadStudio from '../multimedia/MultimediaUploadStudio';
 import InstitutionalCommunicationHub from '../common/InstitutionalCommunicationHub';
 import { STAFF_PAGE_CATALOG, STAFF_FEATURE_CATALOG } from './HodStaffPageBuilder';
 import { libraryApi } from '../api/libraryApi';
@@ -651,6 +652,23 @@ export default function HodStaffLiveWorkspace({
                   }}
                 />
               )}
+            </div>
+          )}
+
+          {/* ==============================================================
+              SUB-PAGE: AUDIO & VIDEO MULTIMEDIA STUDIO
+          ============================================================== */}
+          {activeSubPage === 'multimedia' && (
+            <div className="space-y-4 animate-fadeIn">
+              <MultimediaUploadStudio
+                role="staff"
+                currentDept={currentDept}
+                activeStaff={activeStaff}
+                currentUser={currentUser}
+                onUploadSuccess={() => {
+                  if (onRefreshUploads) onRefreshUploads();
+                }}
+              />
             </div>
           )}
 

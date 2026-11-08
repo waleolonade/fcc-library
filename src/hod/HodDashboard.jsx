@@ -7,10 +7,11 @@ import {
   Settings, Bookmark, MapPin, Download, CheckSquare, XCircle, Compass,
   BookCheck, Sliders, Calendar, Phone, Mail, UserCheck, Trash2, FileUp, Image,
   Lock, KeyRound, AlertCircle, EyeOff, UserPlus, FileSpreadsheet, Edit3,
-  Camera, CheckCircle2, Copy, Save, User, Edit
+  Camera, CheckCircle2, Copy, Save, User, Edit, Video, Headphones
 } from 'lucide-react';
 import { parseCurrentRoute, navigateTo } from '../utils/router';
 import HodUploadStudio from './HodUploadStudio';
+import MultimediaUploadStudio from '../multimedia/MultimediaUploadStudio';
 import InstitutionalCommunicationHub from '../common/InstitutionalCommunicationHub';
 import StudentAddModal from '../common/StudentAddModal';
 import StudentBulkImportModal from '../common/StudentBulkImportModal';
@@ -2818,6 +2819,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
         allowedPages.overview ? { id: 'overview', label: 'Department Overview', icon: Building2 } : null,
         allowedPages.courses ? { id: 'courses', label: 'Curriculum & Syllabi', icon: BookOpen, badge: courses.length } : null,
         allowedPages.upload ? { id: 'upload', label: 'Upload Materials', icon: Upload, badge: 'Studio' } : null,
+        (allowedPages.multimedia || allowedPages.upload) ? { id: 'multimedia', label: 'Audio & Video Studio', icon: Video, badge: 'HD' } : null,
         allowedPages.submissions ? { id: 'submissions', label: 'Ingestion Pipeline', icon: Layers, badge: pendingUploadsCount || undefined } : null,
       ].filter(Boolean);
 
@@ -2841,6 +2843,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
           { id: 'overview', label: 'Department Overview', icon: Building2 },
           { id: 'courses', label: 'Curriculum & Syllabi', icon: BookOpen, badge: courses.length },
           { id: 'upload', label: 'Upload Materials', icon: Upload, badge: 'Studio' },
+          { id: 'multimedia', label: 'Audio & Video Studio', icon: Video, badge: 'HD' },
           { id: 'submissions', label: 'Ingestion Pipeline', icon: Layers, badge: pendingUploadsCount || undefined }
         ].filter(it => devConfig?.hodPages?.[it.id]?.enabled !== false)
       },
@@ -5133,6 +5136,22 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                   const titleText = Array.isArray(newUp) ? `${newUp.length} books` : (newUp?.title || 'Resource');
                   setSuccessMsg(`✓ Resource "${titleText}" successfully synchronized with the Central Library!`);
                   handleTabSwitch('submissions');
+                }}
+              />
+            </div>
+          )}
+
+          {/* ============================================================== */}
+          {/* VIEW: AUDIO & VIDEO MULTIMEDIA STUDIO */}
+          {/* ============================================================== */}
+          {activeTab === 'multimedia' && (
+            <div className="space-y-6 animate-fadeIn">
+              <MultimediaUploadStudio
+                role={isStaffUser ? 'staff' : 'hod'}
+                currentDept={currentDept}
+                currentUser={currentUser}
+                onUploadSuccess={() => {
+                  if (fetchDepartmentData) fetchDepartmentData();
                 }}
               />
             </div>
