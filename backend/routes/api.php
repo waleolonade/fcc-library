@@ -736,4 +736,8 @@ Route::prefix('media')->group(function () {
 Route::get('/developer/media-governance', [\App\Http\Controllers\MediaResourceController::class, 'getGovernance']);
 Route::post('/developer/media-governance', [\App\Http\Controllers\MediaResourceController::class, 'saveGovernance']);
 
+// Student Academic Research & Assessment Engine (Wikipedia, Google Books, OpenAlex, CrossRef, Library Holdings)
+Route::get('/student/research-engine', [\App\Http\Controllers\StudentResearchEngineController::class, 'search']);
+
+
 

@@ -259,6 +259,36 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
   // Check whether the active logged-in user is a Departmental Staff member under the HOD
   const isStaffUser = Boolean(currentUser?.role === 'hod_staff' || initialUser?.role === 'hod_staff');
 
+  // Media Governance state for developer departmental authorization
+  const [mediaGovernance, setMediaGovernance] = useState(() => {
+    try {
+      const saved = localStorage.getItem('fcc_media_governance');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    fetch('/api/media/governance')
+      .then(r => r.json())
+      .then(d => {
+        if (d?.config) {
+          setMediaGovernance(d.config);
+          localStorage.setItem('fcc_media_governance', JSON.stringify(d.config));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handleGovUpdate = (e) => {
+      if (e.detail) setMediaGovernance(e.detail);
+    };
+    window.addEventListener('fcc-media-config-updated', handleGovUpdate);
+    return () => window.removeEventListener('fcc-media-config-updated', handleGovUpdate);
+  }, []);
+
   // Active department derived from currentUser or initialUser (zero hardcoded CSC fallback)
   const currentDeptCode = currentUser?.department_code || initialUser?.department_code || '';
   const currentDept = useMemo(() => {
@@ -5144,18 +5174,80 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
           {/* ============================================================== */}
           {/* VIEW: AUDIO & VIDEO MULTIMEDIA STUDIO */}
           {/* ============================================================== */}
-          {activeTab === 'multimedia' && (
-            <div className="space-y-6 animate-fadeIn">
-              <MultimediaUploadStudio
-                role={isStaffUser ? 'staff' : 'hod'}
-                currentDept={currentDept}
-                currentUser={currentUser}
-                onUploadSuccess={() => {
-                  if (fetchDepartmentData) fetchDepartmentData();
-                }}
-              />
-            </div>
-          )}
+          {activeTab === 'multimedia' && (() => {
+            const deptCode = (currentDept?.code || 'CEM').toLowerCase();
+            const deptKey = 'upload_dept_' + deptCode;
+            const isDeptActive = mediaGovernance
+              ? (mediaGovernance.upload_perm_hod !== false && mediaGovernance[deptKey] !== false)
+              : true;
+
+            if (!isDeptActive) {
+              return (
+                <div className="p-8 sm:p-12 rounded-3xl bg-[#031d16] border-2 border-cyan-500/60 text-white space-y-6 max-w-3xl mx-auto shadow-2xl animate-fadeIn">
+                  <div className="flex items-start gap-4">
+                    <div className="w-16 h-16 rounded-2xl bg-cyan-950 border border-cyan-500/60 flex items-center justify-center text-cyan-400 shrink-0 shadow-lg">
+                      <Lock size={32} />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-950 text-cyan-300 border border-cyan-700 uppercase">
+                          Developer Activation Required
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono text-amber-300 bg-amber-950 border border-amber-800">
+                          {currentDept?.code || 'HOD'} Stacks Locked
+                        </span>
+                      </div>
+                      <h3 className="text-xl sm:text-2xl font-black text-white">
+                        Contact Developer to Activate Video Feature
+                      </h3>
+                      <p className="text-xs sm:text-sm text-cyan-200/80 leading-relaxed">
+                        High-definition video lecture and digital repository ingestion for the <strong className="text-white">{currentDept?.name}</strong> is currently pending Developer Portal activation.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-[#01140d] border border-cyan-800/80 text-xs text-slate-300 space-y-2 leading-relaxed">
+                    <p>
+                      In accordance with server allocation protocols, the Library Systems Developer governs high-definition multimedia ingestion on a per-department basis.
+                    </p>
+                    <p className="text-cyan-300 font-semibold">
+                      Please contact the Developer to activate the ingestion switch for your department in the Developer Media Governance Matrix.
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-900 border border-cyan-700/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                    <div>
+                      <div className="font-bold text-white">Library Systems &amp; Software Developer</div>
+                      <div className="text-[11px] text-cyan-300 font-mono">developer@fccibadanlibrary.com.ng</div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        sounds.playSuccessChime();
+                        alert(`Activation request for the Department of ${currentDept?.name} (${currentDept?.code}) has been dispatched to the Developer Authority Desk.`);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg transition cursor-pointer"
+                    >
+                      Ping Developer for Activation
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-6 animate-fadeIn">
+                <MultimediaUploadStudio
+                  role={isStaffUser ? 'staff' : 'hod'}
+                  currentDept={currentDept}
+                  currentUser={currentUser}
+                  onUploadSuccess={() => {
+                    if (fetchDepartmentData) fetchDepartmentData();
+                  }}
+                />
+              </div>
+            );
+          })()}
 
           {/* ============================================================== */}
           {/* VIEW 4: STAGING SUBMISSIONS TAB (#/hod/submissions) */}

@@ -3,7 +3,7 @@ import {
   Video, Headphones, Power, ShieldCheck, ToggleLeft, ToggleRight,
   Globe, Sparkles, RefreshCw, CheckCircle2, XCircle, Sliders,
   BookOpen, Layers, Users, Download, FileText, Check, AlertTriangle,
-  Play, ExternalLink, Activity, Radio, Search, Filter, Lock, Unlock
+  Play, ExternalLink, Activity, Radio, Search, Filter, Lock, Unlock, Building2
 } from 'lucide-react';
 import { getApiBase } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
@@ -27,10 +27,21 @@ export default function DeveloperMediaGovernanceStudio({ passkey = null, showToa
     feature_playback_resume: true,
     feature_offline_download: true,
     feature_apa_citations: true,
+    upload_perm_student: false,
     upload_perm_hod: true,
     upload_perm_staff: true,
     upload_perm_admin: true,
     upload_perm_developer: true,
+    upload_dept_cem: true,
+    upload_dept_cs: true,
+    upload_dept_bfn: true,
+    upload_dept_agr: true,
+    upload_dept_acc: true,
+    upload_dept_pad: true,
+    api_wikipedia_academic: true,
+    api_google_scholar: true,
+    api_openalex_papers: true,
+    api_crossref_dois: true,
     api_internet_archive: true,
     api_wikimedia_commons: true,
     api_librivox: true,
@@ -400,8 +411,14 @@ export default function DeveloperMediaGovernanceStudio({ passkey = null, showToa
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           {[
+            {
+              key: 'upload_perm_student',
+              role: 'Student / User Upload',
+              desc: 'When OFF (recommended): Clicking upload shows the popup instructing the student to meet their HOD for access under the HOD concept. When ON: Students can directly upload media.',
+              badge: config.upload_perm_student ? 'Direct Access' : 'Requires HOD Concept'
+            },
             { key: 'upload_perm_hod', role: 'Head of Department (HOD)', desc: 'Allows HODs to upload lectures & tutorials from departmental dashboard' },
             { key: 'upload_perm_staff', role: 'Staff under HODs', desc: 'Allows lecturers and assigned departmental staff to upload course lectures' },
             { key: 'upload_perm_admin', role: 'Chief Librarian / Admin', desc: 'Allows central library staff to catalogue institutional media' },
@@ -412,21 +429,148 @@ export default function DeveloperMediaGovernanceStudio({ passkey = null, showToa
               <div
                 key={u.key}
                 onClick={() => toggleFeature(u.key)}
-                className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-2 ${
+                className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between gap-2 ${
                   on
                     ? 'bg-slate-900/90 border-amber-500/70 shadow-lg'
                     : 'bg-slate-950/60 border-slate-800/80 opacity-60'
                 }`}
               >
                 <div className="space-y-1">
-                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <span className={`w-2 h-2 rounded-full ${on ? 'bg-amber-400 animate-pulse' : 'bg-slate-600'}`} />
-                    <span>{u.role}</span>
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <span className={`w-2 h-2 rounded-full ${on ? 'bg-amber-400 animate-pulse' : 'bg-slate-600'}`} />
+                      <span>{u.role}</span>
+                    </div>
+                    <div className="shrink-0 text-amber-400">
+                      {on ? <ToggleRight size={22} className="text-amber-400" /> : <ToggleLeft size={22} className="text-slate-600" />}
+                    </div>
                   </div>
                   <p className="text-[10px] text-slate-400 font-sans leading-relaxed">{u.desc}</p>
                 </div>
-                <div className="shrink-0 text-amber-400">
-                  {on ? <ToggleRight size={22} className="text-amber-400" /> : <ToggleLeft size={22} className="text-slate-600" />}
+
+                {u.badge && (
+                  <span className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold self-start ${on ? 'bg-emerald-950 text-emerald-300 border border-emerald-700' : 'bg-amber-950 text-amber-300 border border-amber-700'}`}>
+                    {u.badge}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 4. DEPARTMENTAL VIDEO INGESTION AUTHORITY (ONE-BY-ONE DEPARTMENT TOGGLES) */}
+      <div className="p-6 rounded-3xl bg-[#07101f] border border-cyan-800/80 shadow-2xl space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <div>
+            <h3 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+              <Building2 size={16} className="text-emerald-400" />
+              <span>4. Departmental Video Ingestion Authority Matrix</span>
+            </h3>
+            <p className="text-xs text-slate-400 font-sans">
+              Enable or turn off video upload access for each academic department one by one. When a department is turned OFF, its HOD will see a popup instructing them to contact the developer to open the feature.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => bulkSetGroup(['upload_dept_cem', 'upload_dept_cs', 'upload_dept_bfn', 'upload_dept_agr', 'upload_dept_acc', 'upload_dept_pad'], true)}
+              className="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-300 hover:bg-emerald-900 border border-emerald-800 text-[10px] font-bold"
+            >
+              Enable All 6 Depts
+            </button>
+            <button
+              onClick={() => bulkSetGroup(['upload_dept_cem', 'upload_dept_cs', 'upload_dept_bfn', 'upload_dept_agr', 'upload_dept_acc', 'upload_dept_pad'], false)}
+              className="px-2.5 py-1 rounded-lg bg-rose-950 text-rose-300 hover:bg-rose-900 border border-rose-800 text-[10px] font-bold"
+            >
+              Lock All 6 Depts
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {[
+            { key: 'upload_dept_cem', code: 'CEM', name: 'Co-operative Economics & Management', hod: 'Dr. O. A. Babalola' },
+            { key: 'upload_dept_cs', code: 'CS', name: 'Computer Science', hod: 'Engr. K. M. Balogun' },
+            { key: 'upload_dept_bfn', code: 'BFN', name: 'Banking & Finance', hod: 'Dr. Y. O. Oladipo' },
+            { key: 'upload_dept_agr', code: 'AGR', name: 'Agricultural Extension & Management', hod: 'Dr. (Mrs) F. T. Adeyemi' },
+            { key: 'upload_dept_acc', code: 'ACC', name: 'Accounting', hod: 'Mrs. A. O. Adeleke' },
+            { key: 'upload_dept_pad', code: 'PAD', name: 'Public Administration', hod: 'Dr. E. K. Ogundele' },
+          ].map(d => {
+            const on = config[d.key];
+            return (
+              <div
+                key={d.key}
+                onClick={() => toggleFeature(d.key)}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                  on
+                    ? 'bg-slate-900/90 border-emerald-500/70 shadow-lg'
+                    : 'bg-slate-950/60 border-rose-900/50 opacity-60'
+                }`}
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-cyan-300 border border-slate-700">
+                      {d.code}
+                    </span>
+                    <span className="text-xs font-bold text-white line-clamp-1">{d.name}</span>
+                  </div>
+                  <div className="text-[11px] text-amber-300 font-mono">HOD: {d.hod}</div>
+                  <div className="text-[10px] text-slate-400 font-mono">
+                    Status: <strong className={on ? 'text-emerald-400' : 'text-rose-400'}>{on ? 'Active (Ingestion Open)' : 'Locked (Contact Dev)'}</strong>
+                  </div>
+                </div>
+
+                <div className="shrink-0 text-emerald-400 mt-0.5">
+                  {on ? <ToggleRight size={24} className="text-emerald-400" /> : <ToggleLeft size={24} className="text-rose-500" />}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 5. STUDENT RESEARCH & ASSESSMENT SEARCH ENGINE APIS */}
+      <div className="p-6 rounded-3xl bg-[#07101f] border border-cyan-800/80 shadow-2xl space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <div>
+            <h3 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+              <Sparkles size={16} className="text-purple-400" />
+              <span>5. Student Research &amp; Assessment Search Engine APIs</span>
+            </h3>
+            <p className="text-xs text-slate-400 font-sans">
+              Configure search engine APIs that power the Student Research &amp; Assessment Assistant across coursework, seminars, and HND capstone theses.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            { key: 'api_wikipedia_academic', name: 'Wikipedia Educational API', desc: 'Foundational conceptual overviews, definitions, and encyclopedia bibliographies' },
+            { key: 'api_google_scholar', name: 'Google Books / Scholar API', desc: 'Academic monographs, textbook previews, and publisher metadata' },
+            { key: 'api_openalex_papers', name: 'OpenAlex Scholarly Graph', desc: '250M+ peer-reviewed papers, DOIs, citation counts, and open-access PDFs' },
+            { key: 'api_crossref_dois', name: 'CrossRef Metadata Registry', desc: 'Official registered DOIs, journal articles, and citation records' }
+          ].map(s => {
+            const on = config[s.key];
+            return (
+              <div
+                key={s.key}
+                onClick={() => toggleFeature(s.key)}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-2 ${
+                  on
+                    ? 'bg-slate-900/90 border-purple-500/70 shadow-lg'
+                    : 'bg-slate-950/60 border-slate-800/80 opacity-60'
+                }`}
+              >
+                <div className="space-y-1">
+                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${on ? 'bg-purple-400 animate-pulse' : 'bg-slate-600'}`} />
+                    <span>{s.name}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-sans leading-relaxed">{s.desc}</p>
+                </div>
+                <div className="shrink-0 text-purple-400">
+                  {on ? <ToggleRight size={22} className="text-purple-400" /> : <ToggleLeft size={22} className="text-slate-600" />}
                 </div>
               </div>
             );

@@ -9,6 +9,8 @@ import { getApiBase } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
 import MultimediaStudioPlayer from './MultimediaStudioPlayer';
 import MultimediaUploadStudio from './MultimediaUploadStudio';
+import { StudentHodClearanceModal, HodDeveloperActivationModal } from './MediaUploadClearanceModals';
+import StudentAcademicResearchStudio from '../student/StudentAcademicResearchStudio';
 
 export default function IntegratedMediaCatalog({
   activeUser = null,
@@ -36,10 +38,13 @@ export default function IntegratedMediaCatalog({
   const [selectedLevel, setSelectedLevel] = useState('ALL');
   const [sortBy, setSortBy] = useState('newest');
 
-  // Active player modal
+  // Active player & clearance modals
   const [activePlaybackId, setActivePlaybackId] = useState(null);
   const [activeResource, setActiveResource] = useState(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showStudentClearanceModal, setShowStudentClearanceModal] = useState(false);
+  const [showHodActivationModal, setShowHodActivationModal] = useState(false);
+  const [showResearchStudio, setShowResearchStudio] = useState(false);
 
   const fetchMedia = async () => {
     setLoading(true);
@@ -141,6 +146,33 @@ export default function IntegratedMediaCatalog({
     setActivePlaybackId(item.id);
   };
 
+  // Upload Permission & Institutional Gatekeeper
+  const handleUploadClick = () => {
+    sounds.playClick();
+    const userRole = activeUser?.role || 'student';
+    const userDeptCode = activeUser?.department_code || activeUser?.department || 'CEM';
+
+    // 1. If student or visitor: check if developer enabled student upload
+    if (userRole === 'student' || userRole === 'patron' || userRole === 'guest' || !activeUser) {
+      if (!governance || governance.upload_perm_student !== true) {
+        setShowStudentClearanceModal(true);
+        return;
+      }
+    }
+
+    // 2. If HOD: check global HOD switch & specific department switch
+    if (userRole === 'hod') {
+      const deptKey = 'upload_dept_' + String(userDeptCode).toLowerCase();
+      if (governance && (governance.upload_perm_hod === false || governance[deptKey] === false)) {
+        setShowHodActivationModal(true);
+        return;
+      }
+    }
+
+    // 3. Otherwise authorized: open upload studio
+    setShowUploadModal(true);
+  };
+
   const departments = [
     'ALL',
     'Co-operative Economics & Management',
@@ -208,8 +240,8 @@ export default function IntegratedMediaCatalog({
         </div>
       )}
 
-      {/* SCOPE SWITCHER: COLLEGE STACKS vs WORLD OPEN APIS */}
-      <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-[#01140d] border border-emerald-800/80 shadow-lg">
+      {/* SCOPE SWITCHER: COLLEGE STACKS vs WORLD OPEN APIS vs RESEARCH ASSISTANT */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-1.5 rounded-2xl bg-[#01140d] border border-emerald-800/80 shadow-lg">
         <button
           onClick={() => { setCatalogScope('institutional'); sounds.playClick(); }}
           className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
@@ -236,6 +268,17 @@ export default function IntegratedMediaCatalog({
         >
           <Globe size={14} className="text-purple-300" />
           <span>World Open AV Libraries (6 Global APIs)</span>
+        </button>
+
+        <button
+          onClick={() => {
+            sounds.playClick();
+            setShowResearchStudio(true);
+          }}
+          className="px-4 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white shadow-lg flex items-center justify-center gap-2 cursor-pointer transition shrink-0"
+        >
+          <Sparkles size={14} className="text-amber-300" />
+          <span>Student Research &amp; Assessment Hub</span>
         </button>
       </div>
 
@@ -302,10 +345,7 @@ export default function IntegratedMediaCatalog({
           </div>
 
           <button
-            onClick={() => {
-              sounds.playClick();
-              setShowUploadModal(true);
-            }}
+            onClick={handleUploadClick}
             className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-950/60 transition cursor-pointer shrink-0"
             title="Upload High-Definition Lecture Video or Audiobook"
           >
@@ -590,6 +630,36 @@ export default function IntegratedMediaCatalog({
             setActiveResource(null);
           }}
         />
+      )}
+
+      {/* STUDENT HOD CLEARANCE CONCEPT MODAL */}
+      {showStudentClearanceModal && (
+        <StudentHodClearanceModal
+          onClose={() => setShowStudentClearanceModal(false)}
+          studentDept={activeUser?.department_code || activeUser?.department}
+        />
+      )}
+
+      {/* HOD DEVELOPER ACTIVATION REQUIRED MODAL */}
+      {showHodActivationModal && (
+        <HodDeveloperActivationModal
+          onClose={() => setShowHodActivationModal(false)}
+          deptName={activeUser?.department_name || activeUser?.department || 'Academic Department'}
+          deptCode={activeUser?.department_code || 'HOD'}
+        />
+      )}
+
+      {/* STUDENT ACADEMIC RESEARCH & ASSESSMENT ASSISTANT MODAL */}
+      {showResearchStudio && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-fadeIn">
+          <div className="w-full max-w-5xl my-auto max-h-[94vh] overflow-y-auto">
+            <StudentAcademicResearchStudio
+              initialQuery={searchQuery || 'cooperative economics'}
+              onClose={() => setShowResearchStudio(false)}
+              activeUser={activeUser}
+            />
+          </div>
+        </div>
       )}
     </div>
   );

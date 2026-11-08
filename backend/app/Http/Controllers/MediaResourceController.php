@@ -412,6 +412,39 @@ class MediaResourceController extends Controller
             'resource_type' => 'required|string|max:60',
         ]);
 
+        $config = $this->getGovernanceConfig();
+        $uploaderRole = strtolower(trim((string) $request->input('uploader_role', $request->input('role', 'staff'))));
+        $deptId = strtolower(trim((string) $request->input('department_id', '')));
+
+        // 1. Student / User Upload Gatekeeper (Must have HOD concept clearance)
+        if ($uploaderRole === 'student' && empty($config['upload_perm_student'])) {
+            return response()->json([
+                'success' => false,
+                'code' => 'STUDENT_HOD_CLEARANCE_REQUIRED',
+                'error' => 'In accordance with FCC Academic Policy, student video and lecture submissions require prior concept clearance from your Departmental Head of Department (HOD). Please meet your HOD for endorsement and access.'
+            ], 403);
+        }
+
+        // 2. Departmental Developer Activation Gatekeeper for HOD & Staff
+        if ($uploaderRole === 'hod') {
+            if (empty($config['upload_perm_hod'])) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'HOD_DEVELOPER_ACTIVATION_REQUIRED',
+                    'error' => 'Video ingestion for HODs is currently locked pending Developer Portal activation. Please contact the Library Systems Developer to open this feature.'
+                ], 403);
+            }
+
+            $deptKey = 'upload_dept_' . $deptId;
+            if ($deptId !== '' && isset($config[$deptKey]) && empty($config[$deptKey])) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'DEPT_DEVELOPER_ACTIVATION_REQUIRED',
+                    'error' => "Video ingestion for this department is currently locked. Please contact the Library Developer through the Developer Authority Portal to open access."
+                ], 403);
+            }
+        }
+
         $id = 'MED-' . strtoupper(substr($request->input('media_type'), 0, 3)) . '-' . strtoupper(substr(uniqid(), -6));
 
         $data = $request->only([
@@ -591,10 +624,25 @@ class MediaResourceController extends Controller
             'feature_apa_citations' => true,
 
             // Upload Permissions by Role
+            'upload_perm_student' => false, // Default requires HOD clearance concept
             'upload_perm_hod' => true,
             'upload_perm_staff' => true,
             'upload_perm_admin' => true,
             'upload_perm_developer' => true,
+
+            // Department-by-Department AV Ingestion Authority Switches
+            'upload_dept_cem' => true, // Co-operative Economics & Management
+            'upload_dept_cs' => true,  // Computer Science
+            'upload_dept_bfn' => true, // Banking & Finance
+            'upload_dept_agr' => true, // Agricultural Extension & Management
+            'upload_dept_acc' => true, // Accounting
+            'upload_dept_pad' => true, // Public Administration
+
+            // Student Research & Assessment Search Engine APIs
+            'api_wikipedia_academic' => true,
+            'api_google_scholar' => true,
+            'api_openalex_papers' => true,
+            'api_crossref_dois' => true,
 
             // Global Free Video & Audio Library APIs
             'api_internet_archive' => true,

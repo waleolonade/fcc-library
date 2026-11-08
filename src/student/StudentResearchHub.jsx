@@ -8,6 +8,7 @@ import {
 import { OPENALEX_SEED_RESEARCH, INSTITUTION } from '../data/institutionalSeedData';
 import { sounds } from '../utils/soundEffects';
 import { departmentService } from '../services/departmentService';
+import StudentAcademicResearchStudio from './StudentAcademicResearchStudio';
 
 const HND_PROJECT_TOPICS = [
   {
@@ -586,6 +587,7 @@ export default function StudentResearchHub({
       {/* 2. RESEARCH SUB-NAVIGATION TABS */}
       <div className="bg-[#032317]/90 p-1.5 rounded-2xl border border-emerald-800/80 flex items-center gap-1.5 overflow-x-auto no-scrollbar shadow-lg">
         {[
+          { id: 'assessment_search', label: '⚡ Assessment & Search APIs', icon: Sparkles, badge: 'Wiki • Google • Alex' },
           { id: 'hnd_projects', label: '🏛️ Local HND Projects', icon: Award, badge: normalizedTheses.length },
           { id: 'papers', label: '🌐 Online Scholarly Papers (OpenAlex API)', icon: Globe, badge: 'OpenAlex' },
           { id: 'journals', label: '📰 Academic Journals & Serials', icon: FileText, badge: 'ISSN' },
@@ -650,6 +652,13 @@ export default function StudentResearchHub({
               ))}
             </select>
           </div>
+        </div>
+      )}
+
+      {/* 4. SUB-TAB 0: ASSESSMENT & MULTI-API SCHOLARLY SEARCH */}
+      {subTab === 'assessment_search' && (
+        <div className="space-y-6 animate-fadeIn">
+          <StudentAcademicResearchStudio activeUser={user} />
         </div>
       )}
 
