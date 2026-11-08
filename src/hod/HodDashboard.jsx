@@ -12,6 +12,7 @@ import {
 import { parseCurrentRoute, navigateTo } from '../utils/router';
 import HodUploadStudio from './HodUploadStudio';
 import MultimediaUploadStudio from '../multimedia/MultimediaUploadStudio';
+import LiveBroadcastStudio from '../multimedia/LiveBroadcastStudio';
 import InstitutionalCommunicationHub from '../common/InstitutionalCommunicationHub';
 import StudentAddModal from '../common/StudentAddModal';
 import StudentBulkImportModal from '../common/StudentBulkImportModal';
@@ -288,6 +289,9 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
     window.addEventListener('fcc-media-config-updated', handleGovUpdate);
     return () => window.removeEventListener('fcc-media-config-updated', handleGovUpdate);
   }, []);
+
+  // Sub-view switcher for HOD Multimedia tab: 'broadcast' (Live Stream & Simulcast) vs 'upload' (Direct File Ingestion)
+  const [hodMultimediaSubView, setHodMultimediaSubView] = useState('broadcast');
 
   // Active department derived from currentUser or initialUser (zero hardcoded CSC fallback)
   const currentDeptCode = currentUser?.department_code || initialUser?.department_code || '';
@@ -5237,14 +5241,49 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
 
             return (
               <div className="space-y-6 animate-fadeIn">
-                <MultimediaUploadStudio
-                  role={isStaffUser ? 'staff' : 'hod'}
-                  currentDept={currentDept}
-                  currentUser={currentUser}
-                  onUploadSuccess={() => {
-                    if (fetchDepartmentData) fetchDepartmentData();
-                  }}
-                />
+                {/* SUB-VIEW SWITCHER: LIVE BROADCAST vs DIRECT FILE UPLOAD */}
+                <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-[#01140d] border border-emerald-800/80 shadow-lg">
+                  <button
+                    onClick={() => { setHodMultimediaSubView('broadcast'); sounds.playClick(); }}
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                      hodMultimediaSubView === 'broadcast'
+                        ? 'bg-rose-600 text-white shadow-lg shadow-rose-950'
+                        : 'text-rose-300/80 hover:text-white hover:bg-rose-950/40'
+                    }`}
+                  >
+                    <Radio size={14} className={hodMultimediaSubView === 'broadcast' ? 'animate-pulse' : ''} />
+                    <span>🔴 Institutional Live Broadcast &amp; Social Simulcast Studio</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setHodMultimediaSubView('upload'); sounds.playClick(); }}
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                      hodMultimediaSubView === 'upload'
+                        ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950'
+                        : 'text-emerald-300/80 hover:text-white hover:bg-emerald-950/40'
+                    }`}
+                  >
+                    <Upload size={14} />
+                    <span>📁 Direct High-Definition File Ingestion Studio</span>
+                  </button>
+                </div>
+
+                {hodMultimediaSubView === 'broadcast' ? (
+                  <LiveBroadcastStudio
+                    role={isStaffUser ? 'staff' : 'hod'}
+                    currentDept={currentDept}
+                    currentUser={currentUser}
+                  />
+                ) : (
+                  <MultimediaUploadStudio
+                    role={isStaffUser ? 'staff' : 'hod'}
+                    currentDept={currentDept}
+                    currentUser={currentUser}
+                    onUploadSuccess={() => {
+                      if (fetchDepartmentData) fetchDepartmentData();
+                    }}
+                  />
+                )}
               </div>
             );
           })()}

@@ -3,7 +3,7 @@ import {
   Video, Headphones, Play, Clock, BookOpen, Layers, Search, Filter,
   Sparkles, FileText, Download, ExternalLink, RefreshCw, Bookmark,
   Award, ShieldCheck, CheckCircle2, Star, ChevronRight, SlidersHorizontal,
-  Globe, Power
+  Globe, Power, Radio
 } from 'lucide-react';
 import { getApiBase } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
@@ -11,6 +11,7 @@ import MultimediaStudioPlayer from './MultimediaStudioPlayer';
 import MultimediaUploadStudio from './MultimediaUploadStudio';
 import { StudentHodClearanceModal, HodDeveloperActivationModal } from './MediaUploadClearanceModals';
 import StudentAcademicResearchStudio from '../student/StudentAcademicResearchStudio';
+import StudentLiveBroadcastViewer from './StudentLiveBroadcastViewer';
 
 export default function IntegratedMediaCatalog({
   activeUser = null,
@@ -45,6 +46,36 @@ export default function IntegratedMediaCatalog({
   const [showStudentClearanceModal, setShowStudentClearanceModal] = useState(false);
   const [showHodActivationModal, setShowHodActivationModal] = useState(false);
   const [showResearchStudio, setShowResearchStudio] = useState(false);
+
+  // Active Live Broadcast Stream for students & users
+  const [activeLiveStream, setActiveLiveStream] = useState(null);
+  const [selectedLiveBroadcast, setSelectedLiveBroadcast] = useState(null);
+
+  // Poll for active institutional live broadcast lectures
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLive = async () => {
+      try {
+        const base = getApiBase();
+        const res = await fetch(`${base}/live-broadcast/active`);
+        if (res.ok && isMounted) {
+          const json = await res.json();
+          if (json.streams && json.streams.length > 0) {
+            setActiveLiveStream(json.streams[0]);
+          } else {
+            setActiveLiveStream(null);
+          }
+        }
+      } catch (e) {}
+    };
+
+    fetchLive();
+    const interval = setInterval(fetchLive, 8000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   const fetchMedia = async () => {
     setLoading(true);
@@ -237,6 +268,47 @@ export default function IntegratedMediaCatalog({
               First-class digital audiovisual resources indexed into the Federal Co-operative College master catalogue. Stream recorded lectures, practical farm and laboratory tutorials, institutional audiobooks, and oral history archives with synchronized transcripts, cue-point chapters, and companion lecture notes.
             </p>
           </div>
+        </div>
+      )}
+
+      {/* 🔴 ACTIVE LIVE CLASSROOM BROADCAST BANNER */}
+      {activeLiveStream && (
+        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-rose-950 via-[#1a0510] to-rose-950 border-2 border-rose-500/80 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-pulse">
+          <div className="flex items-center gap-3.5">
+            <div className="w-13 h-13 rounded-2xl bg-rose-600 text-white flex items-center justify-center shadow-lg shadow-rose-950 shrink-0">
+              <Radio size={24} className="animate-spin" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black bg-rose-600 text-white shadow">
+                  🔴 LIVE LECTURE IN PROGRESS
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-black/60 text-cyan-300 border border-cyan-800">
+                  {activeLiveStream.course_code || activeLiveStream.department_code}
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-black/60 text-amber-300 border border-amber-800">
+                  {activeLiveStream.viewers_count} Students Online
+                </span>
+              </div>
+              <h3 className="text-sm sm:text-base font-black text-white line-clamp-1">
+                {activeLiveStream.title}
+              </h3>
+              <p className="text-xs text-rose-200/90">
+                Lecturer: <strong className="text-white">{activeLiveStream.lecturer_name}</strong> &bull; {activeLiveStream.department_name}
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => {
+              sounds.playSuccessChime();
+              setSelectedLiveBroadcast(activeLiveStream);
+            }}
+            className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-rose-700 hover:from-rose-500 hover:to-pink-500 text-white font-black text-xs flex items-center gap-2 shadow-xl shadow-rose-950 transition cursor-pointer shrink-0 self-end sm:self-auto"
+          >
+            <Play size={14} className="fill-white" />
+            <span>Join Live Lecture</span>
+          </button>
         </div>
       )}
 
@@ -660,6 +732,15 @@ export default function IntegratedMediaCatalog({
             />
           </div>
         </div>
+      )}
+
+      {/* STUDENT & AUDIENCE LIVE BROADCAST INTERACTIVE VIEWER */}
+      {selectedLiveBroadcast && (
+        <StudentLiveBroadcastViewer
+          broadcast={selectedLiveBroadcast}
+          currentUser={activeUser}
+          onClose={() => setSelectedLiveBroadcast(null)}
+        />
       )}
     </div>
   );

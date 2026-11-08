@@ -42,6 +42,17 @@ export default function DeveloperMediaGovernanceStudio({ passkey = null, showToa
     api_google_scholar: true,
     api_openalex_papers: true,
     api_crossref_dois: true,
+    live_broadcast_master_enabled: true,
+    live_broadcast_social_simulcast: true,
+    live_broadcast_student_access: true,
+    live_broadcast_chat_enabled: true,
+    live_broadcast_auto_archive: true,
+    live_broadcast_dept_cem: true,
+    live_broadcast_dept_cs: true,
+    live_broadcast_dept_bfn: true,
+    live_broadcast_dept_agr: true,
+    live_broadcast_dept_acc: true,
+    live_broadcast_dept_pad: true,
     api_internet_archive: true,
     api_wikimedia_commons: true,
     api_librivox: true,
@@ -578,7 +589,149 @@ export default function DeveloperMediaGovernanceStudio({ passkey = null, showToa
         </div>
       </div>
 
-      {/* 5. GLOBAL FREE VIDEO & AUDIO LIBRARY APIS (FULL AUTHORITY) */}
+      {/* 6. INSTITUTIONAL LIVE BROADCAST & SOCIAL SIMULCAST GOVERNANCE (FULL PRIORITY) */}
+      <div className="p-6 rounded-3xl bg-[#081326] border-2 border-rose-600/80 shadow-2xl space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-rose-900/60 pb-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-600 text-white flex items-center gap-1 animate-pulse">
+                <Radio size={10} />
+                <span>REAL-TIME ON-AIR TRANSMISSION</span>
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono text-cyan-300 bg-cyan-950 border border-cyan-800">
+                WebRTC &bull; RTMP &bull; Restream
+              </span>
+            </div>
+            <h3 className="text-base font-black text-white uppercase tracking-wider flex items-center gap-2">
+              <Radio size={18} className="text-rose-400" />
+              <span>6. Institutional Live Broadcast &amp; Social Simulcast Authority</span>
+            </h3>
+            <p className="text-xs text-slate-300">
+              Full developer priority to control, modify, and turn on/off live broadcasting institutional-wide, by department, or by feature (Webcam, Screen Share, Social Media Simulcasting).
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => toggleFeature('live_broadcast_master_enabled')}
+              className={`px-4 py-2 rounded-xl text-xs font-black tracking-wide flex items-center gap-2 shadow-lg transition cursor-pointer ${
+                config.live_broadcast_master_enabled
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950'
+                  : 'bg-rose-700 hover:bg-rose-600 text-white shadow-rose-950'
+              }`}
+            >
+              <Power size={14} />
+              <span>{config.live_broadcast_master_enabled ? 'Master Live: ACTIVE' : 'Master Live: KILLED'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* CORE BROADCAST SUB-FEATURES */}
+        <div className="space-y-2">
+          <div className="text-xs font-bold text-slate-300 uppercase tracking-wide font-mono">
+            Core Live Broadcast &amp; Social Simulcast Feature Switches
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              { key: 'live_broadcast_social_simulcast', name: 'Multi-Social Simulcast', desc: 'Allows HODs to simulcast live lectures to YouTube Live, Facebook, LinkedIn, and X simultaneously' },
+              { key: 'live_broadcast_student_access', name: 'Student Viewer Access', desc: 'Allows enrolled students to connect to live classroom broadcasts with low latency' },
+              { key: 'live_broadcast_chat_enabled', name: 'Live Chat & Hand Raising', desc: 'Enables interactive Q&A discussion board and virtual raised hands during the broadcast' },
+              { key: 'live_broadcast_auto_archive', name: 'Auto-Archive to Repository', desc: 'Automatically compiles live stream recording into a permanent library catalogue lecture' }
+            ].map(f => {
+              const on = config[f.key];
+              return (
+                <div
+                  key={f.key}
+                  onClick={() => toggleFeature(f.key)}
+                  className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                    on
+                      ? 'bg-slate-900/90 border-rose-500/70 shadow-lg'
+                      : 'bg-slate-950/60 border-slate-800/80 opacity-60'
+                  }`}
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full ${on ? 'bg-rose-400 animate-pulse' : 'bg-slate-600'}`} />
+                        <span>{f.name}</span>
+                      </div>
+                      <div className="shrink-0 text-rose-400">
+                        {on ? <ToggleRight size={22} className="text-rose-400" /> : <ToggleLeft size={22} className="text-slate-600" />}
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-sans leading-relaxed">{f.desc}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* PER-DEPARTMENT LIVE BROADCAST PERMISSIONS */}
+        <div className="space-y-2 pt-2 border-t border-slate-800">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-bold text-slate-300 uppercase tracking-wide font-mono">
+              Per-Department Live Broadcast Authority (One-by-One Switches)
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => bulkSetGroup(['live_broadcast_dept_cem', 'live_broadcast_dept_cs', 'live_broadcast_dept_bfn', 'live_broadcast_dept_agr', 'live_broadcast_dept_acc', 'live_broadcast_dept_pad'], true)}
+                className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800"
+              >
+                Enable All 6 Depts
+              </button>
+              <button
+                onClick={() => bulkSetGroup(['live_broadcast_dept_cem', 'live_broadcast_dept_cs', 'live_broadcast_dept_bfn', 'live_broadcast_dept_agr', 'live_broadcast_dept_acc', 'live_broadcast_dept_pad'], false)}
+                className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-800"
+              >
+                Lock All 6 Depts
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {[
+              { key: 'live_broadcast_dept_cem', code: 'CEM', name: 'Co-operative Economics & Management', hod: 'Dr. O. A. Babalola' },
+              { key: 'live_broadcast_dept_cs', code: 'CS', name: 'Computer Science', hod: 'Engr. K. M. Balogun' },
+              { key: 'live_broadcast_dept_bfn', code: 'BFN', name: 'Banking & Finance', hod: 'Dr. Y. O. Oladipo' },
+              { key: 'live_broadcast_dept_agr', code: 'AGR', name: 'Agricultural Extension & Management', hod: 'Dr. (Mrs) F. T. Adeyemi' },
+              { key: 'live_broadcast_dept_acc', code: 'ACC', name: 'Accounting', hod: 'Mrs. A. O. Adeleke' },
+              { key: 'live_broadcast_dept_pad', code: 'PAD', name: 'Public Administration', hod: 'Dr. E. K. Ogundele' },
+            ].map(d => {
+              const on = config[d.key];
+              return (
+                <div
+                  key={d.key}
+                  onClick={() => toggleFeature(d.key)}
+                  className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                    on
+                      ? 'bg-slate-900/90 border-rose-500/70 shadow-lg'
+                      : 'bg-slate-950/60 border-slate-800/80 opacity-60'
+                  }`}
+                >
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-slate-800 text-cyan-300">
+                        {d.code}
+                      </span>
+                      <span className="text-xs font-bold text-white line-clamp-1">{d.name}</span>
+                    </div>
+                    <div className="text-[10px] text-amber-300 font-mono">HOD: {d.hod}</div>
+                    <div className="text-[10px] font-mono">
+                      Live Stream: <strong className={on ? 'text-emerald-400' : 'text-rose-400'}>{on ? 'Active' : 'Locked'}</strong>
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-rose-400 mt-1">
+                    {on ? <ToggleRight size={22} className="text-rose-400" /> : <ToggleLeft size={22} className="text-slate-600" />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* 7. GLOBAL FREE VIDEO & AUDIO LIBRARY APIS (FULL AUTHORITY) */}
       <div className="p-6 rounded-3xl bg-[#07101f] border border-cyan-800/80 shadow-2xl space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
           <div>

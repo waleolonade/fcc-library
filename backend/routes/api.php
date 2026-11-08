@@ -739,5 +739,21 @@ Route::post('/developer/media-governance', [\App\Http\Controllers\MediaResourceC
 // Student Academic Research & Assessment Engine (Wikipedia, Google Books, OpenAlex, CrossRef, Library Holdings)
 Route::get('/student/research-engine', [\App\Http\Controllers\StudentResearchEngineController::class, 'search']);
 
+// =========================================================================
+// INSTITUTIONAL LIVE BROADCAST & MULTI-PLATFORM SIMULCAST ENGINE
+// WebRTC System & External Camera, Social Destinations (YouTube, Facebook, X, etc.)
+// =========================================================================
+Route::prefix('live-broadcast')->group(function () {
+    Route::get('/active', [\App\Http\Controllers\LiveBroadcastController::class, 'getActiveStreams']);
+    Route::post('/start', [\App\Http\Controllers\LiveBroadcastController::class, 'start']);
+    Route::post('/{id}/end', [\App\Http\Controllers\LiveBroadcastController::class, 'end']);
+    Route::get('/{id}/chat', [\App\Http\Controllers\LiveBroadcastController::class, 'getChatMessages']);
+    Route::post('/{id}/chat', [\App\Http\Controllers\LiveBroadcastController::class, 'sendChatMessage']);
+    Route::post('/{id}/heartbeat', [\App\Http\Controllers\LiveBroadcastController::class, 'heartbeat']);
+    Route::get('/social-destinations', [\App\Http\Controllers\LiveBroadcastController::class, 'getSocialDestinations']);
+    Route::post('/social-destinations', [\App\Http\Controllers\LiveBroadcastController::class, 'saveSocialDestinations']);
+});
+
+
 
 

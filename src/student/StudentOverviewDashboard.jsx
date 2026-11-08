@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react';
 import {
     Award,
     Bookmark,
@@ -15,10 +16,13 @@ import {
     RefreshCw,
     Search,
     Sparkles,
-    UserCheck
+    UserCheck,
+    Radio,
+    Play
 } from 'lucide-react';
 import TraceBadge from '../common/TraceBadge';
 import { INSTITUTION } from '../data/institutionalSeedData';
+import { getApiBase } from '../api/libraryApi';
 
 export default function StudentOverviewDashboard({
   user,
@@ -37,6 +41,32 @@ export default function StudentOverviewDashboard({
   onRenewLoan,
   onOpenAi
 }) {
+  // Active Institutional Live Broadcast Poll
+  const [activeLiveStream, setActiveLiveStream] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const checkLive = async () => {
+      try {
+        const base = getApiBase();
+        const res = await fetch(`${base}/live-broadcast/active`);
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted) {
+            setActiveLiveStream(data.broadcast || null);
+          }
+        }
+      } catch (e) {}
+    };
+
+    checkLive();
+    const timer = setInterval(checkLive, 8000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, []);
+
   // Calculate real stats from database records
   const userMatric = (user?.matric || '').toLowerCase();
   const activeLoans = loans.filter(l => (l.matric || '').toLowerCase() === userMatric);
@@ -96,6 +126,41 @@ export default function StudentOverviewDashboard({
       case 'hero_banner':
         return (
           <div key="hero_banner" className="space-y-6">
+            {/* LIVE LECTURE IN PROGRESS PULSE BANNER */}
+            {activeLiveStream && (
+              <div className="rounded-3xl bg-gradient-to-r from-rose-950/95 via-red-900/90 to-pink-950/95 border-2 border-rose-500/80 p-5 shadow-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-pulse">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-rose-950">
+                    <Radio size={24} className="animate-spin" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-600 text-white shadow">
+                        🔴 LIVE BROADCAST NOW
+                      </span>
+                      <span className="text-xs font-mono font-bold text-rose-300">
+                        {activeLiveStream.course_code || activeLiveStream.department_code}
+                      </span>
+                      <span className="text-[11px] text-rose-200">
+                        &bull; {activeLiveStream.viewers_count} Students Watching
+                      </span>
+                    </div>
+                    <h3 className="text-base sm:text-lg font-black text-white">{activeLiveStream.title}</h3>
+                    <p className="text-xs text-rose-200">
+                      Lecturer: <strong className="text-white">{activeLiveStream.lecturer_name}</strong> &bull; {activeLiveStream.department_name}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => onNavigateTab('library_multimedia')}
+                  className="px-6 py-3 rounded-2xl bg-white hover:bg-rose-50 text-rose-900 font-black text-xs flex items-center gap-2 shadow-xl cursor-pointer transition shrink-0"
+                >
+                  <Play size={14} className="fill-rose-900" />
+                  <span>Join Live Classroom</span>
+                </button>
+              </div>
+            )}
+
             {/* 1. SMART DASHBOARD HEADER */}
             <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/50 border border-slate-800 p-6 sm:p-8 shadow-2xl">
               <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
