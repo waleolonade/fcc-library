@@ -49,7 +49,9 @@ import {
     Users,
     UserX,
     X,
-    Zap
+    Zap,
+    Video,
+    Headphones
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { getInstitutionalLogo } from '../assets/logo';
@@ -67,6 +69,7 @@ import DeveloperAuditTrail from './DeveloperAuditTrail';
 import DeveloperBookStudio from './DeveloperBookStudio';
 import DeveloperHodStaffController from './DeveloperHodStaffController';
 import DeveloperMaintenanceBroadcastController from './DeveloperMaintenanceBroadcastController';
+import DeveloperMediaGovernanceStudio from './DeveloperMediaGovernanceStudio';
 import { EXTERNAL_API_METADATA, testExternalApi } from '../services/federatedLibrarySearchService';
 import TwoFactorOtpModal from '../common/TwoFactorOtpModal';
 import ForgotPasswordModal from '../common/ForgotPasswordModal';
@@ -2115,6 +2118,7 @@ export default function DeveloperMasterPortal({ onImpersonate, onLogout }) {
         { id: 'impersonator', label: '1-Click Impersonator', icon: Play, badge: 'OMNI', desc: 'Jump into any page/role' },
         { id: 'maintenance_broadcast', label: 'Broadcast & Upgrade Matrix', icon: Radio, badge: 'TARGETED', desc: 'Broadcast to Students, Admins, HODs & Staff + Maintenance Locks' },
         { id: 'external_apis', label: 'External Library APIs Matrix', icon: Globe, badge: '14 FEDERATED', desc: 'Toggle & Test 14 Global Library APIs' },
+        { id: 'multimedia_governance', label: 'Video & Audio API Authority', icon: Video, badge: 'FULL AUTHORITY', desc: 'Granular switches for Video/Audio page, features & Global Free APIs' },
         { id: 'features', label: 'Feature Flag Matrix', icon: ToggleRight, badge: 'ONLINE', desc: 'Activate E-Library features' },
         { id: 'pages', label: 'Kill-Switch Director', icon: Power, badge: 'EMERGENCY', desc: 'Disable/shut down pages' },
       ]
@@ -5306,6 +5310,16 @@ export default function DeveloperMasterPortal({ onImpersonate, onLogout }) {
                 })}
             </div>
           </div>
+        )}
+
+        {/* ==============================================================
+            TAB: UNIVERSAL VIDEO & AUDIO API AUTHORITY MATRIX
+        ============================================================== */}
+        {activeTab === 'multimedia_governance' && (
+          <DeveloperMediaGovernanceStudio
+            passkey={DEV_CREDENTIALS.password}
+            showToast={showToast}
+          />
         )}
 
         {/* ==============================================================

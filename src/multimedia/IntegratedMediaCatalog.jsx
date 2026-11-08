@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Video, Headphones, Play, Clock, BookOpen, Layers, Search, Filter,
   Sparkles, FileText, Download, ExternalLink, RefreshCw, Bookmark,
-  Award, ShieldCheck, CheckCircle2, Star, ChevronRight, SlidersHorizontal
+  Award, ShieldCheck, CheckCircle2, Star, ChevronRight, SlidersHorizontal,
+  Globe, Power
 } from 'lucide-react';
 import { getApiBase } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
@@ -18,6 +19,14 @@ export default function IntegratedMediaCatalog({
   const [mediaList, setMediaList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Developer Governance Authority State
+  const [governance, setGovernance] = useState(null);
+
+  // Scope: 'institutional' (College Stacks) vs 'world_apis' (Global Free Video/Audio APIs)
+  const [catalogScope, setCatalogScope] = useState('institutional');
+  const [worldResults, setWorldResults] = useState([]);
+  const [worldLoading, setWorldLoading] = useState(false);
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState(initialSearch || '');
@@ -61,12 +70,61 @@ export default function IntegratedMediaCatalog({
     }
   };
 
+  // Fetch Governance Settings from Backend
+  const fetchGovernance = async () => {
+    try {
+      const base = getApiBase();
+      const res = await fetch(`${base}/media/governance`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.config) setGovernance(data.config);
+      }
+    } catch (e) {}
+  };
+
+  // Fetch World Open AV Library Records (Internet Archive, NASA, LibriVox, Europeana, MIT OCW)
+  const fetchWorldMedia = async (q) => {
+    setWorldLoading(true);
+    try {
+      const base = getApiBase();
+      const query = q || searchQuery || 'cooperative';
+      const res = await fetch(`${base}/media/world-apis/search?q=${encodeURIComponent(query)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setWorldResults(data.results || []);
+      }
+    } catch (e) {
+      console.warn('World APIs search error:', e);
+    } finally {
+      setWorldLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchGovernance();
+  }, []);
+
+  // Real-time listener for developer governance config broadcasts
+  useEffect(() => {
+    const handleConfigUpdated = (e) => {
+      if (e.detail) setGovernance(e.detail);
+      else fetchGovernance();
+    };
+    window.addEventListener('fcc-media-config-updated', handleConfigUpdated);
+    return () => window.removeEventListener('fcc-media-config-updated', handleConfigUpdated);
+  }, []);
+
+  // Fetch media when filter parameters change
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchMedia();
+      if (catalogScope === 'institutional') {
+        fetchMedia();
+      } else {
+        fetchWorldMedia(searchQuery);
+      }
     }, 250);
     return () => clearTimeout(timer);
-  }, [mediaType, resourceType, selectedDept, selectedLevel, searchQuery, sortBy]);
+  }, [mediaType, resourceType, selectedDept, selectedLevel, searchQuery, sortBy, catalogScope]);
 
   // Real-time listener when a staff, HOD, admin, or developer uploads a new lecture
   useEffect(() => {
@@ -98,6 +156,25 @@ export default function IntegratedMediaCatalog({
   const videoCount = mediaList.filter(m => m.media_type === 'video').length;
   const audioCount = mediaList.filter(m => m.media_type === 'audio').length;
 
+  // Master Developer Kill-Switch Guard
+  if (governance && governance.multimedia_master_enabled === false) {
+    return (
+      <div className="py-20 p-8 rounded-3xl bg-[#0b0406] border-2 border-rose-500/50 text-center space-y-4 max-w-2xl mx-auto shadow-2xl animate-fadeIn">
+        <div className="w-16 h-16 rounded-3xl bg-rose-950 border border-rose-600 text-rose-400 flex items-center justify-center mx-auto animate-pulse">
+          <Power size={30} />
+        </div>
+        <h3 className="text-lg font-black text-white">Audio &amp; Video Repository Suspended</h3>
+        <p className="text-xs text-rose-200/90 leading-relaxed font-sans">
+          The institutional Audio and Video streaming repository has been temporarily deactivated by the System Developer for scheduled maintenance. Please check back shortly or consult physical library holdings.
+        </p>
+      </div>
+    );
+  }
+
+  const itemsToRender = catalogScope === 'institutional' ? mediaList : worldResults;
+  const isGlobalScope = catalogScope === 'world_apis';
+  const isCurrentlyLoading = catalogScope === 'institutional' ? loading : worldLoading;
+
   return (
     <div className={`space-y-6 ${embedded ? '' : 'p-4 sm:p-6 max-w-7xl mx-auto'}`}>
       {/* HEADER BANNER */}
@@ -111,6 +188,9 @@ export default function IntegratedMediaCatalog({
               </span>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono text-cyan-300 bg-cyan-950/80 border border-cyan-800">
                 IIIF AV &amp; Avalon Architecture
+              </span>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono text-purple-300 bg-purple-950/80 border border-purple-800">
+                6 Free Global Open APIs
               </span>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono text-amber-300 bg-amber-950/80 border border-amber-800">
                 HTTP 206 Partial Stream Engine
@@ -127,6 +207,37 @@ export default function IntegratedMediaCatalog({
           </div>
         </div>
       )}
+
+      {/* SCOPE SWITCHER: COLLEGE STACKS vs WORLD OPEN APIS */}
+      <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-[#01140d] border border-emerald-800/80 shadow-lg">
+        <button
+          onClick={() => { setCatalogScope('institutional'); sounds.playClick(); }}
+          className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+            catalogScope === 'institutional'
+              ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950'
+              : 'text-emerald-300/80 hover:text-white hover:bg-emerald-950/40'
+          }`}
+        >
+          <BookOpen size={14} />
+          <span>FCC College Audio-Visual Stacks ({mediaList.length})</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setCatalogScope('world_apis');
+            sounds.playClick();
+            if (worldResults.length === 0) fetchWorldMedia(searchQuery);
+          }}
+          className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+            catalogScope === 'world_apis'
+              ? 'bg-purple-600 text-white shadow-lg shadow-purple-950'
+              : 'text-purple-300/80 hover:text-white hover:bg-purple-950/40'
+          }`}
+        >
+          <Globe size={14} className="text-purple-300" />
+          <span>World Open AV Libraries (6 Global APIs)</span>
+        </button>
+      </div>
 
       {/* FILTER & DISCOVERY TOOLBAR */}
       <div className="p-4 sm:p-5 rounded-2xl bg-[#032317]/90 border border-emerald-800/80 shadow-xl space-y-4">
@@ -267,12 +378,16 @@ export default function IntegratedMediaCatalog({
       </div>
 
       {/* MEDIA GRID LISTING */}
-      {loading ? (
+      {((catalogScope === 'world_apis' ? worldLoading : loading)) ? (
         <div className="py-20 flex flex-col items-center justify-center gap-3 text-emerald-300">
           <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-xs font-mono tracking-wide">Loading institutional media collections...</p>
+          <p className="text-xs font-mono tracking-wide">
+            {catalogScope === 'world_apis'
+              ? 'Federating queries across 6 Global AV Open Repositories...'
+              : 'Loading institutional media collections...'}
+          </p>
         </div>
-      ) : error ? (
+      ) : error && catalogScope === 'institutional' ? (
         <div className="p-8 rounded-2xl bg-[#032317] border border-red-500/40 text-center space-y-3">
           <p className="text-sm text-red-300">{error}</p>
           <button
@@ -282,14 +397,18 @@ export default function IntegratedMediaCatalog({
             Retry Connection
           </button>
         </div>
-      ) : mediaList.length === 0 ? (
+      ) : (catalogScope === 'world_apis' ? worldResults.length === 0 : mediaList.length === 0) ? (
         <div className="py-16 text-center space-y-3 p-8 rounded-3xl bg-[#032317]/40 border border-emerald-800/60">
           <div className="w-14 h-14 rounded-2xl bg-emerald-950 border border-emerald-700/60 flex items-center justify-center text-emerald-400 mx-auto">
-            <Video size={24} />
+            {catalogScope === 'world_apis' ? <Globe size={24} className="text-purple-400" /> : <Video size={24} />}
           </div>
-          <h3 className="text-base font-bold text-white">No Media Resources Found</h3>
+          <h3 className="text-base font-bold text-white">
+            {catalogScope === 'world_apis' ? 'No Global Open AV Resources Found' : 'No Media Resources Found'}
+          </h3>
           <p className="text-xs text-emerald-300/80 max-w-md mx-auto">
-            No audio or video recordings matched the selected filter criteria. Try resetting filters or searching with broader keywords.
+            {catalogScope === 'world_apis'
+              ? 'Try searching with general academic topics like "agriculture", "cooperative", "economics", "physics", "accounting", or "algorithms".'
+              : 'No audio or video recordings matched the selected filter criteria. Try resetting filters or searching with broader keywords.'}
           </p>
           <button
             onClick={() => {
@@ -298,17 +417,19 @@ export default function IntegratedMediaCatalog({
               setResourceType('all');
               setSelectedDept('ALL');
               setSelectedLevel('ALL');
+              if (catalogScope === 'world_apis') fetchWorldMedia('');
             }}
             className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 transition"
           >
-            Clear All Filters
+            {catalogScope === 'world_apis' ? 'Reset Global Search' : 'Clear All Filters'}
           </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {mediaList.map((item) => {
+          {(catalogScope === 'world_apis' ? worldResults : mediaList).map((item) => {
             const isVid = item.media_type === 'video';
             const chaptersCount = item.chapters?.length || 0;
+            const isWorldItem = Boolean(item.source_api);
 
             return (
               <div
@@ -328,19 +449,26 @@ export default function IntegratedMediaCatalog({
                     />
 
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex items-center justify-center opacity-80 group-hover:opacity-100 transition">
-                      <div className="w-13 h-13 rounded-2xl bg-emerald-600 group-hover:bg-emerald-500 text-white flex items-center justify-center shadow-2xl group-hover:scale-110 transition duration-300">
+                      <div className={`w-13 h-13 rounded-2xl ${isWorldItem ? 'bg-purple-600 group-hover:bg-purple-500' : 'bg-emerald-600 group-hover:bg-emerald-500'} text-white flex items-center justify-center shadow-2xl group-hover:scale-110 transition duration-300`}>
                         <Play size={22} className="ml-0.5 fill-white" />
                       </div>
                     </div>
 
                     {/* TOP BADGES: MEDIA TYPE & RESOLUTION */}
-                    <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                    <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
                       <span className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold text-white shadow-md flex items-center gap-1 ${
                         isVid ? 'bg-cyan-700/90' : 'bg-emerald-700/90'
                       }`}>
                         {isVid ? <Video size={11} /> : <Headphones size={11} />}
-                        <span className="uppercase">{item.resource_type.replace('_', ' ')}</span>
+                        <span className="uppercase">{(item.resource_type || item.media_type || 'MEDIA').replace('_', ' ')}</span>
                       </span>
+
+                      {isWorldItem && (
+                        <span className="px-2 py-0.5 rounded-md text-[9px] font-mono font-bold bg-purple-950/90 text-purple-200 border border-purple-700 flex items-center gap-1 shadow-md">
+                          <Globe size={10} />
+                          <span>{item.source_api}</span>
+                        </span>
+                      )}
                     </div>
 
                     {/* DURATION PILL */}
@@ -352,7 +480,7 @@ export default function IntegratedMediaCatalog({
 
                   {/* DETAILS CARD BODY */}
                   <div className="p-4 sm:p-5 space-y-3">
-                    {/* DEPARTMENT & COURSE TAGS */}
+                    {/* DEPARTMENT / DISCIPLINE / SOURCE TAGS */}
                     <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono">
                       {item.course_code && (
                         <span className="px-2 py-0.5 rounded bg-emerald-950 text-cyan-300 border border-emerald-700 font-bold">
@@ -364,9 +492,16 @@ export default function IntegratedMediaCatalog({
                           {item.target_level}
                         </span>
                       )}
-                      <span className="text-emerald-400/80 truncate max-w-[150px]">
-                        {item.department_name}
-                      </span>
+                      {item.department_name && (
+                        <span className="text-emerald-400/80 truncate max-w-[150px]">
+                          {item.department_name}
+                        </span>
+                      )}
+                      {item.license && (
+                        <span className="px-1.5 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-800 text-[9px]">
+                          {item.license}
+                        </span>
+                      )}
                     </div>
 
                     {/* TITLE */}
@@ -380,7 +515,7 @@ export default function IntegratedMediaCatalog({
 
                     {/* CREATOR / LECTURER */}
                     <div className="text-xs text-slate-300">
-                      <span>Lecturer: <strong className="text-white">{item.creator}</strong></span>
+                      <span>{isWorldItem ? 'Author / Source' : 'Lecturer'}: <strong className="text-white">{item.creator}</strong></span>
                       {item.creator_title && (
                         <span className="block text-[11px] text-emerald-400/80 truncate">{item.creator_title}</span>
                       )}
@@ -409,7 +544,11 @@ export default function IntegratedMediaCatalog({
 
                     <button
                       onClick={() => handlePlay(item)}
-                      className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow transition cursor-pointer"
+                      className={`px-3.5 py-1.5 rounded-xl ${
+                        isWorldItem
+                          ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500'
+                          : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500'
+                      } text-white font-bold text-xs flex items-center gap-1.5 shadow transition cursor-pointer`}
                     >
                       <span>{isVid ? 'Watch Video' : 'Listen Audio'}</span>
                       <ChevronRight size={13} />

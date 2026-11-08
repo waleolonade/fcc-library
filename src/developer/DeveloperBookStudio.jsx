@@ -10,10 +10,12 @@ import { INSTITUTION } from '../data/institutionalSeedData';
 import { sounds } from '../utils/soundEffects';
 import { developerApiCall } from '../services/developerApi';
 import MultimediaUploadStudio from '../multimedia/MultimediaUploadStudio';
+import DeveloperMediaGovernanceStudio from './DeveloperMediaGovernanceStudio';
 
 export default function DeveloperBookStudio({ passkey, showToast, departments: propDepts = [] }) {
-  // Mode: 'ingest' (Catalog New Book) vs 'catalog' (Manage Existing Books) vs 'hod_pipeline' (HOD Review Queue)
+  // Mode: 'ingest' (Catalog New Book) vs 'catalog' (Manage Existing Books) vs 'hod_pipeline' (HOD Review Queue) vs 'multimedia_studio'
   const [activeSubTab, setActiveSubTab] = useState('ingest');
+  const [mediaStudioSection, setMediaStudioSection] = useState('governance'); // 'governance' | 'upload'
   
   // Category Mode (inspired by HOD Upload Studio): 'book' | 'journal' | 'project' | 'acquisition'
   const [uploadCategory, setUploadCategory] = useState('book');
@@ -751,15 +753,61 @@ export default function DeveloperBookStudio({ passkey, showToast, departments: p
       </div>
 
       {/* =========================================================================
-          SUB-TAB: MULTIMEDIA STUDIO (HIGH-DEFINITION LECTURE & AUDIO UPLOAD)
+          SUB-TAB: MULTIMEDIA STUDIO & WORLD APIS AUTHORITY
       ========================================================================= */}
       {activeSubTab === 'multimedia_studio' && (
-        <MultimediaUploadStudio
-          role="developer"
-          onUploadSuccess={(res) => {
-            showToast?.(`High-Definition ${res.media_type === 'video' ? 'Video' : 'Audio'} published to OPAC & Student Portal!`, 'success');
-          }}
-        />
+        <div className="space-y-4">
+          {/* Segmented Switcher for Developer Multimedia Suite */}
+          <div className="p-2 rounded-2xl bg-[#030a16] border border-cyan-800 flex flex-wrap items-center justify-between gap-3 shadow-xl">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { sounds.playClick(); setMediaStudioSection('governance'); }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                  mediaStudioSection === 'governance'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-950'
+                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                <Sliders size={14} className="text-purple-300" />
+                <span>Video &amp; Audio Authority &amp; World APIs Matrix</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { sounds.playClick(); setMediaStudioSection('upload'); }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                  mediaStudioSection === 'upload'
+                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950'
+                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                <Video size={14} className="text-emerald-300" />
+                <span>High-Definition Media Ingestion Studio</span>
+              </button>
+            </div>
+
+            <div className="text-[11px] text-slate-400 font-sans hidden sm:block">
+              {mediaStudioSection === 'governance'
+                ? 'Full developer authority: toggle page, features & global APIs one by one'
+                : 'Directly upload 1080p lectures, handouts & chapter markers'}
+            </div>
+          </div>
+
+          {mediaStudioSection === 'governance' ? (
+            <DeveloperMediaGovernanceStudio
+              passkey={passkey}
+              showToast={showToast}
+            />
+          ) : (
+            <MultimediaUploadStudio
+              role="developer"
+              onUploadSuccess={(res) => {
+                showToast?.(`High-Definition ${res.media_type === 'video' ? 'Video' : 'Audio'} published to OPAC & Student Portal!`, 'success');
+              }}
+            />
+          )}
+        </div>
       )}
 
       {/* =========================================================================

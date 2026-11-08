@@ -45,6 +45,11 @@ export default function MultimediaStudioPlayer({
     let isMounted = true;
     const fetchDossier = async () => {
       if (!mediaId) return;
+      // If this is an external World Open API item, initialResource contains all necessary metadata and direct stream URL
+      if (typeof mediaId === 'string' && (mediaId.startsWith('ia-') || mediaId.startsWith('wiki-') || mediaId.startsWith('librivox-') || mediaId.startsWith('nasa-') || mediaId.startsWith('europeana-') || mediaId.startsWith('ocw-') || mediaId.startsWith('ext-'))) {
+        setLoading(false);
+        return;
+      }
       try {
         setLoading(true);
         const base = getApiBase();
@@ -63,10 +68,10 @@ export default function MultimediaStudioPlayer({
             }
           }
         } else {
-          if (isMounted) setError('Unable to load media resource details.');
+          if (isMounted && !initialResource) setError('Unable to load media resource details.');
         }
       } catch (err) {
-        if (isMounted) setError(err.message || 'Network connection failed.');
+        if (isMounted && !initialResource) setError(err.message || 'Network connection failed.');
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -74,13 +79,14 @@ export default function MultimediaStudioPlayer({
 
     fetchDossier();
     return () => { isMounted = false; };
-  }, [mediaId, activeUser]);
+  }, [mediaId, activeUser, initialResource]);
 
   // Stream URL calculation
   const streamSrc = useMemo(() => {
     if (!resource) return '';
-    if (resource.media_url?.startsWith('http://') || resource.media_url?.startsWith('https://')) {
-      return resource.media_url;
+    const directUrl = resource.playback_url || resource.media_url;
+    if (directUrl?.startsWith('http://') || directUrl?.startsWith('https://')) {
+      return directUrl;
     }
     const base = getApiBase();
     return `${base}/media/${encodeURIComponent(resource.id)}/stream`;
