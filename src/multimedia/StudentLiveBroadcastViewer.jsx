@@ -3,7 +3,8 @@ import {
   Video, Users, MessageSquare, Hand, Sparkles, Send, Volume2,
   VolumeX, Maximize2, Minimize2, Download, FileText, ArrowLeft,
   CheckCircle2, Share2, BookOpen, Wifi, ShieldAlert, MonitorUp, Eye,
-  Lock, UserCheck, LogIn, KeyRound, GraduationCap, Layers, Check, Copy
+  Lock, UserCheck, LogIn, KeyRound, GraduationCap, Layers, Check, Copy,
+  UserPlus, ClipboardCheck, Clock
 } from 'lucide-react';
 import { getApiBase } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
@@ -58,13 +59,21 @@ export default function StudentLiveBroadcastViewer({
 
   const [verifiedStudent, setVerifiedStudent] = useState(resolveInitialVerifiedStudent);
 
-  // Two-Way Verification Gate Form States (For Public / OPAC visitors not logged into Student Dashboard)
-  const [gateMode, setGateMode] = useState('hod_details'); // 'hod_details' | 'dashboard_login'
+  // Verification & Matric Submission Gate States
+  const [gateMode, setGateMode] = useState('hod_details'); // 'hod_details' | 'submit_matric' | 'dashboard_login'
   const [identifierInput, setIdentifierInput] = useState('');
   const [nameInput, setNameInput] = useState('');
   const [pinInput, setPinInput] = useState('');
+  const [submitLevelInput, setSubmitLevelInput] = useState('ND I');
+  const [matricSubmittedSuccess, setMatricSubmittedSuccess] = useState(false);
+  const [matricSubmittedMsg, setMatricSubmittedMsg] = useState('');
   const [gateLoading, setGateLoading] = useState(false);
   const [gateError, setGateError] = useState('');
+
+  // Two-Phase Student Class Attendance State (First 10 Minutes & Last Minute)
+  const [studentAttendance, setStudentAttendance] = useState(null);
+  const [lastMinuteWindowOpen, setLastMinuteWindowOpen] = useState(false);
+  const [isMarkingAttendance, setIsMarkingAttendance] = useState(false);
 
   // Presentation & Stage View States
   const [stageMode, setStageMode] = useState('video_and_board'); // 'video_and_board' | 'presentation_slides' | 'split_view'
@@ -161,14 +170,94 @@ export default function StudentLiveBroadcastViewer({
     };
   }, [broadcast?.id]);
 
-  // Way 1 Handler: Verify HOD-Registered Student Details against Database (POST /api/live-broadcast/verify-student)
-  const handleVerifyHodStudentDetails = async (e) => {
-    e.preventDefault();
-    if (!identifierInput.trim()) {
-      setGateError('Please enter your HOD-registered Matriculation Number, Library Card ID, or Email.');
-      return;
-    }
+  // Enforce Departmental Access Control & Record First 10-Minute Attendance even for pre-logged-in students
+  useEffect(() => {
+    if (!broadcast?.id || !verifiedStudent) return;
+    const roleStr = String(verifiedStudent.role || 'student').toLowerCase();
+    // Admin / Developer / HOD bypass strict student gate
+    if (['admin', 'developer', 'hod', 'hod_staff'].includes(roleStr)) return;
 
+    // If already verified specifically for this broadcast_id, skip duplicate call
+    if (verifiedStudent.verified_for_broadcast_id === broadcast.id && studentAttendance) return;
+
+    let cancelled = false;
+    const verifyDeptAndMarkAttendance = async () => {
+      try {
+        const base = getApiBase();
+        const ident = verifiedStudent.matric || verifiedStudent.barcode || verifiedStudent.email || verifiedStudent.id || '';
+        if (!ident) return;
+
+        const res = await fetch(`${base}/live-broadcast/verify-student`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({
+            identifier: ident,
+            name: verifiedStudent.name || '',
+            broadcast_id: broadcast.id,
+            department_code: broadcast.department_code || '',
+            department_name: broadcast.department_name || ''
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+
+        if (res.ok && data.success && data.student) {
+          const updatedStudent = {
+            ...verifiedStudent,
+            ...data.student,
+            verified_for_broadcast_id: broadcast.id
+          };
+          setVerifiedStudent(updatedStudent);
+          if (data.attendance) {
+            setStudentAttendance(data.attendance);
+          }
+          try {
+            sessionStorage.setItem('fcc_verified_live_student', JSON.stringify(updatedStudent));
+          } catch (e) {}
+        } else if (res.status === 403 || data.code === 'DEPARTMENT_ACCESS_RESTRICTED') {
+          // Student belongs to a different department — block access and show Departmental Access Gate
+          try {
+            sessionStorage.removeItem('fcc_verified_live_student');
+          } catch (e) {}
+          setVerifiedStudent(null);
+          setIdentifierInput(ident);
+          setGateError(
+            data.error ||
+              `Departmental Access Restricted: This classroom is organized by ${broadcast.department_name || broadcast.department_code}. Only students of ${broadcast.department_code} can join.`
+          );
+        }
+      } catch (e) {}
+    };
+
+    verifyDeptAndMarkAttendance();
+    return () => {
+      cancelled = true;
+    };
+  }, [broadcast?.id, broadcast?.department_code]);
+
+  // Listen for real-time Lecturer Roster Approval when a student has submitted their Matric No.
+  useEffect(() => {
+    if (verifiedStudent || !identifierInput.trim()) return;
+
+    const unsub = subscribeRealtimeEvents((evt) => {
+      if (evt && evt.action === 'LIVE_ROSTER_STUDENT_ADDED') {
+        const cleanInput = identifierInput.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const cleanApproved = String(evt.id || evt.data?.matric_no || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (!cleanApproved || cleanApproved === cleanInput) {
+          // Auto-attempt verification now that lecturer approved the Matric No.
+          handleVerifyStudentByMatricDirect(identifierInput.trim(), nameInput.trim(), pinInput.trim());
+        }
+      }
+    });
+
+    return () => {
+      if (typeof unsub === 'function') unsub();
+    };
+  }, [verifiedStudent, identifierInput, nameInput, pinInput, broadcast?.id]);
+
+  // Helper to verify Matric No. & enter classroom
+  const handleVerifyStudentByMatricDirect = async (identVal, nameVal = '', pinVal = '') => {
+    if (!identVal) return;
     setGateLoading(true);
     setGateError('');
     try {
@@ -177,39 +266,110 @@ export default function StudentLiveBroadcastViewer({
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({
-          identifier: identifierInput.trim(),
-          name: nameInput.trim(),
-          pin: pinInput.trim()
+          identifier: identVal,
+          name: nameVal,
+          pin: pinVal,
+          broadcast_id: broadcast?.id || '',
+          department_code: broadcast?.department_code || '',
+          department_name: broadcast?.department_name || ''
         })
       });
 
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success && data.student) {
         sounds.playSuccessChime();
+        const verifiedObj = {
+          ...data.student,
+          verified_for_broadcast_id: broadcast?.id || ''
+        };
+        if (data.attendance) {
+          setStudentAttendance(data.attendance);
+        }
         try {
-          sessionStorage.setItem('fcc_verified_live_student', JSON.stringify(data.student));
+          sessionStorage.setItem('fcc_verified_live_student', JSON.stringify(verifiedObj));
         } catch (err) {}
-        setVerifiedStudent(data.student);
+        setVerifiedStudent(verifiedObj);
       } else {
         sounds.playErrorBuzz();
         setGateError(
           data.error ||
-            'Could not verify student details. Only students registered by their HOD can access the online lecture.'
+            `Could not verify Matric No. for ${broadcast?.department_name || broadcast?.department_code || 'this department'}. You can submit your Matric No. to the lecturer on Tab 2 so they can add you.`
         );
       }
     } catch (err) {
       sounds.playErrorBuzz();
-      setGateError('Network error verifying student details with the database.');
+      setGateError('Network error verifying student Matric No. with the database.');
     } finally {
       setGateLoading(false);
     }
   };
 
-  // Way 2 Handler: Direct Student Dashboard Login (Logs student into their full Student Dashboard + enters classroom)
+  // Way 1 Handler: Join Classroom by Matric No. (or Lecturer-Created Username + Password)
+  const handleVerifyHodStudentDetails = async (e) => {
+    e.preventDefault();
+    if (!identifierInput.trim()) {
+      setGateError('Please enter your Matriculation Number (or Lecturer-assigned Username) to join the class.');
+      return;
+    }
+    await handleVerifyStudentByMatricDirect(identifierInput.trim(), nameInput.trim(), pinInput.trim());
+  };
+
+  // Way 2 Handler: Submit Matric No. to Lecturer so Lecturer Can Add Student to Classroom Roster
+  const handleSubmitMatricToLecturer = async (e) => {
+    e.preventDefault();
+    if (!identifierInput.trim()) {
+      setGateError('Please enter your Matriculation Number to submit to the lecturer.');
+      return;
+    }
+
+    setGateLoading(true);
+    setGateError('');
+    setMatricSubmittedSuccess(false);
+    try {
+      const base = getApiBase();
+      const res = await fetch(`${base}/live-broadcast/roster/submit-matric`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          broadcast_id: broadcast?.id || '',
+          department_code: broadcast?.department_code || '',
+          department_name: broadcast?.department_name || '',
+          matric_no: identifierInput.trim(),
+          student_name: nameInput.trim() || `${broadcast?.department_code || 'FCC'} Student`,
+          level: submitLevelInput || broadcast?.target_level || 'ND I'
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        sounds.playSuccessChime();
+        if (data.already_approved) {
+          // Already approved by lecturer! Enter classroom immediately
+          await handleVerifyStudentByMatricDirect(identifierInput.trim(), nameInput.trim(), pinInput.trim());
+          return;
+        }
+        setMatricSubmittedSuccess(true);
+        setMatricSubmittedMsg(
+          data.message ||
+            'Your Matric No. has been submitted to the lecturer! Once the lecturer clicks "Approve & Add" in the studio, click "Join Class Now" below.'
+        );
+      } else {
+        sounds.playErrorBuzz();
+        setGateError(data.error || 'Unable to submit Matric No. to lecturer.');
+      }
+    } catch (err) {
+      sounds.playErrorBuzz();
+      setGateError('Network error submitting Matric No. to the lecturer.');
+    } finally {
+      setGateLoading(false);
+    }
+  };
+
+  // Way 3 Handler: Direct Student Dashboard Login + Departmental Verification
   const handleDashboardLoginSubmit = async (e) => {
     e.preventDefault();
     if (!identifierInput.trim() || !pinInput.trim()) {
-      setGateError('Please enter your Student Matriculation Number / ID and Security PIN to log into your dashboard.');
+      setGateError('Please enter your Student Matriculation Number / ID and Security PIN / Password.');
       return;
     }
 
@@ -217,28 +377,31 @@ export default function StudentLiveBroadcastViewer({
     setGateError('');
     try {
       const base = getApiBase();
-      const res = await fetch(`${base}/auth/login`, {
+      // Verify against classroom endpoint first (checks Lecturer Roster + Departmental Match + PIN)
+      const vRes = await fetch(`${base}/live-broadcast/verify-student`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           identifier: identifierInput.trim(),
-          matric: identifierInput.trim(),
-          password: pinInput.trim(),
+          name: nameInput.trim(),
           pin: pinInput.trim(),
-          role: 'student'
+          broadcast_id: broadcast?.id || '',
+          department_code: broadcast?.department_code || '',
+          department_name: broadcast?.department_name || ''
         })
       });
-
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && (data.user || data.student)) {
-        const u = data.user || data.student;
+      const vData = await vRes.json().catch(() => ({}));
+      if (vRes.ok && vData.success && vData.student) {
         const studentSession = {
-          ...u,
-          role: u.role || 'student',
-          matric: u.matric || u.barcode || identifierInput.trim(),
-          verified_via: 'dashboard_login'
+          ...vData.student,
+          role: 'student',
+          verified_via: 'dashboard_login',
+          verified_for_broadcast_id: broadcast?.id || ''
         };
-        storeUserSession(studentSession, data.token || null, 'student');
+        if (vData.attendance) {
+          setStudentAttendance(vData.attendance);
+        }
+        storeUserSession(studentSession, null, 'student');
         try {
           sessionStorage.setItem('fcc_verified_live_student', JSON.stringify(studentSession));
         } catch (err) {}
@@ -246,39 +409,44 @@ export default function StudentLiveBroadcastViewer({
         sounds.playSuccessChime();
         setVerifiedStudent(studentSession);
       } else {
-        // Fallback to verify-student if PIN matches patron table directly
-        const vRes = await fetch(`${base}/live-broadcast/verify-student`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            identifier: identifierInput.trim(),
-            pin: pinInput.trim()
-          })
-        });
-        const vData = await vRes.json().catch(() => ({}));
-        if (vRes.ok && vData.success && vData.student) {
-          const studentSession = {
-            ...vData.student,
-            role: 'student',
-            verified_via: 'dashboard_login'
-          };
-          storeUserSession(studentSession, null, 'student');
-          try {
-            sessionStorage.setItem('fcc_verified_live_student', JSON.stringify(studentSession));
-          } catch (err) {}
-          window.dispatchEvent(new CustomEvent('fcc-auth-changed', { detail: studentSession }));
-          sounds.playSuccessChime();
-          setVerifiedStudent(studentSession);
-        } else {
-          sounds.playErrorBuzz();
-          setGateError(data.error || data.message || vData.error || 'Invalid Student Dashboard login credentials.');
-        }
+        sounds.playErrorBuzz();
+        setGateError(
+          vData.error ||
+            'Access denied: Invalid credentials or your department does not match the department organizing this classroom.'
+        );
       }
     } catch (err) {
       sounds.playErrorBuzz();
       setGateError('Network error connecting to Student Dashboard authentication server.');
     } finally {
       setGateLoading(false);
+    }
+  };
+
+  // Manual / Explicit Student Attendance Check-In (First 10 Mins or Last Minute)
+  const handleManualAttendanceCheckIn = async () => {
+    if (!broadcast?.id || !verifiedStudent) return;
+    setIsMarkingAttendance(true);
+    try {
+      const base = getApiBase();
+      const res = await fetch(`${base}/live-broadcast/${encodeURIComponent(broadcast.id)}/attendance/mark`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          matric_no: studentMatric,
+          student_name: studentName,
+          department_code: studentDept || broadcast.department_code || '',
+          level: verifiedStudent.level || broadcast.target_level || 'ND I',
+          phase: 'auto'
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.attendance) {
+        sounds.playSuccessChime();
+        setStudentAttendance(data.attendance);
+      }
+    } catch (e) {} finally {
+      setIsMarkingAttendance(false);
     }
   };
 
@@ -577,6 +745,8 @@ export default function StudentLiveBroadcastViewer({
             viewer_id: viewerIdRef.current,
             matric: studentMatric,
             name: studentName,
+            department_code: studentDept || broadcast.department_code || '',
+            level: verifiedStudent?.level || broadcast.target_level || 'ND I',
             leave: isLeaving
           })
         });
@@ -584,6 +754,12 @@ export default function StudentLiveBroadcastViewer({
           const hbData = await res.json();
           if (typeof hbData.viewers_count === 'number') {
             setViewersCount(hbData.viewers_count);
+          }
+          if (hbData.attendance) {
+            setStudentAttendance(hbData.attendance);
+          }
+          if (typeof hbData.last_minute_window_open === 'boolean') {
+            setLastMinuteWindowOpen(hbData.last_minute_window_open);
           }
         }
       } catch (e) {}
@@ -750,53 +926,81 @@ export default function StudentLiveBroadcastViewer({
               </div>
             </div>
 
-            {/* TWO-WAY ACCESS EXPLANATION */}
+            {/* DEPARTMENTAL ACCESS & ATTENDANCE EXPLANATION */}
             <div className="space-y-2 text-center">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950 border border-emerald-600 text-emerald-300 text-[11px] font-mono font-bold">
-                <UserCheck size={13} />
-                <span>TWO-WAY STUDENT CLASSROOM ACCESS VERIFICATION</span>
+                <Lock size={13} />
+                <span>
+                  {broadcast?.department_code
+                    ? `DEPARTMENTAL CLASSROOM (${broadcast.department_code} STUDENTS ONLY)`
+                    : 'DEPARTMENTAL STUDENT CLASSROOM ACCESS'}
+                </span>
               </div>
               <h3 className="text-xl font-black text-white">
-                Verify Student Identity to Access Live Presentation
+                Enter Your {broadcast?.department_code || 'Departmental'} Matric No. to Join Class
               </h3>
               <p className="text-xs text-slate-300 max-w-xl mx-auto leading-relaxed">
-                Because you are joining from the public OPAC link, please either <strong>enter your HOD-registered student details</strong> below or <strong>log into your Student Dashboard</strong> (students already logged into their dashboard enter automatically without this prompt).
+                This live classroom (<span className="font-mono text-cyan-300">{broadcast?.id || 'LIVE'}</span>) is organized by <strong>{broadcast?.department_name || broadcast?.department_code || 'the Department'}</strong>. Only students of <strong>{broadcast?.department_code || 'this department'}</strong> or Matric Nos. added by the lecturer can join. Attendance is marked automatically during the <strong>First 10 Minutes</strong> and the <strong>Last Minute</strong> of class.
               </p>
             </div>
 
-            {/* MODE SWITCHER TABS: WAY 1 (HOD-REGISTERED DETAILS) vs WAY 2 (STUDENT DASHBOARD LOGIN) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-1.5 rounded-2xl bg-[#01110b] border border-emerald-800/80">
+            {/* 3-TAB MODE SWITCHER: JOIN BY MATRIC NO. | SUBMIT MATRIC TO LECTURER | PORTAL LOGIN */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-1.5 rounded-2xl bg-[#01110b] border border-emerald-800/80">
               <button
                 type="button"
-                onClick={() => { setGateMode('hod_details'); setGateError(''); sounds.playClick(); }}
-                className={`py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer ${
+                onClick={() => { setGateMode('hod_details'); setGateError(''); setMatricSubmittedSuccess(false); sounds.playClick(); }}
+                className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
                   gateMode === 'hod_details'
                     ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950'
                     : 'text-emerald-300/80 hover:text-white hover:bg-emerald-950/50'
                 }`}
               >
-                <GraduationCap size={15} />
-                <span>Option 1: HOD-Registered Student Details</span>
+                <GraduationCap size={14} />
+                <span>1. Join with Matric No.</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => { setGateMode('dashboard_login'); setGateError(''); sounds.playClick(); }}
-                className={`py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer ${
+                onClick={() => { setGateMode('submit_matric'); setGateError(''); sounds.playClick(); }}
+                className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  gateMode === 'submit_matric'
+                    ? 'bg-amber-600 text-white shadow-lg shadow-amber-950'
+                    : 'text-amber-300/80 hover:text-white hover:bg-amber-950/50'
+                }`}
+              >
+                <UserPlus size={14} />
+                <span>2. Submit Matric to Lecturer</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setGateMode('dashboard_login'); setGateError(''); setMatricSubmittedSuccess(false); sounds.playClick(); }}
+                className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
                   gateMode === 'dashboard_login'
                     ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-950'
                     : 'text-cyan-300/80 hover:text-white hover:bg-cyan-950/50'
                 }`}
               >
-                <LogIn size={15} />
-                <span>Option 2: Login to Student Dashboard</span>
+                <LogIn size={14} />
+                <span>3. Student Portal Login</span>
               </button>
             </div>
 
             {gateError && (
               <div className="p-3.5 rounded-2xl bg-rose-950/90 border border-rose-500 text-xs text-rose-200 flex items-start gap-2.5">
                 <ShieldAlert size={16} className="text-rose-400 shrink-0 mt-0.5" />
-                <span>{gateError}</span>
+                <div className="space-y-1.5">
+                  <span className="block">{gateError}</span>
+                  {gateMode !== 'submit_matric' && (
+                    <button
+                      type="button"
+                      onClick={() => { setGateMode('submit_matric'); setGateError(''); }}
+                      className="text-[11px] font-mono font-bold text-amber-300 underline hover:text-white cursor-pointer"
+                    >
+                      Not yet on the lecturer&apos;s list? Click here to submit your Matric No. to the lecturer →
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -804,14 +1008,14 @@ export default function StudentLiveBroadcastViewer({
               <form onSubmit={handleVerifyHodStudentDetails} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-mono font-bold text-emerald-300 block">
-                    HOD-Registered Matriculation Number / Library Card ID / Email *
+                    Enter Your {broadcast?.department_code || 'Student'} Matriculation Number (or Lecturer-Assigned Username) *
                   </label>
                   <input
                     type="text"
                     required
                     value={identifierInput}
                     onChange={(e) => setIdentifierInput(e.target.value)}
-                    placeholder="e.g. FCC/CEM/ND1/001 or Library Barcode or Student Email"
+                    placeholder={`e.g. FCC/${broadcast?.department_code || 'CSC'}/ND1/001`}
                     className="w-full px-4 py-3 rounded-xl bg-[#01110b] border border-emerald-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400 font-mono"
                   />
                 </div>
@@ -819,7 +1023,7 @@ export default function StudentLiveBroadcastViewer({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <label className="text-xs font-mono text-slate-300 block">
-                      Registered Student Name (As Registered by HOD):
+                      Student Full Name (Optional if already registered):
                     </label>
                     <input
                       type="text"
@@ -832,13 +1036,13 @@ export default function StudentLiveBroadcastViewer({
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-mono text-slate-300 block">
-                      Or Student Security PIN (Optional):
+                      Classroom Password / PIN (If assigned by Lecturer):
                     </label>
                     <input
                       type="password"
                       value={pinInput}
                       onChange={(e) => setPinInput(e.target.value)}
-                      placeholder="Enter 4-digit PIN (if set)"
+                      placeholder="Leave blank if joining by Matric No. only"
                       className="w-full px-3.5 py-2.5 rounded-xl bg-[#01110b] border border-emerald-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400 font-mono"
                     />
                   </div>
@@ -850,9 +1054,95 @@ export default function StudentLiveBroadcastViewer({
                   className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-sm flex items-center justify-center gap-2 shadow-xl shadow-emerald-950 transition cursor-pointer disabled:opacity-50"
                 >
                   <UserCheck size={17} />
-                  <span>{gateLoading ? 'Verifying with HOD Database...' : 'Verify HOD-Registered Details & Enter Live Class'}</span>
+                  <span>
+                    {gateLoading
+                      ? 'Verifying Matric No. & Marking Attendance...'
+                      : `Join ${broadcast?.department_code || ''} Live Classroom & Mark Attendance`}
+                  </span>
                 </button>
               </form>
+            ) : gateMode === 'submit_matric' ? (
+              <div className="space-y-4">
+                {matricSubmittedSuccess && (
+                  <div className="p-4 rounded-2xl bg-emerald-950/90 border-2 border-emerald-500 space-y-3 text-xs">
+                    <div className="font-mono font-bold text-emerald-300 flex items-center gap-2">
+                      <CheckCircle2 size={16} />
+                      <span>Matric No. Submitted to {broadcast?.lecturer_name || 'Lecturer'}!</span>
+                    </div>
+                    <p className="text-slate-200 leading-relaxed">{matricSubmittedMsg}</p>
+                    <button
+                      type="button"
+                      disabled={gateLoading}
+                      onClick={() => handleVerifyStudentByMatricDirect(identifierInput.trim(), nameInput.trim(), pinInput.trim())}
+                      className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-2 shadow cursor-pointer"
+                    >
+                      <UserCheck size={15} />
+                      <span>{gateLoading ? 'Checking Lecturer Approval...' : 'Lecturer Approved? Click Here to Join Class Now'}</span>
+                    </button>
+                  </div>
+                )}
+
+                <form onSubmit={handleSubmitMatricToLecturer} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-mono font-bold text-amber-300 block">
+                      Your {broadcast?.department_code || 'Department'} Matriculation Number *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={identifierInput}
+                      onChange={(e) => setIdentifierInput(e.target.value)}
+                      placeholder={`e.g. FCC/${broadcast?.department_code || 'CSC'}/ND1/025`}
+                      className="w-full px-4 py-3 rounded-xl bg-[#01110b] border border-amber-600 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 font-mono"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-mono text-slate-300 block">
+                        Your Full Name *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={nameInput}
+                        onChange={(e) => setNameInput(e.target.value)}
+                        placeholder="e.g. Adebayo Tunde"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#01110b] border border-amber-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-mono text-slate-300 block">
+                        Academic Level:
+                      </label>
+                      <select
+                        value={submitLevelInput}
+                        onChange={(e) => setSubmitLevelInput(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#01110b] border border-amber-800 text-xs text-white font-mono focus:outline-none"
+                      >
+                        <option value="ND I">ND I</option>
+                        <option value="ND II">ND II</option>
+                        <option value="HND I">HND I</option>
+                        <option value="HND II">HND II</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={gateLoading}
+                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black text-sm flex items-center justify-center gap-2 shadow-xl shadow-amber-950 transition cursor-pointer disabled:opacity-50"
+                  >
+                    <UserPlus size={17} />
+                    <span>
+                      {gateLoading
+                        ? 'Submitting Matric No. to Lecturer...'
+                        : `Submit Matric No. to ${broadcast?.lecturer_name || 'Lecturer'} for Classroom Access`}
+                    </span>
+                  </button>
+                </form>
+              </div>
             ) : (
               <form onSubmit={handleDashboardLoginSubmit} className="space-y-4">
                 <div className="space-y-1.5">
@@ -1276,9 +1566,57 @@ export default function StudentLiveBroadcastViewer({
           </div>
         </div>
 
-        {/* RIGHT COLUMN: INTERACTIVE STUDENT CHAT & HAND RAISE */}
+        {/* RIGHT COLUMN: INTERACTIVE STUDENT CHAT, TWO-PHASE ATTENDANCE & HAND RAISE */}
         <div className="lg:col-span-4 bg-slate-900 border-l border-slate-800 flex flex-col justify-between overflow-hidden">
           <div className="p-4 border-b border-slate-800 space-y-3 bg-slate-900/90">
+            {/* TWO-PHASE LIVE STUDENT ATTENDANCE REGISTER STATUS CARD */}
+            <div className="p-3 rounded-2xl bg-[#01140d] border border-emerald-700/80 space-y-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono font-bold text-emerald-300 text-[11px] flex items-center gap-1.5">
+                  <ClipboardCheck size={13} />
+                  <span>Class Attendance ({studentMatric})</span>
+                </span>
+                <button
+                  type="button"
+                  disabled={isMarkingAttendance}
+                  onClick={handleManualAttendanceCheckIn}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[10px] font-bold cursor-pointer transition shadow"
+                >
+                  {isMarkingAttendance ? 'Checking In...' : '✋ Confirm Attendance'}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 font-mono text-[10px]">
+                <div className={`p-2 rounded-xl border flex items-center justify-between ${
+                  studentAttendance && Number(studentAttendance.first_10m_marked)
+                    ? 'bg-emerald-950/80 border-emerald-600 text-emerald-200'
+                    : 'bg-black/50 border-slate-800 text-slate-400'
+                }`}>
+                  <span>First 10 Mins:</span>
+                  <span className="font-bold">
+                    {studentAttendance && Number(studentAttendance.first_10m_marked) ? '✅ Marked' : '⏳ Window'}
+                  </span>
+                </div>
+
+                <div className={`p-2 rounded-xl border flex items-center justify-between ${
+                  studentAttendance && Number(studentAttendance.last_min_marked)
+                    ? 'bg-amber-950/80 border-amber-500 text-amber-200'
+                    : lastMinuteWindowOpen
+                    ? 'bg-amber-900/80 border-amber-400 text-amber-100 animate-pulse'
+                    : 'bg-black/50 border-slate-800 text-slate-400'
+                }`}>
+                  <span>Last Minute:</span>
+                  <span className="font-bold">
+                    {studentAttendance && Number(studentAttendance.last_min_marked)
+                      ? '✅ Marked'
+                      : lastMinuteWindowOpen
+                      ? '🔔 Roll Call'
+                      : '⏳ Final Min'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-white uppercase tracking-wide font-mono flex items-center gap-1.5">
                 <MessageSquare size={13} className="text-emerald-400" />

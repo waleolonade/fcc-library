@@ -750,6 +750,11 @@ Route::prefix('live-broadcast')->group(function () {
     Route::post('/companion-pdf', [\App\Http\Controllers\LiveBroadcastController::class, 'uploadCompanionPdf']);
     Route::get('/handout/{filename}', [\App\Http\Controllers\LiveBroadcastController::class, 'getCompanionHandout']);
     Route::post('/verify-student', [\App\Http\Controllers\LiveBroadcastController::class, 'verifyStudentAccess']);
+    Route::get('/roster', [\App\Http\Controllers\LiveBroadcastController::class, 'getDepartmentRoster']);
+    Route::post('/roster/submit-matric', [\App\Http\Controllers\LiveBroadcastController::class, 'submitStudentMatric']);
+    Route::post('/roster/add-student', [\App\Http\Controllers\LiveBroadcastController::class, 'lecturerAddStudentToRoster']);
+    Route::post('/roster/approve-all', [\App\Http\Controllers\LiveBroadcastController::class, 'lecturerApproveAllPendingRoster']);
+    Route::delete('/roster/{id}', [\App\Http\Controllers\LiveBroadcastController::class, 'deleteRosterStudent']);
     Route::get('/session/{id?}', [\App\Http\Controllers\LiveBroadcastController::class, 'getBroadcastSession']);
     Route::get('/active', [\App\Http\Controllers\LiveBroadcastController::class, 'getActiveStreams']);
     Route::post('/start', [\App\Http\Controllers\LiveBroadcastController::class, 'start']);
@@ -758,6 +763,9 @@ Route::prefix('live-broadcast')->group(function () {
     Route::get('/social-destinations', [\App\Http\Controllers\LiveBroadcastController::class, 'getSocialDestinations']);
     Route::post('/social-destinations', [\App\Http\Controllers\LiveBroadcastController::class, 'saveSocialDestinations']);
     Route::post('/social-destinations/toggle', [\App\Http\Controllers\LiveBroadcastController::class, 'toggleSocialDestination']);
+    Route::get('/{id}/attendance', [\App\Http\Controllers\LiveBroadcastController::class, 'getBroadcastAttendance']);
+    Route::post('/{id}/attendance/window', [\App\Http\Controllers\LiveBroadcastController::class, 'toggleAttendanceWindow']);
+    Route::post('/{id}/attendance/mark', [\App\Http\Controllers\LiveBroadcastController::class, 'markStudentAttendanceEndpoint']);
     Route::put('/{id}', [\App\Http\Controllers\LiveBroadcastController::class, 'updateBroadcast']);
     Route::delete('/{id}', [\App\Http\Controllers\LiveBroadcastController::class, 'deleteBroadcast']);
     Route::post('/{id}/end', [\App\Http\Controllers\LiveBroadcastController::class, 'end']);

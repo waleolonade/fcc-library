@@ -25,7 +25,7 @@ class LiveBroadcastController extends Controller
             return;
         }
         $pdoCheck = DatabaseService::getPdo();
-        $flagFile = storage_path('app/live_tables_v4_' . ($pdoCheck ? 'mysql' : 'sqlite') . '.ready');
+        $flagFile = storage_path('app/live_tables_v5_' . ($pdoCheck ? 'mysql' : 'sqlite') . '.ready');
         if (file_exists($flagFile) && (time() - filemtime($flagFile) < 3600)) {
             self::$tablesVerified = true;
             return;
@@ -102,6 +102,45 @@ class LiveBroadcastController extends Controller
                     signal_type VARCHAR(50) NOT NULL,
                     payload LONGTEXT NOT NULL,
                     consumed TINYINT(1) DEFAULT 0,
+                    created_at TIMESTAMP NULL,
+                    updated_at TIMESTAMP NULL
+                )
+            ");
+
+            DB::statement("
+                CREATE TABLE IF NOT EXISTS live_classroom_roster (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    department_code VARCHAR(30) NOT NULL,
+                    department_name VARCHAR(200) NULL,
+                    matric_no VARCHAR(100) NOT NULL,
+                    username VARCHAR(120) NULL,
+                    student_name VARCHAR(255) NOT NULL,
+                    password_pin VARCHAR(255) DEFAULT '1234',
+                    level VARCHAR(50) DEFAULT 'ND I',
+                    status VARCHAR(30) DEFAULT 'approved',
+                    added_by VARCHAR(255) DEFAULT 'lecturer',
+                    created_at TIMESTAMP NULL,
+                    updated_at TIMESTAMP NULL
+                )
+            ");
+
+            DB::statement("
+                CREATE TABLE IF NOT EXISTS live_classroom_attendance (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    broadcast_id VARCHAR(80) NOT NULL,
+                    department_code VARCHAR(30) NOT NULL,
+                    course_code VARCHAR(60) NULL,
+                    matric_no VARCHAR(100) NOT NULL,
+                    username VARCHAR(120) NULL,
+                    student_name VARCHAR(255) NOT NULL,
+                    level VARCHAR(50) DEFAULT 'ND I',
+                    first_joined_at TIMESTAMP NULL,
+                    last_seen_at TIMESTAMP NULL,
+                    first_10m_marked TINYINT(1) DEFAULT 0,
+                    first_10m_marked_at TIMESTAMP NULL,
+                    last_min_marked TINYINT(1) DEFAULT 0,
+                    last_min_marked_at TIMESTAMP NULL,
+                    attendance_status VARCHAR(40) DEFAULT 'IN_PROGRESS',
                     created_at TIMESTAMP NULL,
                     updated_at TIMESTAMP NULL
                 )
@@ -196,6 +235,51 @@ class LiveBroadcastController extends Controller
                         INDEX idx_sig_broadcast (broadcast_id),
                         INDEX idx_sig_recipient (recipient_id),
                         INDEX idx_sig_consumed (consumed)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                ");
+
+                $pdo->exec("
+                    CREATE TABLE IF NOT EXISTS live_classroom_roster (
+                        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                        department_code VARCHAR(30) NOT NULL,
+                        department_name VARCHAR(200) NULL,
+                        matric_no VARCHAR(100) NOT NULL,
+                        username VARCHAR(120) NULL,
+                        student_name VARCHAR(255) NOT NULL,
+                        password_pin VARCHAR(255) DEFAULT '1234',
+                        level VARCHAR(50) DEFAULT 'ND I',
+                        status VARCHAR(30) DEFAULT 'approved',
+                        added_by VARCHAR(255) DEFAULT 'lecturer',
+                        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY uniq_dept_matric (department_code, matric_no),
+                        INDEX idx_roster_dept (department_code),
+                        INDEX idx_roster_status (status)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                ");
+
+                $pdo->exec("
+                    CREATE TABLE IF NOT EXISTS live_classroom_attendance (
+                        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                        broadcast_id VARCHAR(80) NOT NULL,
+                        department_code VARCHAR(30) NOT NULL,
+                        course_code VARCHAR(60) NULL,
+                        matric_no VARCHAR(100) NOT NULL,
+                        username VARCHAR(120) NULL,
+                        student_name VARCHAR(255) NOT NULL,
+                        level VARCHAR(50) DEFAULT 'ND I',
+                        first_joined_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+                        last_seen_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+                        first_10m_marked TINYINT(1) DEFAULT 0,
+                        first_10m_marked_at TIMESTAMP NULL,
+                        last_min_marked TINYINT(1) DEFAULT 0,
+                        last_min_marked_at TIMESTAMP NULL,
+                        attendance_status VARCHAR(40) DEFAULT 'IN_PROGRESS',
+                        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY uniq_bcast_matric (broadcast_id, matric_no),
+                        INDEX idx_att_broadcast (broadcast_id),
+                        INDEX idx_att_dept (department_code)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 ");
             }
@@ -570,7 +654,7 @@ class LiveBroadcastController extends Controller
                 ");
                 $st->execute([':d' => $deptCode]);
                 $row = $st->fetch(\PDO::FETCH_ASSOC);
-                if (!$row) {
+                if (!$row && $reqDeptCode === '') {
                     $stAny = $pdo->query("SELECT * FROM live_broadcasts WHERE is_live = 1 AND status = 'live' ORDER BY started_at DESC LIMIT 1");
                     if ($stAny) {
                         $row = $stAny->fetch(\PDO::FETCH_ASSOC);
@@ -587,7 +671,7 @@ class LiveBroadcastController extends Controller
                     ->where('department_code', $deptCode)
                     ->orderBy('started_at', 'desc')
                     ->first();
-                if (!$activeBroadcast) {
+                if (!$activeBroadcast && $reqDeptCode === '') {
                     $activeBroadcast = DB::table('live_broadcasts')
                         ->where('is_live', true)
                         ->where('status', 'live')
@@ -688,6 +772,8 @@ class LiveBroadcastController extends Controller
             'elapsed_seconds' => $elapsedSeconds,
             'chat_messages' => $activeMessages,
             'broadcast_history' => $history,
+            'classroom_roster' => $this->fetchDepartmentRosterFromDb($deptCode, $deptName),
+            'attendance_register' => $activeBroadcast ? $this->buildAttendancePayload($activeBroadcast->id) : null,
             'governance' => $this->getGovernance(),
         ]);
     }
@@ -1080,31 +1166,248 @@ class LiveBroadcastController extends Controller
     }
 
     /**
+     * Normalize department aliases so e.g. CS / CSC / COM / Computer Science / Computing and Informatics match
+     * while blocking students from unrelated departments (e.g. ACC or CEM trying to join CSC).
+     */
+    private function getDepartmentAliasGroup(string $rawCodeOrName): array
+    {
+        $u = strtoupper(trim($rawCodeOrName));
+        $u = preg_replace('/^DEP-/', '', $u);
+
+        $groups = [
+            ['CSC', 'CS', 'COM', 'SWD', 'AI', 'NCC', 'COMPUTER SCIENCE', 'COMPUTING AND INFORMATICS', 'COMPUTER'],
+            ['CEM', 'COOPERATIVE ECONOMICS AND MANAGEMENT', 'CO-OPERATIVE ECONOMICS & MANAGEMENT', 'COOPERATIVE ECONOMICS', 'CO-OPERATIVE'],
+            ['BFN', 'BF', 'BANKING AND FINANCE', 'BANKING & FINANCE', 'BANKING AND FINANC'],
+            ['ACC', 'ACCOUNTANCY', 'ACCOUNTING'],
+            ['AT', 'AGT', 'AGR', 'AGRICULTURAL TECHNOLOGY', 'AGRICULTURE TECHNOLOGY', 'AGRICULTURE'],
+            ['OTM', 'OFFICE TECHNOLOGY MANAGEMENT', 'OFFICE TECHNOLOGY & MANAGEMENT'],
+            ['PA', 'PAD', 'PUBLIC ADMINISTRATION'],
+            ['BAM', 'BUSINESS ADMINISTRATION AND MANAGEMENT', 'BUSINESS ADMINISTRATION & MANAGEMENT', 'BUSINESS ADMIN'],
+            ['MKT', 'MARKETING'],
+            ['MAC', 'MC', 'MASS COMMUNICATION'],
+            ['LIS', 'LIBRARY AND INFORMATION SCIENCE'],
+            ['HRE', 'HR', 'HOME AND RURAL ECONOMICS'],
+            ['APT', 'ANIMAL PRODUCTION TECHNOLOGY'],
+            ['AER', 'AGRICULTURAL EXTENSION AND RURAL DEVELOPMENT'],
+            ['HMT', 'HOSPITALITY MANAGEMENT TECHNOLOGY'],
+            ['AM', 'AGRIBUSINESS MANAGEMENT'],
+            ['GNS', 'GENERAL STUDIES'],
+            ['SLT', 'SCIENCE LABORATORY TECHNOLOGY'],
+            ['STA', 'STATISTICS'],
+            ['OAO', 'OLAWALE AKEEM OLONADE'],
+        ];
+
+        foreach ($groups as $grp) {
+            foreach ($grp as $token) {
+                if ($u === $token || (strlen($token) > 4 && stripos($u, $token) !== false)) {
+                    return $grp;
+                }
+            }
+        }
+
+        return $u !== '' ? [$u] : [];
+    }
+
+    private function departmentsMatch(string $targetDeptCode, string $targetDeptName, string $studentDept, string $studentMatric = ''): bool
+    {
+        $targetCodeUpper = strtoupper(trim($targetDeptCode));
+        if ($targetCodeUpper === '' || $targetCodeUpper === 'GLOBAL' || $targetCodeUpper === 'ALL') {
+            return true;
+        }
+
+        $targetAliases = array_unique(array_merge(
+            $this->getDepartmentAliasGroup($targetDeptCode),
+            $this->getDepartmentAliasGroup($targetDeptName)
+        ));
+
+        $studentAliases = $this->getDepartmentAliasGroup($studentDept);
+        if (!empty(array_intersect($targetAliases, $studentAliases))) {
+            return true;
+        }
+
+        // Also check if student's matric number contains the department code prefix (e.g., FCC/CSC/24/001 or CSC/2026/001)
+        $matricUpper = strtoupper(trim($studentMatric));
+        foreach ($targetAliases as $alias) {
+            if (strlen($alias) >= 2 && strlen($alias) <= 5) {
+                if (
+                    preg_match('/(^|[\/\-_ ])' . preg_quote($alias, '/') . '([\/\-_ 0-9]|$)/', $matricUpper)
+                ) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Resolve authentic department code & name from database for a broadcast start request
+     */
+    private function resolveBroadcastDepartmentFromDb(string $reqCode, string $reqName, string $courseCode = '', string $lecturerName = ''): array
+    {
+        $allDepts = $this->fetchDepartmentsFromDb();
+        $cleanCode = strtoupper(preg_replace('/^DEP-/i', '', trim($reqCode)));
+        $cleanName = trim($reqName);
+
+        // If course code has a department prefix (e.g. "CSC 211", "BFN 111", "ACC 101") and reqCode was empty
+        if ($cleanCode === '' && preg_match('/^([A-Z]{2,5})\s*\d/i', trim($courseCode), $m)) {
+            $cleanCode = strtoupper($m[1]);
+        }
+
+        $aliases = $this->getDepartmentAliasGroup($cleanCode ?: $cleanName);
+
+        foreach ($allDepts as $d) {
+            $dCode = strtoupper(trim((string) ($d['code'] ?? '')));
+            $dName = trim((string) ($d['name'] ?? ''));
+            if ($cleanCode !== '' && $dCode === $cleanCode) {
+                return [
+                    'code' => $dCode,
+                    'name' => $dName ?: ($cleanName ?: $dCode),
+                    'hod_name' => $d['hod_name'] ?? $lecturerName,
+                ];
+            }
+        }
+
+        foreach ($allDepts as $d) {
+            $dCode = strtoupper(trim((string) ($d['code'] ?? '')));
+            $dName = trim((string) ($d['name'] ?? ''));
+            if (in_array($dCode, $aliases, true) || ($cleanName !== '' && strcasecmp($dName, $cleanName) === 0)) {
+                return [
+                    'code' => $cleanCode ?: $dCode,
+                    'name' => $dName ?: $cleanName,
+                    'hod_name' => $d['hod_name'] ?? $lecturerName,
+                ];
+            }
+        }
+
+        return [
+            'code' => $cleanCode ?: 'CEM',
+            'name' => $cleanName ?: 'Co-operative Economics & Management',
+            'hod_name' => $lecturerName ?: 'Head of Department',
+        ];
+    }
+
+    /**
      * POST /api/live-broadcast/verify-student
-     * Verify HOD-registered student details from MySQL users/patrons tables
-     * when a student accesses the online classroom from OPAC / public link without being logged into the dashboard.
+     * Verify student access for a departmental live classroom:
+     * 1. Enforces that ONLY students of the organizing department (or added/approved by that department's lecturer in live_classroom_roster) can join.
+     * 2. Supports joining by entering Matric No. (once added by the lecturer) OR Lecturer-created Username + Password/PIN.
+     * 3. Automatically marks First 10-Minute Attendance (and Last-Minute Attendance if in final minute window).
      */
     public function verifyStudentAccess(Request $request)
     {
-        $identifier = trim((string) $request->input('identifier', $request->input('matric', '')));
+        $this->ensureDatabaseTables();
+
+        $identifier = trim((string) $request->input('identifier', $request->input('matric', $request->input('username', ''))));
         $studentNameInput = trim((string) $request->input('name', ''));
-        $pinInput = trim((string) $request->input('pin', ''));
-        $departmentInput = trim((string) $request->input('department', ''));
+        $pinInput = trim((string) $request->input('pin', $request->input('password', '')));
+        $broadcastId = trim((string) $request->input('broadcast_id', ''));
+        $reqDeptCode = strtoupper(trim((string) $request->input('department_code', '')));
+        $reqDeptName = trim((string) $request->input('department_name', $request->input('department', '')));
 
         if ($identifier === '') {
             return response()->json([
                 'success' => false,
-                'error' => 'Please enter your HOD-registered Matriculation Number, Library Barcode/ID, or Student Email.'
+                'error' => 'Please enter your Matriculation Number (or Lecturer-assigned Username) to join the live classroom.'
             ], 422);
         }
 
-        // 1. Primary lookup via StudentUserService (checks MySQL users + patrons tables)
+        // Resolve the active broadcast and its organizing department
+        $broadcast = null;
+        if ($broadcastId !== '') {
+            $broadcast = $this->findBroadcastById($broadcastId);
+        }
+        if (!$broadcast) {
+            try {
+                $pdo = DatabaseService::getPdo();
+                if ($pdo) {
+                    $st = $pdo->query("SELECT * FROM live_broadcasts WHERE is_live = 1 AND status = 'live' ORDER BY started_at DESC LIMIT 1");
+                    if ($st) {
+                        $row = $st->fetch(\PDO::FETCH_ASSOC);
+                        if ($row) $broadcast = (object) $row;
+                    }
+                }
+                if (!$broadcast) {
+                    $broadcast = DB::table('live_broadcasts')->where('is_live', true)->where('status', 'live')->orderBy('started_at', 'desc')->first();
+                }
+            } catch (\Throwable $e) {}
+        }
+
+        $targetDeptCode = $reqDeptCode;
+        $targetDeptName = $reqDeptName;
+        if ($broadcast) {
+            $broadcastId = (string) $broadcast->id;
+            $targetDeptCode = strtoupper(trim((string) ($broadcast->department_code ?? $targetDeptCode)));
+            $targetDeptName = trim((string) ($broadcast->department_name ?? $targetDeptName));
+        }
+        if ($targetDeptCode === '' && preg_match('/^LIVE-([A-Z0-9]+)-/i', $broadcastId, $m)) {
+            $targetDeptCode = strtoupper($m[1]);
+        }
+
+        $deptAliases = array_values(array_filter(
+            $this->getDepartmentAliasGroup($targetDeptCode ?: $targetDeptName),
+            fn($a) => strlen($a) <= 12
+        ));
+        if ($targetDeptCode !== '' && !in_array($targetDeptCode, $deptAliases, true)) {
+            $deptAliases[] = $targetDeptCode;
+        }
+
+        // 1. Check Lecturer's Departmental Classroom Roster (`live_classroom_roster`) FIRST
+        $rosterMatch = $this->findStudentInDepartmentRoster($identifier, $deptAliases);
+        if ($rosterMatch) {
+            $rosterStatus = strtolower(trim((string) ($rosterMatch['status'] ?? 'approved')));
+            if ($rosterStatus === 'pending') {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'MATRIC_PENDING_LECTURER_APPROVAL',
+                    'error' => "Your Matric No. ({$rosterMatch['matric_no']}) has been submitted to the {$targetDeptName} ({$targetDeptCode}) Lecturer. Please wait for the Lecturer to approve/add you in the Live Studio, then click Join again."
+                ], 403);
+            }
+
+            // If student supplied a password/PIN and lecturer set a specific password_pin, verify it
+            $storedPin = trim((string) ($rosterMatch['password_pin'] ?? ''));
+            if ($pinInput !== '' && $storedPin !== '' && $storedPin !== '1234' && $storedPin !== $pinInput) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'INVALID_CLASSROOM_PASSWORD',
+                    'error' => 'The classroom password/PIN entered does not match the password assigned by your Lecturer. Leave password blank to join with your approved Matric No., or enter the exact password.'
+                ], 401);
+            }
+
+            $verifiedStudent = [
+                'id' => 'ROSTER-' . ($rosterMatch['id'] ?? time()),
+                'name' => $rosterMatch['student_name'] ?: ($studentNameInput ?: 'Classroom Student'),
+                'username' => $rosterMatch['username'] ?: $rosterMatch['matric_no'],
+                'matric' => $rosterMatch['matric_no'],
+                'barcode' => $rosterMatch['matric_no'],
+                'email' => '',
+                'phone' => '',
+                'department' => $rosterMatch['department_name'] ?: ($targetDeptName ?: $targetDeptCode),
+                'department_code' => $rosterMatch['department_code'] ?: $targetDeptCode,
+                'level' => $rosterMatch['level'] ?? 'ND I',
+                'role' => 'student',
+                'verified_via' => 'lecturer_classroom_roster',
+                'verified_at' => now()->toIso8601String(),
+            ];
+
+            $attendance = $broadcastId !== ''
+                ? $this->recordStudentAttendance($broadcastId, $verifiedStudent, $broadcast)
+                : null;
+
+            return response()->json([
+                'success' => true,
+                'message' => "Verified on {$targetDeptCode} Lecturer Classroom Roster.",
+                'student' => $verifiedStudent,
+                'attendance' => $attendance,
+            ]);
+        }
+
+        // 2. Look up in HOD-registered `users` / `patrons` tables
         $userRecord = null;
         try {
             $userRecord = StudentUserService::findForAuth($identifier);
         } catch (\Throwable $e) {}
 
-        // 2. Fallback direct search in MySQL patrons and users tables (case-insensitive)
         if (!$userRecord) {
             try {
                 $pdo = DatabaseService::getPdo();
@@ -1138,7 +1441,6 @@ class LiveBroadcastController extends Controller
             } catch (\Throwable $e) {}
         }
 
-        // 3. Fallback search in Laravel SQLite patrons/users tables
         if (!$userRecord) {
             try {
                 $pRow = DB::table('patrons')
@@ -1165,11 +1467,42 @@ class LiveBroadcastController extends Controller
         }
 
         if (!$userRecord) {
+            // Check if the Matric No. belongs to a different department's code (e.g. FCC/CEM/ND1/001 trying to join a CSC class)
+            if ($targetDeptCode !== '' && preg_match('/(?:^|[\/\-_])(CSC|COM|CEM|OAO|BFN|BF|ACC|AT|AGT|OTM|PA|PAD|BAM|BUS|MKT|MAC|LIS|SLT|STA|EED|GNS)(?:[\/\-_\s0-9]|$)/i', $identifier, $deptMatch)) {
+                $detectedDept = strtoupper($deptMatch[1]);
+                if (!$this->departmentsMatch($targetDeptCode, $targetDeptName, $detectedDept, $identifier)) {
+                    return response()->json([
+                        'success' => false,
+                        'code' => 'DEPARTMENT_ACCESS_RESTRICTED',
+                        'target_department_code' => $targetDeptCode,
+                        'target_department_name' => $targetDeptName,
+                        'student_department' => $detectedDept,
+                        'error' => "Departmental Access Restricted: This live lecture ({$broadcastId}) is organized by the Department of " . ($targetDeptName ?: $targetDeptCode) . " ({$targetDeptCode}). Matric No. \"{$identifier}\" belongs to {$detectedDept}. Only students of {$targetDeptCode} or students added by the {$targetDeptCode} Lecturer can join this classroom."
+                    ], 403);
+                }
+            }
+
             return response()->json([
                 'success' => false,
                 'code' => 'STUDENT_NOT_REGISTERED',
-                'error' => 'No HOD-registered student record was found matching "' . $identifier . '". Please verify your Matriculation Number / Library Card ID with your Head of Department (HOD), or log into your Student Dashboard.'
+                'error' => 'Matric No. "' . $identifier . '" has not been added to the ' . ($targetDeptName ?: $targetDeptCode ?: 'departmental') . ' classroom yet. Click "Submit Matric No. to Lecturer" below so the Lecturer can add you to the class.'
             ], 404);
+        }
+
+        // 3. STRICT DEPARTMENTAL ACCESS RESTRICTION CHECK
+        // If this live lecture is organized by a specific department (e.g., CSC - Computer Science),
+        // ONLY students belonging to that department (or added to the lecturer's roster above) are permitted to join!
+        $studentDept = trim((string) ($userRecord['department'] ?? $userRecord['department_name'] ?? $userRecord['department_code'] ?? ''));
+        $studentMatric = trim((string) ($userRecord['matric'] ?? $userRecord['barcode'] ?? $identifier));
+        if ($targetDeptCode !== '' && !$this->departmentsMatch($targetDeptCode, $targetDeptName, $studentDept, $studentMatric)) {
+            return response()->json([
+                'success' => false,
+                'code' => 'DEPARTMENT_ACCESS_RESTRICTED',
+                'target_department_code' => $targetDeptCode,
+                'target_department_name' => $targetDeptName,
+                'student_department' => $studentDept ?: 'Another Department',
+                'error' => "Departmental Access Restricted: This live lecture ({$broadcastId}) is organized by the Department of " . ($targetDeptName ?: $targetDeptCode) . " ({$targetDeptCode}). Your record belongs to \"" . ($studentDept ?: 'another department') . "\". Only students of " . ($targetDeptName ?: $targetDeptCode) . " or students added by the Lecturer can join this classroom."
+            ], 403);
         }
 
         // Verify PIN if provided by the student and a PIN exists on record
@@ -1182,7 +1515,6 @@ class LiveBroadcastController extends Controller
             if (!$pinValid && !empty($userRecord['raw_pin']) && trim((string) $userRecord['raw_pin']) === $pinInput) {
                 $pinValid = true;
             }
-            // Also allow if pinInput matches last 4 digits of matric or phone or default '1234' when raw_pin is empty
             if (!$pinValid && empty($userRecord['raw_pin']) && empty($userRecord['password_hash'])) {
                 $pinValid = true;
             }
@@ -1191,30 +1523,7 @@ class LiveBroadcastController extends Controller
                 return response()->json([
                     'success' => false,
                     'code' => 'INVALID_STUDENT_PIN',
-                    'error' => 'The Security PIN entered does not match this HOD-registered student record. Please check your PIN or leave PIN blank to verify with your registered Full Name.'
-                ], 401);
-            }
-        } elseif ($studentNameInput !== '') {
-            // Verify that at least one part of the student's registered name matches (case-insensitive)
-            $dbName = strtolower(trim((string) ($userRecord['name'] ?? '')));
-            $inputParts = array_filter(preg_split('/\s+/', strtolower($studentNameInput)));
-            $nameMatched = false;
-            if ($dbName === '' || stripos($dbName, strtolower($studentNameInput)) !== false) {
-                $nameMatched = true;
-            } else {
-                foreach ($inputParts as $part) {
-                    if (strlen($part) >= 2 && stripos($dbName, $part) !== false) {
-                        $nameMatched = true;
-                        break;
-                    }
-                }
-            }
-
-            if (!$nameMatched) {
-                return response()->json([
-                    'success' => false,
-                    'code' => 'STUDENT_NAME_MISMATCH',
-                    'error' => 'The name entered does not match the HOD-registered student record for "' . ($userRecord['matric'] ?? $identifier) . '". Please enter your registered name or Security PIN.'
+                    'error' => 'The Security PIN / Password entered does not match this student record. You can join directly using your Matriculation Number alone.'
                 ], 401);
             }
         }
@@ -1231,28 +1540,36 @@ class LiveBroadcastController extends Controller
 
         $verifiedStudent = [
             'id' => $userRecord['id'] ?? ('STU-' . time()),
-            'name' => $userRecord['name'] ?? 'Registered Student',
-            'matric' => $userRecord['matric'] ?? $userRecord['barcode'] ?? $identifier,
-            'barcode' => $userRecord['barcode'] ?? $userRecord['matric'] ?? $identifier,
+            'name' => $userRecord['name'] ?? ($studentNameInput ?: 'Registered Student'),
+            'username' => $userRecord['username'] ?? $studentMatric,
+            'matric' => $studentMatric,
+            'barcode' => $userRecord['barcode'] ?? $studentMatric,
             'email' => $userRecord['email'] ?? '',
             'phone' => $userRecord['phone'] ?? '',
-            'department' => $userRecord['department'] ?? $departmentInput ?: 'Co-operative Economics & Management',
+            'department' => $studentDept ?: ($targetDeptName ?: 'Co-operative Economics & Management'),
+            'department_code' => $targetDeptCode ?: 'CEM',
             'level' => $userRecord['level'] ?? 'ND I',
             'role' => 'student',
             'verified_via' => 'hod_registered_record',
             'verified_at' => now()->toIso8601String(),
         ];
 
+        $attendance = $broadcastId !== ''
+            ? $this->recordStudentAttendance($broadcastId, $verifiedStudent, $broadcast)
+            : null;
+
         return response()->json([
             'success' => true,
-            'message' => 'HOD-registered student verified successfully.',
+            'message' => 'Department student verified and attendance logged.',
             'student' => $verifiedStudent,
+            'attendance' => $attendance,
         ]);
     }
 
     /**
      * POST /api/live-broadcast/start
      * Initiate live lecture broadcast from HOD Dashboard or Staff Workspace
+     * Generates department-based link code: LIVE-{DEPT_CODE}-{YYYYMMDD}-{HHMMSS}-{RAND}
      */
     public function start(Request $request)
     {
@@ -1269,16 +1586,20 @@ class LiveBroadcastController extends Controller
             ], 403);
         }
 
-        // 2. Departmental permission check & safe defaults (never 302 redirect on validation)
-        $deptCode = strtolower(trim((string) ($request->input('department_code') ?: 'cem')));
-        if ($deptCode === 'oao') {
-            $deptCode = 'cem';
-        }
-        $deptUpper = strtoupper($deptCode);
-        $deptName = trim((string) ($request->input('department_name') ?: 'Co-operative Economics & Management'));
+        // 2. Resolve authentic Organizing Department from DB so link code is strictly based on the department
+        $resolvedDept = $this->resolveBroadcastDepartmentFromDb(
+            (string) $request->input('department_code', ''),
+            (string) $request->input('department_name', ''),
+            (string) $request->input('course_code', ''),
+            (string) $request->input('lecturer_name', '')
+        );
+
+        $deptUpper = strtoupper($resolvedDept['code']);
+        $deptCode = strtolower($deptUpper);
+        $deptName = $resolvedDept['name'];
         $courseCode = trim((string) ($request->input('course_code') ?: ($deptUpper . ' 111')));
         $courseTitle = trim((string) ($request->input('course_title') ?: $courseCode));
-        $lecturerName = trim((string) ($request->input('lecturer_name') ?: 'Head of Department'));
+        $lecturerName = trim((string) ($request->input('lecturer_name') ?: $resolvedDept['hod_name'] ?: 'Head of Department'));
         $title = trim((string) ($request->input('title') ?: ($courseCode . ': ' . $courseTitle . ' — Live Interactive Lecture')));
 
         $deptKey = 'live_broadcast_dept_' . $deptCode;
@@ -1542,6 +1863,11 @@ class LiveBroadcastController extends Controller
         }
 
         $resolvedId = $broadcast->id ?? ($targetId !== '' ? $targetId : 'ALL');
+
+        // 0. Automatically mark Last-Minute Attendance for all students present in the final minute of the class
+        if ($resolvedId && $resolvedId !== 'ALL') {
+            $this->finalizeLastMinuteAttendanceOnEnd($resolvedId);
+        }
 
         // 1. Unconditionally terminate ALL active live sessions in SQLite
         try {
@@ -2005,9 +2331,22 @@ class LiveBroadcastController extends Controller
             }
         } catch (\Throwable $e) {}
 
+        $attendance = null;
+        $studentMatric = trim((string) $request->input('matric', ''));
+        if (!$request->boolean('leave') && $studentMatric !== '' && $studentMatric !== 'STUDENT') {
+            $attendance = $this->recordStudentAttendance($id, [
+                'matric' => $studentMatric,
+                'username' => $request->input('username', $studentMatric),
+                'name' => $request->input('name', 'Student'),
+                'department_code' => $request->input('department_code', ''),
+                'level' => $request->input('level', 'ND I'),
+            ]);
+        }
+
         return response()->json([
             'success' => true,
             'viewers_count' => $viewersCount,
+            'attendance' => $attendance,
         ]);
     }
 
@@ -2443,6 +2782,877 @@ class LiveBroadcastController extends Controller
             'Cache-Control' => 'no-cache, no-store, must-revalidate',
             'Pragma' => 'no-cache',
             'Expires' => '0',
+        ]);
+    }
+
+    // =========================================================================
+    // DEPARTMENTAL CLASSROOM STUDENT ROSTER & MATRIC SUBMISSION ENGINE
+    // =========================================================================
+
+    private function findBroadcastById(string $id): ?object
+    {
+        if ($id === '') return null;
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("SELECT * FROM live_broadcasts WHERE id = :id LIMIT 1");
+                $st->execute([':id' => $id]);
+                $row = $st->fetch(\PDO::FETCH_ASSOC);
+                if ($row) return (object) $row;
+            }
+        } catch (\Throwable $e) {}
+
+        try {
+            $row = DB::table('live_broadcasts')->where('id', $id)->first();
+            if ($row) return $row;
+        } catch (\Throwable $e) {}
+
+        return null;
+    }
+
+    private function findStudentInDepartmentRoster(string $identifier, array $deptAliases): ?array
+    {
+        $idClean = strtolower(trim($identifier));
+        if ($idClean === '') return null;
+
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("
+                    SELECT * FROM live_classroom_roster
+                    WHERE LOWER(TRIM(matric_no)) = :id OR LOWER(TRIM(COALESCE(username, ''))) = :id2
+                    ORDER BY status = 'approved' DESC, id DESC
+                ");
+                $st->execute([':id' => $idClean, ':id2' => $idClean]);
+                $rows = $st->fetchAll(\PDO::FETCH_ASSOC);
+                foreach ($rows as $r) {
+                    $rDept = strtoupper(trim((string) ($r['department_code'] ?? '')));
+                    if (empty($deptAliases) || in_array($rDept, $deptAliases, true)) {
+                        return $r;
+                    }
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        try {
+            $rows = DB::table('live_classroom_roster')
+                ->whereRaw('LOWER(TRIM(matric_no)) = ?', [$idClean])
+                ->orWhereRaw('LOWER(TRIM(COALESCE(username, ""))) = ?', [$idClean])
+                ->orderBy('id', 'desc')
+                ->get();
+            foreach ($rows as $r) {
+                $arr = (array) $r;
+                $rDept = strtoupper(trim((string) ($arr['department_code'] ?? '')));
+                if (empty($deptAliases) || in_array($rDept, $deptAliases, true)) {
+                    return $arr;
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        return null;
+    }
+
+    private function fetchDepartmentRosterFromDb(string $deptCode, string $deptName = ''): array
+    {
+        $this->ensureDatabaseTables();
+        $cleanDept = strtoupper(trim($deptCode ?: 'CEM'));
+        $aliases = array_values(array_filter(
+            $this->getDepartmentAliasGroup($cleanDept ?: $deptName),
+            fn($a) => strlen($a) <= 12
+        ));
+        if (!in_array($cleanDept, $aliases, true)) {
+            $aliases[] = $cleanDept;
+        }
+
+        $rosterRows = [];
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                $placeholders = implode(',', array_fill(0, count($aliases), '?'));
+                $st = $pdo->prepare("SELECT * FROM live_classroom_roster WHERE UPPER(department_code) IN ({$placeholders}) ORDER BY id DESC");
+                $st->execute($aliases);
+                $rosterRows = $st->fetchAll(\PDO::FETCH_ASSOC);
+            }
+        } catch (\Throwable $e) {}
+
+        if (empty($rosterRows)) {
+            try {
+                $rosterRows = DB::table('live_classroom_roster')
+                    ->whereIn('department_code', $aliases)
+                    ->orderBy('id', 'desc')
+                    ->get()
+                    ->map(fn($r) => (array) $r)
+                    ->toArray();
+            } catch (\Throwable $e) {}
+        }
+
+        $approved = [];
+        $pending = [];
+        $seenMatrics = [];
+
+        foreach ($rosterRows as $r) {
+            $mKey = strtolower(trim((string) ($r['matric_no'] ?? '')));
+            if ($mKey !== '') $seenMatrics[$mKey] = true;
+            if (strtolower(trim((string) ($r['status'] ?? 'approved'))) === 'pending') {
+                $pending[] = $r;
+            } else {
+                $approved[] = $r;
+            }
+        }
+
+        // Also include existing HOD-registered department students from patrons table so lecturer sees all departmental students
+        try {
+            $pdo = DatabaseService::getPdo();
+            $patronRows = [];
+            if ($pdo) {
+                $st = $pdo->query("SELECT id, name, matric_no, barcode, department, level, pin, status FROM patrons ORDER BY id DESC LIMIT 200");
+                if ($st) $patronRows = $st->fetchAll(\PDO::FETCH_ASSOC);
+            } else {
+                $patronRows = DB::table('patrons')->orderBy('id', 'desc')->take(200)->get()->map(fn($r) => (array) $r)->toArray();
+            }
+
+            foreach ($patronRows as $p) {
+                $pMatric = trim((string) ($p['matric_no'] ?? $p['barcode'] ?? ''));
+                $pDept = trim((string) ($p['department'] ?? ''));
+                $mKey = strtolower($pMatric);
+                if ($pMatric === '' || isset($seenMatrics[$mKey])) continue;
+
+                if ($this->departmentsMatch($cleanDept, $deptName, $pDept, $pMatric)) {
+                    $seenMatrics[$mKey] = true;
+                    $approved[] = [
+                        'id' => 'PATRON-' . ($p['id'] ?? $pMatric),
+                        'department_code' => $cleanDept,
+                        'department_name' => $deptName ?: $pDept,
+                        'matric_no' => $pMatric,
+                        'username' => strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $pMatric)),
+                        'student_name' => $p['name'] ?? 'Department Student',
+                        'password_pin' => $p['pin'] ?? '1234',
+                        'level' => $p['level'] ?? 'ND I',
+                        'status' => 'approved',
+                        'added_by' => 'HOD Department Directory',
+                        'created_at' => null,
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        return [
+            'department_code' => $cleanDept,
+            'department_name' => $deptName,
+            'approved_students' => $approved,
+            'pending_submissions' => $pending,
+            'approved_count' => count($approved),
+            'pending_count' => count($pending),
+        ];
+    }
+
+    /**
+     * GET /api/live-broadcast/roster
+     */
+    public function getDepartmentRoster(Request $request)
+    {
+        $deptCode = strtoupper(trim((string) $request->input('department_code', 'CEM')));
+        $deptName = trim((string) $request->input('department_name', ''));
+
+        return response()->json([
+            'success' => true,
+            'roster' => $this->fetchDepartmentRosterFromDb($deptCode, $deptName),
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    }
+
+    /**
+     * POST /api/live-broadcast/roster/submit-matric
+     * Student submits their Matric No. (and Full Name / Level) so the Lecturer can add them to the department's classroom.
+     */
+    public function submitStudentMatric(Request $request)
+    {
+        $this->ensureDatabaseTables();
+
+        $matricNo = strtoupper(trim((string) $request->input('matric_no', $request->input('identifier', ''))));
+        $studentName = trim((string) $request->input('student_name', $request->input('name', '')));
+        $username = trim((string) $request->input('username', ''));
+        $level = trim((string) $request->input('level', 'ND I'));
+        $broadcastId = trim((string) $request->input('broadcast_id', ''));
+        $deptCode = strtoupper(trim((string) $request->input('department_code', '')));
+        $deptName = trim((string) $request->input('department_name', ''));
+
+        if ($matricNo === '') {
+            return response()->json([
+                'success' => false,
+                'error' => 'Please enter your Matriculation Number to submit to the Lecturer.'
+            ], 422);
+        }
+
+        if ($broadcastId !== '' && $deptCode === '') {
+            $b = $this->findBroadcastById($broadcastId);
+            if ($b) {
+                $deptCode = strtoupper(trim((string) ($b->department_code ?? '')));
+                $deptName = trim((string) ($b->department_name ?? ''));
+            }
+        }
+        if ($deptCode === '' && preg_match('/^LIVE-([A-Z0-9]+)-/i', $broadcastId, $m)) {
+            $deptCode = strtoupper($m[1]);
+        }
+        if ($deptCode === '') {
+            $deptCode = 'CEM';
+        }
+
+        if ($studentName === '') {
+            $studentName = 'Student (' . $matricNo . ')';
+        }
+        if ($username === '') {
+            $username = strtolower(preg_replace('/[^a-zA-Z0-9]/', '_', $matricNo));
+        }
+
+        // Check if already approved in this department
+        $existing = $this->findStudentInDepartmentRoster($matricNo, [$deptCode]);
+        if ($existing && strtolower((string) ($existing['status'] ?? '')) === 'approved') {
+            return response()->json([
+                'success' => true,
+                'already_approved' => true,
+                'message' => "Your Matric No. ({$matricNo}) is already approved by the {$deptCode} Lecturer! You can enter your Matric No. now to join the class.",
+                'submission' => $existing,
+            ]);
+        }
+
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("
+                    INSERT INTO live_classroom_roster
+                    (department_code, department_name, matric_no, username, student_name, password_pin, level, status, added_by, created_at, updated_at)
+                    VALUES (:dc, :dn, :m, :u, :sn, '1234', :lv, 'pending', 'student_submission', NOW(), NOW())
+                    ON DUPLICATE KEY UPDATE
+                    student_name = VALUES(student_name),
+                    username = COALESCE(NULLIF(VALUES(username), ''), username),
+                    level = VALUES(level),
+                    updated_at = NOW()
+                ");
+                $st->execute([
+                    ':dc' => $deptCode,
+                    ':dn' => $deptName ?: $deptCode,
+                    ':m' => $matricNo,
+                    ':u' => $username,
+                    ':sn' => $studentName,
+                    ':lv' => $level,
+                ]);
+            }
+        } catch (\Throwable $e) {}
+
+        try {
+            DB::table('live_classroom_roster')->updateOrInsert(
+                ['department_code' => $deptCode, 'matric_no' => $matricNo],
+                [
+                    'department_name' => $deptName ?: $deptCode,
+                    'username' => $username,
+                    'student_name' => $studentName,
+                    'password_pin' => '1234',
+                    'level' => $level,
+                    'status' => 'pending',
+                    'added_by' => 'student_submission',
+                    'updated_at' => now(),
+                ]
+            );
+        } catch (\Throwable $e) {}
+
+        try {
+            \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+                'action' => 'LIVE_ROSTER_SUBMISSION',
+                'entity' => 'live_classroom_roster',
+                'id' => $matricNo,
+                'title' => "Student Matric Submitted: {$matricNo}",
+                'data' => [
+                    'department_code' => $deptCode,
+                    'matric_no' => $matricNo,
+                    'student_name' => $studentName,
+                    'level' => $level,
+                    'status' => 'pending',
+                ],
+                'source' => 'live_classroom',
+            ]);
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => true,
+            'already_approved' => false,
+            'message' => "Matric No. {$matricNo} submitted to the {$deptCode} Lecturer! Once the Lecturer clicks 'Add / Approve' in the studio, enter your Matric No. to join immediately.",
+            'submission' => [
+                'department_code' => $deptCode,
+                'matric_no' => $matricNo,
+                'username' => $username,
+                'student_name' => $studentName,
+                'level' => $level,
+                'status' => 'pending',
+            ],
+        ]);
+    }
+
+    /**
+     * POST /api/live-broadcast/roster/add-student
+     * Lecturer creates or approves a student with Username, Matric No., and Password for the department's classroom.
+     */
+    public function lecturerAddStudentToRoster(Request $request)
+    {
+        $this->ensureDatabaseTables();
+
+        $deptCode = strtoupper(trim((string) $request->input('department_code', 'CEM')));
+        $deptName = trim((string) $request->input('department_name', $deptCode));
+        $matricNo = strtoupper(trim((string) $request->input('matric_no', '')));
+        $username = trim((string) $request->input('username', ''));
+        $studentName = trim((string) $request->input('student_name', ''));
+        $passwordPin = trim((string) $request->input('password_pin', $request->input('password', '1234')));
+        $level = trim((string) $request->input('level', 'ND I'));
+        $addedBy = trim((string) $request->input('added_by', 'Lecturer'));
+
+        if ($matricNo === '') {
+            return response()->json([
+                'success' => false,
+                'error' => 'Student Matriculation Number is required.'
+            ], 422);
+        }
+
+        if ($username === '') {
+            $username = strtolower(preg_replace('/[^a-zA-Z0-9]/', '_', $matricNo));
+        }
+        if ($studentName === '') {
+            $studentName = $username;
+        }
+        if ($passwordPin === '') {
+            $passwordPin = '1234';
+        }
+
+        // 1. Save in MySQL live_classroom_roster
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("
+                    INSERT INTO live_classroom_roster
+                    (department_code, department_name, matric_no, username, student_name, password_pin, level, status, added_by, created_at, updated_at)
+                    VALUES (:dc, :dn, :m, :u, :sn, :pw, :lv, 'approved', :ab, NOW(), NOW())
+                    ON DUPLICATE KEY UPDATE
+                    department_name = VALUES(department_name),
+                    username = VALUES(username),
+                    student_name = VALUES(student_name),
+                    password_pin = VALUES(password_pin),
+                    level = VALUES(level),
+                    status = 'approved',
+                    added_by = VALUES(added_by),
+                    updated_at = NOW()
+                ");
+                $st->execute([
+                    ':dc' => $deptCode,
+                    ':dn' => $deptName,
+                    ':m' => $matricNo,
+                    ':u' => $username,
+                    ':sn' => $studentName,
+                    ':pw' => $passwordPin,
+                    ':lv' => $level,
+                    ':ab' => $addedBy,
+                ]);
+            }
+        } catch (\Throwable $e) {}
+
+        // 2. Save in SQLite live_classroom_roster
+        try {
+            DB::table('live_classroom_roster')->updateOrInsert(
+                ['department_code' => $deptCode, 'matric_no' => $matricNo],
+                [
+                    'department_name' => $deptName,
+                    'username' => $username,
+                    'student_name' => $studentName,
+                    'password_pin' => $passwordPin,
+                    'level' => $level,
+                    'status' => 'approved',
+                    'added_by' => $addedBy,
+                    'updated_at' => now(),
+                ]
+            );
+        } catch (\Throwable $e) {}
+
+        // 3. Also sync into `patrons` table so the student can log into the Student Portal as well
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                $stP = $pdo->prepare("SELECT id FROM patrons WHERE LOWER(TRIM(COALESCE(matric_no, ''))) = LOWER(:m) LIMIT 1");
+                $stP->execute([':m' => $matricNo]);
+                $existingPatron = $stP->fetch(\PDO::FETCH_ASSOC);
+                if (!$existingPatron) {
+                    $insP = $pdo->prepare("
+                        INSERT INTO patrons (name, email, matric_no, barcode, department, level, role, status, pin, created_at, updated_at)
+                        VALUES (:n, :e, :m, :b, :d, :lv, 'Student', 'Active', :p, NOW(), NOW())
+                    ");
+                    $insP->execute([
+                        ':n' => $studentName,
+                        ':e' => strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $username)) . '@student.fccibadan.edu.ng',
+                        ':m' => $matricNo,
+                        ':b' => $matricNo,
+                        ':d' => $deptName ?: $deptCode,
+                        ':lv' => $level,
+                        ':p' => $passwordPin,
+                    ]);
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        try {
+            \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+                'action' => 'LIVE_ROSTER_APPROVED',
+                'entity' => 'live_classroom_roster',
+                'id' => $matricNo,
+                'title' => "Student Added to {$deptCode} Classroom: {$matricNo}",
+                'data' => [
+                    'department_code' => $deptCode,
+                    'matric_no' => $matricNo,
+                    'username' => $username,
+                    'student_name' => $studentName,
+                    'status' => 'approved',
+                ],
+                'source' => 'live_broadcast_studio',
+            ]);
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => true,
+            'message' => "Student {$studentName} ({$matricNo}) added & approved for {$deptCode} Live Classroom.",
+            'roster' => $this->fetchDepartmentRosterFromDb($deptCode, $deptName),
+        ]);
+    }
+
+    /**
+     * POST /api/live-broadcast/roster/approve-all
+     * Approve all pending student Matric No. submissions for a department
+     */
+    public function lecturerApproveAllPendingRoster(Request $request)
+    {
+        $this->ensureDatabaseTables();
+
+        $deptCode = strtoupper(trim((string) $request->input('department_code', 'CEM')));
+        $deptName = trim((string) $request->input('department_name', $deptCode));
+
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("UPDATE live_classroom_roster SET status = 'approved', updated_at = NOW() WHERE department_code = :d AND status = 'pending'");
+                $st->execute([':d' => $deptCode]);
+            }
+        } catch (\Throwable $e) {}
+
+        try {
+            DB::table('live_classroom_roster')
+                ->where('department_code', $deptCode)
+                ->where('status', 'pending')
+                ->update(['status' => 'approved', 'updated_at' => now()]);
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => true,
+            'message' => "All submitted student Matric Nos. approved for {$deptCode} Live Classroom.",
+            'roster' => $this->fetchDepartmentRosterFromDb($deptCode, $deptName),
+        ]);
+    }
+
+    /**
+     * DELETE /api/live-broadcast/roster/{id}
+     */
+    public function deleteRosterStudent(Request $request, $id)
+    {
+        $this->ensureDatabaseTables();
+        $deptCode = strtoupper(trim((string) $request->input('department_code', 'CEM')));
+        $deptName = trim((string) $request->input('department_name', $deptCode));
+
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                if (is_numeric($id)) {
+                    $pdo->prepare("DELETE FROM live_classroom_roster WHERE id = :id")->execute([':id' => (int) $id]);
+                } else {
+                    $pdo->prepare("DELETE FROM live_classroom_roster WHERE matric_no = :m AND department_code = :d")->execute([':m' => $id, ':d' => $deptCode]);
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        try {
+            if (is_numeric($id)) {
+                DB::table('live_classroom_roster')->where('id', (int) $id)->delete();
+            } else {
+                DB::table('live_classroom_roster')->where('matric_no', $id)->where('department_code', $deptCode)->delete();
+            }
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => true,
+            'roster' => $this->fetchDepartmentRosterFromDb($deptCode, $deptName),
+        ]);
+    }
+
+    // =========================================================================
+    // TWO-PHASE CLASSROOM ATTENDANCE ENGINE (FIRST 10 MINS & LAST MINUTE)
+    // =========================================================================
+
+    /**
+     * Record/update student attendance in `live_classroom_attendance`
+     * - Automatically marks `first_10m_marked = 1` if within the first 10 minutes (600 seconds) of broadcast `started_at` (or if lecturer opened First 10m window).
+     * - Automatically marks `last_min_marked = 1` if the Last-Minute Roll Call window is open or `forceLastMin` is true.
+     */
+    private function recordStudentAttendance(string $broadcastId, array $student, $broadcast = null, bool $forceLastMin = false): array
+    {
+        $this->ensureDatabaseTables();
+
+        $matricNo = strtoupper(trim((string) ($student['matric'] ?? $student['matric_no'] ?? '')));
+        if ($matricNo === '') {
+            return [];
+        }
+
+        if (!$broadcast) {
+            $broadcast = $this->findBroadcastById($broadcastId);
+        }
+
+        $deptCode = strtoupper(trim((string) ($broadcast->department_code ?? $student['department_code'] ?? 'CEM')));
+        $courseCode = trim((string) ($broadcast->course_code ?? ''));
+        $studentName = trim((string) ($student['name'] ?? $student['student_name'] ?? 'Student'));
+        $username = trim((string) ($student['username'] ?? $matricNo));
+        $level = trim((string) ($student['level'] ?? 'ND I'));
+
+        $elapsedSeconds = 0;
+        if ($broadcast && !empty($broadcast->started_at)) {
+            try {
+                $elapsedSeconds = max(0, (int) Carbon::now()->diffInSeconds(Carbon::parse($broadcast->started_at)));
+            } catch (\Throwable $e) {
+                $elapsedSeconds = 0;
+            }
+        }
+
+        // Check if within First 10 Minutes (0..600s) OR lecturer manually re-opened first_10m window
+        $first10mOverrideUntil = (int) ($this->getSettingValue('fcc_att_first10m_until_' . $broadcastId) ?: 0);
+        $isFirst10mWindow = ($elapsedSeconds <= 600) || (time() <= $first10mOverrideUntil);
+
+        // Check if Last Minute Roll-Call Window is active (triggered by lecturer or scheduled final minute)
+        $lastMinActiveFlag = $this->getSettingValue('fcc_att_lastmin_open_' . $broadcastId) === '1';
+        $scheduledDurationMins = (int) ($this->getSettingValue('fcc_att_duration_mins_' . $broadcastId) ?: 0);
+        $isScheduledLastMinute = ($scheduledDurationMins > 0 && $elapsedSeconds >= (($scheduledDurationMins - 1) * 60));
+        $isLastMinWindow = $forceLastMin || $lastMinActiveFlag || $isScheduledLastMinute;
+
+        // Fetch existing attendance row if any
+        $existing = null;
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("SELECT * FROM live_classroom_attendance WHERE broadcast_id = :bid AND UPPER(TRIM(matric_no)) = :m LIMIT 1");
+                $st->execute([':bid' => $broadcastId, ':m' => $matricNo]);
+                $row = $st->fetch(\PDO::FETCH_ASSOC);
+                if ($row) $existing = $row;
+            }
+        } catch (\Throwable $e) {}
+
+        if (!$existing) {
+            try {
+                $row = DB::table('live_classroom_attendance')
+                    ->where('broadcast_id', $broadcastId)
+                    ->whereRaw('UPPER(TRIM(matric_no)) = ?', [$matricNo])
+                    ->first();
+                if ($row) $existing = (array) $row;
+            } catch (\Throwable $e) {}
+        }
+
+        $nowStr = now()->toDateTimeString();
+        $firstJoinedAt = $existing['first_joined_at'] ?? $nowStr;
+        $first10mMarked = !empty($existing['first_10m_marked']) ? 1 : ($isFirst10mWindow ? 1 : 0);
+        $first10mAt = $existing['first_10m_marked_at'] ?? ($first10mMarked ? $nowStr : null);
+
+        $lastMinMarked = !empty($existing['last_min_marked']) ? 1 : ($isLastMinWindow ? 1 : 0);
+        $lastMinAt = $existing['last_min_marked_at'] ?? ($lastMinMarked ? $nowStr : null);
+
+        if ($first10mMarked && $lastMinMarked) {
+            $attStatus = 'COMPLETE';
+        } elseif ($first10mMarked) {
+            $attStatus = 'FIRST_10M_MARKED';
+        } elseif ($lastMinMarked) {
+            $attStatus = 'LAST_MIN_ONLY';
+        } else {
+            $attStatus = 'JOINED_LATE';
+        }
+
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("
+                    INSERT INTO live_classroom_attendance
+                    (broadcast_id, department_code, course_code, matric_no, username, student_name, level, first_joined_at, last_seen_at, first_10m_marked, first_10m_marked_at, last_min_marked, last_min_marked_at, attendance_status, created_at, updated_at)
+                    VALUES (:bid, :dc, :cc, :m, :u, :sn, :lv, :fja, NOW(), :f10, :f10at, :lm, :lmat, :st, NOW(), NOW())
+                    ON DUPLICATE KEY UPDATE
+                    last_seen_at = NOW(),
+                    first_10m_marked = GREATEST(first_10m_marked, VALUES(first_10m_marked)),
+                    first_10m_marked_at = COALESCE(first_10m_marked_at, VALUES(first_10m_marked_at)),
+                    last_min_marked = GREATEST(last_min_marked, VALUES(last_min_marked)),
+                    last_min_marked_at = COALESCE(last_min_marked_at, VALUES(last_min_marked_at)),
+                    attendance_status = VALUES(attendance_status),
+                    updated_at = NOW()
+                ");
+                $st->execute([
+                    ':bid' => $broadcastId,
+                    ':dc' => $deptCode,
+                    ':cc' => $courseCode,
+                    ':m' => $matricNo,
+                    ':u' => $username,
+                    ':sn' => $studentName,
+                    ':lv' => $level,
+                    ':fja' => $firstJoinedAt,
+                    ':f10' => $first10mMarked,
+                    ':f10at' => $first10mAt,
+                    ':lm' => $lastMinMarked,
+                    ':lmat' => $lastMinAt,
+                    ':st' => $attStatus,
+                ]);
+            }
+        } catch (\Throwable $e) {}
+
+        try {
+            DB::table('live_classroom_attendance')->updateOrInsert(
+                ['broadcast_id' => $broadcastId, 'matric_no' => $matricNo],
+                [
+                    'department_code' => $deptCode,
+                    'course_code' => $courseCode,
+                    'username' => $username,
+                    'student_name' => $studentName,
+                    'level' => $level,
+                    'first_joined_at' => $firstJoinedAt,
+                    'last_seen_at' => $nowStr,
+                    'first_10m_marked' => (bool) $first10mMarked,
+                    'first_10m_marked_at' => $first10mAt,
+                    'last_min_marked' => (bool) $lastMinMarked,
+                    'last_min_marked_at' => $lastMinAt,
+                    'attendance_status' => $attStatus,
+                    'updated_at' => $nowStr,
+                ]
+            );
+        } catch (\Throwable $e) {}
+
+        return [
+            'broadcast_id' => $broadcastId,
+            'matric_no' => $matricNo,
+            'student_name' => $studentName,
+            'first_joined_at' => $firstJoinedAt,
+            'last_seen_at' => $nowStr,
+            'first_10m_marked' => (bool) $first10mMarked,
+            'first_10m_marked_at' => $first10mAt,
+            'last_min_marked' => (bool) $lastMinMarked,
+            'last_min_marked_at' => $lastMinAt,
+            'attendance_status' => $attStatus,
+            'first_10m_window_open' => $isFirst10mWindow,
+            'last_min_window_open' => $isLastMinWindow,
+            'elapsed_seconds' => $elapsedSeconds,
+        ];
+    }
+
+    /**
+     * Automatically mark Last-Minute Attendance for all students active in the final minute when broadcast ends
+     */
+    private function finalizeLastMinuteAttendanceOnEnd(string $broadcastId): void
+    {
+        $nowStr = now()->toDateTimeString();
+        $cutoffStr = Carbon::now()->subSeconds(120)->toDateTimeString();
+
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("
+                    UPDATE live_classroom_attendance
+                    SET last_min_marked = 1,
+                        last_min_marked_at = COALESCE(last_min_marked_at, NOW()),
+                        attendance_status = CASE WHEN first_10m_marked = 1 THEN 'COMPLETE' ELSE 'LAST_MIN_ONLY' END,
+                        updated_at = NOW()
+                    WHERE broadcast_id = :bid AND (last_seen_at >= :cutoff OR last_min_marked = 1)
+                ");
+                $st->execute([':bid' => $broadcastId, ':cutoff' => $cutoffStr]);
+            }
+        } catch (\Throwable $e) {}
+
+        try {
+            $rows = DB::table('live_classroom_attendance')
+                ->where('broadcast_id', $broadcastId)
+                ->get();
+            foreach ($rows as $r) {
+                $activeInFinalMin = !empty($r->last_min_marked) || (!empty($r->last_seen_at) && $r->last_seen_at >= $cutoffStr);
+                if ($activeInFinalMin) {
+                    $status = !empty($r->first_10m_marked) ? 'COMPLETE' : 'LAST_MIN_ONLY';
+                    DB::table('live_classroom_attendance')
+                        ->where('id', $r->id)
+                        ->update([
+                            'last_min_marked' => true,
+                            'last_min_marked_at' => $r->last_min_marked_at ?: $nowStr,
+                            'attendance_status' => $status,
+                            'updated_at' => $nowStr,
+                        ]);
+                }
+            }
+        } catch (\Throwable $e) {}
+    }
+
+    private function buildAttendancePayload(string $broadcastId): array
+    {
+        $this->ensureDatabaseTables();
+        $broadcast = $this->findBroadcastById($broadcastId);
+
+        $elapsedSeconds = 0;
+        if ($broadcast && !empty($broadcast->started_at)) {
+            try {
+                $elapsedSeconds = max(0, (int) Carbon::now()->diffInSeconds(Carbon::parse($broadcast->started_at)));
+            } catch (\Throwable $e) {
+                $elapsedSeconds = 0;
+            }
+        }
+
+        $first10mOverrideUntil = (int) ($this->getSettingValue('fcc_att_first10m_until_' . $broadcastId) ?: 0);
+        $isFirst10mWindow = ($elapsedSeconds <= 600) || (time() <= $first10mOverrideUntil);
+        $first10mRemaining = $elapsedSeconds <= 600
+            ? (600 - $elapsedSeconds)
+            : max(0, $first10mOverrideUntil - time());
+
+        $lastMinActiveFlag = $this->getSettingValue('fcc_att_lastmin_open_' . $broadcastId) === '1';
+
+        $records = [];
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("SELECT * FROM live_classroom_attendance WHERE broadcast_id = :bid ORDER BY first_joined_at ASC");
+                $st->execute([':bid' => $broadcastId]);
+                $records = $st->fetchAll(\PDO::FETCH_ASSOC);
+            }
+        } catch (\Throwable $e) {}
+
+        if (empty($records)) {
+            try {
+                $records = DB::table('live_classroom_attendance')
+                    ->where('broadcast_id', $broadcastId)
+                    ->orderBy('first_joined_at', 'asc')
+                    ->get()
+                    ->map(fn($r) => (array) $r)
+                    ->toArray();
+            } catch (\Throwable $e) {}
+        }
+
+        $first10mCount = 0;
+        $lastMinCount = 0;
+        $completeCount = 0;
+
+        foreach ($records as &$rec) {
+            $rec['first_10m_marked'] = (bool) ($rec['first_10m_marked'] ?? false);
+            $rec['last_min_marked'] = (bool) ($rec['last_min_marked'] ?? false);
+            if ($rec['first_10m_marked']) $first10mCount++;
+            if ($rec['last_min_marked']) $lastMinCount++;
+            if ($rec['first_10m_marked'] && $rec['last_min_marked']) {
+                $rec['attendance_status'] = 'COMPLETE';
+                $completeCount++;
+            }
+        }
+
+        return [
+            'broadcast_id' => $broadcastId,
+            'elapsed_seconds' => $elapsedSeconds,
+            'first_10m_window_open' => $isFirst10mWindow,
+            'first_10m_remaining_seconds' => $first10mRemaining,
+            'last_min_window_open' => $lastMinActiveFlag,
+            'records' => $records,
+            'summary' => [
+                'total_joined' => count($records),
+                'first_10m_count' => $first10mCount,
+                'last_min_count' => $lastMinCount,
+                'complete_count' => $completeCount,
+            ],
+        ];
+    }
+
+    /**
+     * GET /api/live-broadcast/{id}/attendance
+     */
+    public function getBroadcastAttendance(Request $request, $id)
+    {
+        return response()->json(array_merge(
+            ['success' => true],
+            $this->buildAttendancePayload((string) $id)
+        ))->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    }
+
+    /**
+     * POST /api/live-broadcast/{id}/attendance/window
+     * Allows Lecturer in Studio to trigger Last-Minute Roll Call (marking all active students)
+     * or extend First 10-Minute Attendance Window.
+     */
+    public function toggleAttendanceWindow(Request $request, $id)
+    {
+        $this->ensureDatabaseTables();
+        $mode = trim((string) $request->input('mode', 'last_minute')); // 'last_minute' | 'first_10m'
+
+        if ($mode === 'first_10m') {
+            $until = time() + 600; // Open First 10-Min window for 10 more minutes
+            $this->setSettingValue('fcc_att_first10m_until_' . $id, (string) $until, 'LiveBroadcast', "First 10m attendance window for {$id}");
+            // Also mark all currently connected students as first_10m_marked = 1
+            $cutoffStr = Carbon::now()->subSeconds(120)->toDateTimeString();
+            try {
+                $pdo = DatabaseService::getPdo();
+                if ($pdo) {
+                    $pdo->prepare("
+                        UPDATE live_classroom_attendance
+                        SET first_10m_marked = 1,
+                            first_10m_marked_at = COALESCE(first_10m_marked_at, NOW()),
+                            attendance_status = CASE WHEN last_min_marked = 1 THEN 'COMPLETE' ELSE 'FIRST_10M_MARKED' END,
+                            updated_at = NOW()
+                        WHERE broadcast_id = :bid AND last_seen_at >= :cutoff
+                    ")->execute([':bid' => $id, ':cutoff' => $cutoffStr]);
+                }
+            } catch (\Throwable $e) {}
+
+            try {
+                DB::table('live_classroom_attendance')
+                    ->where('broadcast_id', $id)
+                    ->where('last_seen_at', '>=', $cutoffStr)
+                    ->update([
+                        'first_10m_marked' => true,
+                        'first_10m_marked_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+            } catch (\Throwable $e) {}
+        } else {
+            // Activate Last-Minute Attendance Window & immediately mark all currently present students
+            $open = $request->has('open') ? $request->boolean('open') : true;
+            $this->setSettingValue('fcc_att_lastmin_open_' . $id, $open ? '1' : '0', 'LiveBroadcast', "Last-minute attendance roll call for {$id}");
+            if ($open) {
+                $this->finalizeLastMinuteAttendanceOnEnd((string) $id);
+            }
+        }
+
+        return response()->json(array_merge(
+            [
+                'success' => true,
+                'message' => $mode === 'first_10m'
+                    ? 'First 10-Minute Attendance Window activated and active students marked.'
+                    : 'Last-Minute Attendance Roll Call activated! All currently present students have been marked.',
+            ],
+            $this->buildAttendancePayload((string) $id)
+        ));
+    }
+
+    /**
+     * POST /api/live-broadcast/{id}/attendance/mark
+     * Student check-in endpoint for First 10-Minute and Last-Minute Attendance
+     */
+    public function markStudentAttendanceEndpoint(Request $request, $id)
+    {
+        $this->ensureDatabaseTables();
+
+        $student = [
+            'matric' => $request->input('matric', $request->input('matric_no', '')),
+            'username' => $request->input('username', ''),
+            'name' => $request->input('name', $request->input('student_name', 'Student')),
+            'department_code' => $request->input('department_code', ''),
+            'level' => $request->input('level', 'ND I'),
+        ];
+
+        $att = $this->recordStudentAttendance((string) $id, $student, null, $request->boolean('last_minute'));
+
+        return response()->json([
+            'success' => true,
+            'attendance' => $att,
         ]);
     }
 }

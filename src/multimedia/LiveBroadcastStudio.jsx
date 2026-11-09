@@ -4,7 +4,8 @@ import {
   MessageSquare, Globe, Share2, Sparkles, Send, ShieldCheck,
   CheckCircle2, AlertTriangle, Play, Square, RefreshCw, Hand,
   Layers, HardDrive, KeyRound, ExternalLink, Sliders, Volume2,
-  Database, BookOpen, FileUp, FileText, Trash2, Save, Clock, Eye
+  Database, BookOpen, FileUp, FileText, Trash2, Save, Clock, Eye,
+  UserPlus, ClipboardCheck, Download, Check, Lock, UserCheck
 } from 'lucide-react';
 import { getApiBase } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
@@ -66,6 +67,36 @@ export default function LiveBroadcastStudio({
   const [newChatText, setNewChatText] = useState('');
   const [raisedHands, setRaisedHands] = useState(0);
   const [broadcastHistory, setBroadcastHistory] = useState([]);
+
+  // Departmental Classroom Roster & Student Matric Submissions (hydrated from live_classroom_roster table)
+  const [classroomRoster, setClassroomRoster] = useState({
+    approved_students: [],
+    pending_submissions: [],
+    total_approved: 0,
+    total_pending: 0
+  });
+  const [newRosterMatric, setNewRosterMatric] = useState('');
+  const [newRosterUsername, setNewRosterUsername] = useState('');
+  const [newRosterName, setNewRosterName] = useState('');
+  const [newRosterPin, setNewRosterPin] = useState('');
+  const [newRosterLevel, setNewRosterLevel] = useState('ND I');
+  const [isAddingRosterStudent, setIsAddingRosterStudent] = useState(false);
+  const [rosterNotice, setRosterNotice] = useState('');
+
+  // Two-Phase Class Attendance (First 10 Minutes & Last Minute of Class)
+  const [attendanceData, setAttendanceData] = useState({
+    records: [],
+    summary: {
+      total_joined: 0,
+      first_10m_count: 0,
+      last_min_count: 0,
+      complete_count: 0
+    },
+    elapsed_seconds: 0,
+    first_10m_window_open: true,
+    last_minute_window_open: false
+  });
+  const [isTogglingAttendanceWindow, setIsTogglingAttendanceWindow] = useState(false);
 
   // Media references
   const liveVideoRef = useRef(null);
@@ -172,6 +203,14 @@ export default function LiveBroadcastStudio({
 
         if (Array.isArray(data.broadcast_history)) {
           setBroadcastHistory(data.broadcast_history);
+        }
+
+        if (data.classroom_roster) {
+          setClassroomRoster(data.classroom_roster);
+        }
+
+        if (data.attendance) {
+          setAttendanceData(data.attendance);
         }
 
         setDbSyncStatus('connected');
@@ -742,7 +781,52 @@ export default function LiveBroadcastStudio({
     };
   }, [isLive, broadcastId]);
 
-  // Poll Chat Messages & Accurate Viewer Count from Database when live
+  // Poll Chat Messages, Departmental Roster & Two-Phase Attendance from Database
+  useEffect(() => {
+    const fetchRosterAndAttendance = async () => {
+      try {
+        const base = getApiBase();
+        if (deptCode) {
+          const rRes = await fetch(
+            `${base}/live-broadcast/roster?department_code=${encodeURIComponent(deptCode)}&broadcast_id=${encodeURIComponent(broadcastId || '')}`
+          );
+          if (rRes.ok) {
+            const rJson = await rRes.json();
+            if (rJson && Array.isArray(rJson.approved_students)) {
+              setClassroomRoster(rJson);
+            }
+          }
+        }
+        if (broadcastId) {
+          const aRes = await fetch(`${base}/live-broadcast/${encodeURIComponent(broadcastId)}/attendance`);
+          if (aRes.ok) {
+            const aJson = await aRes.json();
+            if (aJson && Array.isArray(aJson.records)) {
+              setAttendanceData(aJson);
+            }
+          }
+        }
+      } catch (e) {}
+    };
+
+    fetchRosterAndAttendance();
+    const rosterInterval = setInterval(fetchRosterAndAttendance, 4000);
+
+    const unsubRealtime = subscribeRealtimeEvents((evt) => {
+      if (
+        evt &&
+        ['LIVE_ROSTER_MATRIC_SUBMITTED', 'LIVE_ROSTER_STUDENT_ADDED', 'LIVE_ATTENDANCE_WINDOW_UPDATED'].includes(evt.action)
+      ) {
+        fetchRosterAndAttendance();
+      }
+    });
+
+    return () => {
+      clearInterval(rosterInterval);
+      if (typeof unsubRealtime === 'function') unsubRealtime();
+    };
+  }, [deptCode, broadcastId, isLive]);
+
   useEffect(() => {
     if (!isLive || !broadcastId) return;
 
@@ -768,6 +852,205 @@ export default function LiveBroadcastStudio({
     const interval = setInterval(pollChat, 3000);
     return () => clearInterval(interval);
   }, [isLive, broadcastId]);
+
+  // Switch Organizing Department from Database (ensures link code LIVE-{DEPT}-... matches organizing department)
+  const handleSwitchDepartment = (selectedDeptCode) => {
+    if (!selectedDeptCode) return;
+    const matchedDept = dbDepartments.find(d => d.code === selectedDeptCode);
+    const nextCode = matchedDept?.code || selectedDeptCode;
+    const nextName = matchedDept?.name || deptName;
+    const nextLecturer = matchedDept?.hod_name || lecturerName;
+
+    setDeptCode(nextCode);
+    setDeptName(nextName);
+    if (matchedDept?.hod_name) setLecturerName(nextLecturer);
+    sounds.playClick();
+    fetchStudioContext(nextCode);
+  };
+
+  // Lecturer adds or creates a Student (Matric No. + Username + Password/PIN + Full Name + Level) in the Departmental Roster
+  const handleAddOrApproveStudent = async (e) => {
+    e.preventDefault();
+    if (!newRosterMatric.trim() && !newRosterUsername.trim()) {
+      setRosterNotice('Please enter the student Matric No. (or Username) to add them to the classroom.');
+      return;
+    }
+
+    setIsAddingRosterStudent(true);
+    setRosterNotice('');
+    try {
+      const base = getApiBase();
+      const res = await fetch(`${base}/live-broadcast/roster/add-student`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          broadcast_id: broadcastId || '',
+          department_code: deptCode,
+          department_name: deptName,
+          matric_no: newRosterMatric.trim() || newRosterUsername.trim(),
+          username: newRosterUsername.trim() || newRosterMatric.trim(),
+          student_name: newRosterName.trim() || `${deptCode} Classroom Student`,
+          password_pin: newRosterPin.trim(),
+          level: newRosterLevel || targetLevel || 'ND I',
+          added_by_lecturer: lecturerName || deptName
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        sounds.playSuccessChime();
+        if (data.roster) setClassroomRoster(data.roster);
+        setNewRosterMatric('');
+        setNewRosterUsername('');
+        setNewRosterName('');
+        setNewRosterPin('');
+        setRosterNotice(data.message || 'Student added to departmental classroom roster.');
+      } else {
+        setRosterNotice(data.error || 'Could not add student to roster.');
+      }
+    } catch (err) {
+      setRosterNotice('Network error adding student to classroom roster.');
+    } finally {
+      setIsAddingRosterStudent(false);
+    }
+  };
+
+  // 1-Click Approve a Student who submitted their Matric No.
+  const handleQuickApprovePendingStudent = async (pendingStudent) => {
+    try {
+      const base = getApiBase();
+      const res = await fetch(`${base}/live-broadcast/roster/add-student`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          broadcast_id: broadcastId || '',
+          department_code: deptCode,
+          department_name: deptName,
+          matric_no: pendingStudent.matric_no,
+          username: pendingStudent.username || pendingStudent.matric_no,
+          student_name: pendingStudent.student_name,
+          password_pin: pendingStudent.password_pin || '',
+          level: pendingStudent.level || targetLevel || 'ND I',
+          added_by_lecturer: lecturerName || deptName
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.roster) {
+        sounds.playSuccessChime();
+        setClassroomRoster(data.roster);
+        setRosterNotice(`Approved ${pendingStudent.student_name} (${pendingStudent.matric_no}) to join ${deptCode} classroom.`);
+      }
+    } catch (e) {}
+  };
+
+  // Bulk Approve All Pending Student Matric Submissions
+  const handleApproveAllPendingSubmissions = async () => {
+    try {
+      const base = getApiBase();
+      const res = await fetch(`${base}/live-broadcast/roster/approve-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          broadcast_id: broadcastId || '',
+          department_code: deptCode,
+          lecturer_name: lecturerName || deptName
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.roster) {
+        sounds.playSuccessChime();
+        setClassroomRoster(data.roster);
+        setRosterNotice(data.message || 'All submitted student Matric Nos. approved.');
+      }
+    } catch (e) {}
+  };
+
+  // Remove a student from the classroom roster
+  const handleDeleteRosterStudent = async (rosterId) => {
+    try {
+      const base = getApiBase();
+      const res = await fetch(`${base}/live-broadcast/roster/${rosterId}`, { method: 'DELETE' });
+      if (res.ok) {
+        sounds.playClick();
+        setClassroomRoster(prev => ({
+          ...prev,
+          approved_students: (prev.approved_students || []).filter(s => s.id !== rosterId),
+          pending_submissions: (prev.pending_submissions || []).filter(s => s.id !== rosterId)
+        }));
+      }
+    } catch (e) {}
+  };
+
+  // Toggle First 10-Min Window or Trigger Last-Minute Attendance Roll Call
+  const handleToggleAttendanceWindow = async (mode = 'last_minute', openState = true) => {
+    if (!broadcastId) {
+      alert('Start the live broadcast first to control live class attendance windows.');
+      return;
+    }
+    setIsTogglingAttendanceWindow(true);
+    try {
+      const base = getApiBase();
+      const res = await fetch(`${base}/live-broadcast/${encodeURIComponent(broadcastId)}/attendance/window`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode, open: openState })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.attendance) {
+        sounds.playSuccessChime();
+        setAttendanceData(data.attendance);
+      }
+    } catch (e) {} finally {
+      setIsTogglingAttendanceWindow(false);
+    }
+  };
+
+  // Export Live Classroom Attendance Register (First 10 Mins & Last Minute) as CSV
+  const handleExportAttendanceCsv = () => {
+    const records = attendanceData?.records || [];
+    if (records.length === 0) {
+      alert('No student attendance records to export yet.');
+      return;
+    }
+    const headers = [
+      'Broadcast Code',
+      'Department',
+      'Course Code',
+      'Matric No',
+      'Student Name',
+      'Level',
+      'Joined At',
+      'First 10 Mins Marked',
+      'First 10 Mins Timestamp',
+      'Last Minute Marked',
+      'Last Minute Timestamp',
+      'Final Attendance Status'
+    ];
+    const rows = records.map(r => [
+      r.broadcast_id || broadcastId || '',
+      r.department_code || deptCode || '',
+      courseCode || '',
+      r.matric_no || '',
+      `"${String(r.student_name || '').replace(/"/g, '""')}"`,
+      r.level || '',
+      r.joined_at || '',
+      Number(r.first_10m_marked) ? 'YES (PRESENT)' : 'NO (LATE)',
+      r.first_10m_at || '-',
+      Number(r.last_min_marked) ? 'YES (PRESENT)' : 'NO',
+      r.last_min_at || '-',
+      r.attendance_status || (Number(r.first_10m_marked) && Number(r.last_min_marked) ? 'COMPLETE' : 'PARTIAL')
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Attendance_${broadcastId || deptCode}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    sounds.playSuccessChime();
+  };
 
   // Select a Curriculum Course from Database dropdown
   const handleSelectCurriculumCourse = (selectedCode) => {
@@ -1577,6 +1860,57 @@ export default function LiveBroadcastStudio({
               </button>
             </div>
 
+            {/* ORGANIZING DEPARTMENT SELECTOR (FETCHED FROM DATABASE) & DEPARTMENTAL LINK CODE */}
+            <div className="p-3 rounded-xl bg-[#021d13] border border-cyan-800/80 space-y-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-mono text-cyan-300 font-bold flex items-center gap-1">
+                    <Lock size={11} />
+                    <span>Organizing Department (Database Fetched):</span>
+                  </label>
+                  <select
+                    value={deptCode}
+                    disabled={isLive}
+                    onChange={(e) => handleSwitchDepartment(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-xl bg-[#01140d] border border-cyan-700 text-white font-bold text-xs focus:outline-none disabled:opacity-60"
+                  >
+                    {dbDepartments.map(d => (
+                      <option key={d.code} value={d.code}>
+                        {d.code} — {d.name} {d.hod_name ? `(${d.hod_name})` : ''}
+                      </option>
+                    ))}
+                    {dbDepartments.length === 0 && (
+                      <option value={deptCode || 'CSC'}>{deptCode || 'CSC'} — {deptName || 'Department'}</option>
+                    )}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] font-mono text-slate-400 block">
+                    Department-Based Classroom Link Code:
+                  </span>
+                  <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-black/60 border border-emerald-700/80 font-mono text-[11px] text-emerald-300">
+                    <span className="truncate font-bold">
+                      {broadcastId || `LIVE-${(deptCode || 'CSC').toUpperCase()}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-XXXX`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyClassroomLink}
+                      className="text-cyan-300 hover:text-white text-[10px] font-bold shrink-0 cursor-pointer"
+                    >
+                      {copiedClassroomLink ? 'Copied ✓' : 'Copy Link'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="text-[10px] font-mono text-amber-300/90 flex items-center gap-1.5">
+                <ShieldCheck size={12} className="text-emerald-400 shrink-0" />
+                <span>
+                  Strict Departmental Access Control Active: Only students of <strong>{deptName} ({deptCode})</strong> and Matric Nos. added/approved by the lecturer below can join this classroom.
+                </span>
+              </div>
+            </div>
+
             {/* CURRICULUM COURSE SELECTOR FROM DATABASE + LEVEL */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="sm:col-span-2 space-y-1">
@@ -1854,6 +2188,423 @@ export default function LiveBroadcastStudio({
                 <Send size={14} />
               </button>
             </form>
+          </div>
+        </div>
+      </div>
+
+      {/* ===================================================================== */}
+      {/* DEPARTMENTAL STUDENT ROSTER (MATRIC NO. SUBMISSIONS & CREDENTIALS)     */}
+      {/* + TWO-PHASE AUTOMATIC CLASS ATTENDANCE (FIRST 10 MINS & LAST MINUTE)  */}
+      {/* ===================================================================== */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* LEFT 6 COLS: LECTURER STUDENT ROSTER & MATRIC NO. SUBMISSIONS MANAGER */}
+        <div className="lg:col-span-6 p-4 sm:p-5 rounded-2xl bg-[#01140d] border-2 border-cyan-700/80 space-y-4 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-cyan-900/80 pb-3">
+            <div>
+              <div className="text-xs font-black text-cyan-300 uppercase tracking-wide font-mono flex items-center gap-1.5">
+                <UserPlus size={14} />
+                <span>{deptCode} Classroom Student Roster &amp; Matric No. Manager</span>
+              </div>
+              <p className="text-[11px] text-slate-300 mt-0.5">
+                Create student credentials (Username, Matric No. &amp; Password) or approve Matric Nos. submitted by <strong>{deptName} ({deptCode})</strong> students so they can enter the classroom by Matric No.
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 font-mono text-[10px]">
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold">
+                {classroomRoster.approved_students?.length || 0} Approved
+              </span>
+              {(classroomRoster.pending_submissions?.length || 0) > 0 && (
+                <span className="px-2.5 py-1 rounded-lg bg-amber-950 text-amber-300 border border-amber-500 font-bold animate-pulse">
+                  {classroomRoster.pending_submissions.length} Submitted Matric Waiting
+                </span>
+              )}
+            </div>
+          </div>
+
+          {rosterNotice && (
+            <div className="p-2.5 rounded-xl bg-emerald-950/90 border border-emerald-600 text-emerald-200 text-[11px] font-mono flex items-center justify-between gap-2">
+              <span>✓ {rosterNotice}</span>
+              <button
+                type="button"
+                onClick={() => setRosterNotice('')}
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* PENDING STUDENT MATRIC SUBMISSIONS QUEUE */}
+          {(classroomRoster.pending_submissions?.length || 0) > 0 && (
+            <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-600/80 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-mono font-bold text-amber-300 flex items-center gap-1.5">
+                  <Sparkles size={12} />
+                  <span>Students Submitting Matric No. to Join ({classroomRoster.pending_submissions.length})</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleApproveAllPendingSubmissions}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[10px] font-bold cursor-pointer transition shadow"
+                >
+                  ✓ Approve &amp; Add All ({classroomRoster.pending_submissions.length})
+                </button>
+              </div>
+              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                {classroomRoster.pending_submissions.map((item) => (
+                  <div
+                    key={item.id || item.matric_no}
+                    className="p-2 rounded-lg bg-black/60 border border-amber-700/60 flex items-center justify-between gap-2"
+                  >
+                    <div className="min-w-0">
+                      <span className="font-mono font-bold text-amber-200">{item.matric_no}</span>
+                      <span className="text-slate-300 ml-2">{item.student_name}</span>
+                      <span className="text-[10px] font-mono text-cyan-300 ml-2">({item.level || 'ND I'})</span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleQuickApprovePendingStudent(item)}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Check size={11} />
+                        <span>Add to Class</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRosterStudent(item.id)}
+                        className="p-1 rounded-lg bg-rose-950 hover:bg-rose-900 text-rose-300 cursor-pointer"
+                        title="Reject / Remove"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* LECTURER FORM: CREATE STUDENT USERNAME, MATRIC NO. & PASSWORD FOR CLASSROOM */}
+          <form onSubmit={handleAddOrApproveStudent} className="p-3 rounded-xl bg-[#021d13] border border-cyan-900/90 space-y-2.5">
+            <div className="text-[11px] font-mono font-bold text-cyan-200 flex items-center gap-1.5">
+              <KeyRound size={12} className="text-cyan-400" />
+              <span>Create / Add Student Credential (Matric No., Username &amp; Password) for {deptCode} Class:</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] font-mono text-slate-400 block">Student Matric No. * (Used to Join Class)</label>
+                <input
+                  type="text"
+                  required
+                  value={newRosterMatric}
+                  onChange={(e) => setNewRosterMatric(e.target.value)}
+                  placeholder={`e.g. FCC/${deptCode || 'CSC'}/ND1/001`}
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-[#01140d] border border-cyan-700 text-white font-mono text-xs focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-mono text-slate-400 block">Username (Optional Login Alias)</label>
+                <input
+                  type="text"
+                  value={newRosterUsername}
+                  onChange={(e) => setNewRosterUsername(e.target.value)}
+                  placeholder="e.g. csc_student01 (or defaults to Matric)"
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-[#01140d] border border-cyan-800 text-white font-mono text-xs focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div>
+                <label className="text-[10px] font-mono text-slate-400 block">Student Full Name</label>
+                <input
+                  type="text"
+                  value={newRosterName}
+                  onChange={(e) => setNewRosterName(e.target.value)}
+                  placeholder="e.g. Adebayo Tunde"
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-[#01140d] border border-cyan-800 text-white text-xs focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-mono text-slate-400 block">Password / PIN (Optional)</label>
+                <input
+                  type="text"
+                  value={newRosterPin}
+                  onChange={(e) => setNewRosterPin(e.target.value)}
+                  placeholder="e.g. 1234 (Leave blank for Matric-only)"
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-[#01140d] border border-cyan-800 text-white font-mono text-xs focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-mono text-slate-400 block">Academic Level</label>
+                <select
+                  value={newRosterLevel}
+                  onChange={(e) => setNewRosterLevel(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-[#01140d] border border-cyan-800 text-white font-mono text-xs focus:outline-none"
+                >
+                  <option value="ND I">ND I</option>
+                  <option value="ND II">ND II</option>
+                  <option value="HND I">HND I</option>
+                  <option value="HND II">HND II</option>
+                </select>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isAddingRosterStudent}
+              className="w-full py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow cursor-pointer disabled:opacity-50"
+            >
+              <UserPlus size={14} />
+              <span>
+                {isAddingRosterStudent
+                  ? 'Adding Student to Departmental Classroom...'
+                  : `Add Student to ${deptCode} Classroom Roster`}
+              </span>
+            </button>
+          </form>
+
+          {/* APPROVED CLASSROOM ROSTER LIST */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+              <span>Approved {deptCode} Students Authorized to Join by Matric No. ({classroomRoster.approved_students?.length || 0}):</span>
+              <span>Department: {deptCode}</span>
+            </div>
+            <div className="max-h-44 overflow-y-auto space-y-1 pr-1">
+              {(classroomRoster.approved_students || []).length === 0 ? (
+                <div className="py-6 text-center text-slate-500 font-mono text-[11px] border border-dashed border-slate-800 rounded-xl">
+                  No custom roster students added yet. Registered {deptCode} students in the database can join directly, or add/approve student Matric Nos. above.
+                </div>
+              ) : (
+                classroomRoster.approved_students.map((st) => (
+                  <div
+                    key={st.id || st.matric_no}
+                    className="px-3 py-2 rounded-xl bg-black/50 border border-emerald-900/80 flex items-center justify-between gap-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-bold text-emerald-300">{st.matric_no}</span>
+                        {st.username && st.username !== st.matric_no && (
+                          <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950/80 px-1.5 py-0.5 rounded">
+                            User: {st.username}
+                          </span>
+                        )}
+                        {st.password_pin && (
+                          <span className="text-[10px] font-mono text-amber-300 bg-amber-950/70 px-1.5 py-0.5 rounded">
+                            PIN: {st.password_pin}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-300 truncate">
+                        {st.student_name} • <span className="font-mono text-slate-400">{st.level || 'ND I'} ({st.department_code})</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteRosterStudent(st.id)}
+                      className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 cursor-pointer shrink-0"
+                      title="Remove from Classroom Roster"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT 6 COLS: TWO-PHASE AUTOMATIC CLASS ATTENDANCE REGISTER (FIRST 10 MINS & LAST MINUTE) */}
+        <div className="lg:col-span-6 p-4 sm:p-5 rounded-2xl bg-[#01140d] border-2 border-emerald-700/80 space-y-4 text-xs flex flex-col justify-between">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-900/80 pb-3">
+              <div>
+                <div className="text-xs font-black text-emerald-300 uppercase tracking-wide font-mono flex items-center gap-1.5">
+                  <ClipboardCheck size={14} />
+                  <span>Two-Phase Automatic Attendance (First 10 Mins &amp; Last Minute)</span>
+                </div>
+                <p className="text-[11px] text-slate-300 mt-0.5">
+                  Automatically marks <strong>Phase 1</strong> during the first 10 minutes (00:00–10:00) and <strong>Phase 2</strong> during the final minute of the class.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleExportAttendanceCsv}
+                className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-mono text-[10px] font-bold flex items-center gap-1.5 shadow cursor-pointer transition"
+              >
+                <Download size={12} />
+                <span>Export CSV ({attendanceData.records?.length || 0})</span>
+              </button>
+            </div>
+
+            {/* TWO-PHASE WINDOW STATUS & LECTURER CONTROLS */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* PHASE 1: FIRST 10 MINUTES */}
+              <div className={`p-3 rounded-xl border space-y-1.5 ${
+                isLive && elapsedSeconds <= 600
+                  ? 'bg-emerald-950/70 border-emerald-500'
+                  : 'bg-[#021d13] border-emerald-900'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold text-emerald-300 uppercase">
+                    Phase 1: First 10 Minutes
+                  </span>
+                  <span className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold ${
+                    !isLive
+                      ? 'bg-slate-800 text-slate-300'
+                      : elapsedSeconds <= 600 || attendanceData.first_10m_window_open
+                      ? 'bg-emerald-500 text-black animate-pulse'
+                      : 'bg-slate-800 text-slate-400'
+                  }`}>
+                    {!isLive
+                      ? 'READY'
+                      : elapsedSeconds <= 600
+                      ? `OPEN (${formatDuration(Math.max(0, 600 - elapsedSeconds))} left)`
+                      : attendanceData.first_10m_window_open
+                      ? 'EXTENDED OPEN'
+                      : 'WINDOW CLOSED'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-300 leading-snug">
+                  Students joining within the first 10 minutes of the lecture are automatically marked present for Phase 1.
+                </p>
+                {isLive && elapsedSeconds > 600 && (
+                  <button
+                    type="button"
+                    disabled={isTogglingAttendanceWindow}
+                    onClick={() => handleToggleAttendanceWindow('first_10m', !attendanceData.first_10m_window_open)}
+                    className="w-full py-1 rounded-lg bg-emerald-800/80 hover:bg-emerald-700 text-emerald-100 font-mono text-[10px] font-bold cursor-pointer"
+                  >
+                    {attendanceData.first_10m_window_open ? 'Close Extended 10m Window' : 'Re-open First 10m Window for Latecomers'}
+                  </button>
+                )}
+              </div>
+
+              {/* PHASE 2: LAST MINUTE OF CLASS */}
+              <div className={`p-3 rounded-xl border space-y-1.5 ${
+                attendanceData.last_minute_window_open
+                  ? 'bg-amber-950/70 border-amber-500'
+                  : 'bg-[#021d13] border-emerald-900'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold text-amber-300 uppercase">
+                    Phase 2: Last Minute of Class
+                  </span>
+                  <span className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold ${
+                    attendanceData.last_minute_window_open
+                      ? 'bg-amber-400 text-black animate-pulse'
+                      : 'bg-slate-800 text-slate-300'
+                  }`}>
+                    {attendanceData.last_minute_window_open ? 'ACTIVE ROLL CALL' : 'AUTO ON END / MANUAL'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-300 leading-snug">
+                  Automatically marks all connected students in the final minute when you click below or end the class.
+                </p>
+                <button
+                  type="button"
+                  disabled={!isLive || isTogglingAttendanceWindow}
+                  onClick={() => handleToggleAttendanceWindow('last_minute', !attendanceData.last_minute_window_open)}
+                  className="w-full py-1.5 rounded-lg bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-mono text-[10px] font-bold cursor-pointer disabled:opacity-40 shadow"
+                >
+                  {attendanceData.last_minute_window_open
+                    ? '✓ Last-Minute Attendance Active (Click to Close)'
+                    : '🔔 Trigger Last-Minute Attendance Roll Call Now'}
+                </button>
+              </div>
+            </div>
+
+            {/* ATTENDANCE SUMMARY METRICS */}
+            <div className="grid grid-cols-4 gap-2 text-center font-mono">
+              <div className="p-2 rounded-xl bg-black/50 border border-slate-800">
+                <div className="text-sm font-black text-white">{attendanceData.summary?.total_joined || 0}</div>
+                <div className="text-[9px] text-slate-400 uppercase">Total Joined</div>
+              </div>
+              <div className="p-2 rounded-xl bg-emerald-950/50 border border-emerald-800/80">
+                <div className="text-sm font-black text-emerald-300">{attendanceData.summary?.first_10m_count || 0}</div>
+                <div className="text-[9px] text-emerald-400 uppercase">First 10m ✓</div>
+              </div>
+              <div className="p-2 rounded-xl bg-amber-950/50 border border-amber-800/80">
+                <div className="text-sm font-black text-amber-300">{attendanceData.summary?.last_min_count || 0}</div>
+                <div className="text-[9px] text-amber-400 uppercase">Last Min ✓</div>
+              </div>
+              <div className="p-2 rounded-xl bg-cyan-950/50 border border-cyan-700/80">
+                <div className="text-sm font-black text-cyan-300">{attendanceData.summary?.complete_count || 0}</div>
+                <div className="text-[9px] text-cyan-400 uppercase">Complete (Both)</div>
+              </div>
+            </div>
+
+            {/* ATTENDANCE TABLE */}
+            <div className="max-h-56 overflow-y-auto rounded-xl border border-emerald-900/80 bg-black/40">
+              <table className="w-full text-left border-collapse text-[11px]">
+                <thead>
+                  <tr className="bg-[#021d13] text-slate-300 font-mono text-[10px] border-b border-emerald-900">
+                    <th className="py-2 px-2.5">Student / Matric No.</th>
+                    <th className="py-2 px-2 text-center">First 10 Mins</th>
+                    <th className="py-2 px-2 text-center">Last Minute</th>
+                    <th className="py-2 px-2.5 text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-emerald-950/60">
+                  {(attendanceData.records || []).length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-8 text-center text-slate-500 font-mono text-[11px]">
+                        No attendance records yet for this session. When students join with their Matric No., their First 10-Min and Last-Minute attendance appears here automatically.
+                      </td>
+                    </tr>
+                  ) : (
+                    attendanceData.records.map((rec) => {
+                      const f10 = Boolean(Number(rec.first_10m_marked));
+                      const lMin = Boolean(Number(rec.last_min_marked));
+                      const isComplete = f10 && lMin;
+                      return (
+                        <tr key={rec.id || rec.matric_no} className="hover:bg-emerald-950/30">
+                          <td className="py-2 px-2.5">
+                            <div className="font-mono font-bold text-white">{rec.matric_no}</div>
+                            <div className="text-[10px] text-slate-400 truncate max-w-[150px]">{rec.student_name}</div>
+                          </td>
+                          <td className="py-2 px-2 text-center font-mono">
+                            {f10 ? (
+                              <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700 text-[10px] font-bold">
+                                ✅ {rec.first_10m_at ? String(rec.first_10m_at).slice(11, 16) : 'Marked'}
+                              </span>
+                            ) : (
+                              <span className="text-rose-400 text-[10px]">❌ Late (&gt;10m)</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-2 text-center font-mono">
+                            {lMin ? (
+                              <span className="px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-700 text-[10px] font-bold">
+                                ✅ {rec.last_min_at ? String(rec.last_min_at).slice(11, 16) : 'Marked'}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-[10px]">⏳ Pending End</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-2.5 text-right font-mono">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              isComplete
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-slate-800 text-amber-300 border border-amber-700/50'
+                            }`}>
+                              {isComplete ? 'COMPLETE' : 'PARTIAL'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="text-[10px] font-mono text-slate-400 pt-2 border-t border-emerald-950 flex items-center justify-between">
+            <span>Auto-saved in <strong className="text-emerald-300">live_classroom_attendance</strong> table</span>
+            <span>First 10m + Last 1m Verification</span>
           </div>
         </div>
       </div>
