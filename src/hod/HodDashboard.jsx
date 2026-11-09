@@ -13,6 +13,7 @@ import { parseCurrentRoute, navigateTo } from '../utils/router';
 import HodUploadStudio from './HodUploadStudio';
 import MultimediaUploadStudio from '../multimedia/MultimediaUploadStudio';
 import LiveBroadcastStudio from '../multimedia/LiveBroadcastStudio';
+import IntegratedMediaCatalog from '../multimedia/IntegratedMediaCatalog';
 import InstitutionalCommunicationHub from '../common/InstitutionalCommunicationHub';
 import StudentAddModal from '../common/StudentAddModal';
 import StudentBulkImportModal from '../common/StudentBulkImportModal';
@@ -5275,14 +5276,21 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                     currentUser={currentUser}
                   />
                 ) : (
-                  <MultimediaUploadStudio
-                    role={isStaffUser ? 'staff' : 'hod'}
-                    currentDept={currentDept}
-                    currentUser={currentUser}
-                    onUploadSuccess={() => {
-                      if (fetchDepartmentData) fetchDepartmentData();
-                    }}
-                  />
+                  <div className="space-y-8">
+                    <MultimediaUploadStudio
+                      role={isStaffUser ? 'staff' : 'hod'}
+                      currentDept={currentDept}
+                      currentUser={currentUser}
+                      onUploadSuccess={() => {
+                        if (fetchDepartmentData) fetchDepartmentData();
+                      }}
+                    />
+
+                    {/* LIVE DATABASE-CONNECTED AUDIOBOOKS, RECORDED LECTURES & PRACTICAL VIDEO DEMONSTRATIONS CATALOG */}
+                    <div className="pt-2">
+                      <IntegratedMediaCatalog activeUser={currentUser} />
+                    </div>
+                  </div>
                 )}
               </div>
             );

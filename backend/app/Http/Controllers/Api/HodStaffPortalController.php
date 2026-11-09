@@ -371,7 +371,7 @@ class HodStaffPortalController extends Controller
             $staffCode = "STF/{$deptCode}/{$seq}";
         }
         $username = trim((string) ($payload['username'] ?? $request->input('username', strtolower($deptCode) . '_staff_' . strtolower(Str::random(4)))));
-        $pageTitle = trim((string) ($payload['page_title'] ?? $request->input('page_title', "{$name} — {$designation} Workspace")));
+        $pageTitle = trim((string) ($payload['page_title'] ?? $request->input('page_title', "{$name} - {$designation} Workspace")));
         $welcomeBanner = trim((string) ($payload['welcome_banner'] ?? $request->input('welcome_banner', "Delegated Departmental Workspace created by the Head of Department ({$deptName}).")));
 
         $coursesInput = $payload['assigned_courses'] ?? $request->input('assigned_courses', []);

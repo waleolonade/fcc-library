@@ -7,6 +7,7 @@ use App\Models\MediaChapter;
 use App\Models\MediaTranscript;
 use App\Models\MediaProgress;
 use App\Models\MediaCollection;
+use App\Services\DatabaseService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
@@ -17,11 +18,204 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class MediaResourceController extends Controller
 {
     /**
+     * Ensure media_resources table exists in authoritative MySQL DB (gsashtub_brainfeels_library)
+     * and synchronize uploaded media records between MySQL and Laravel's Eloquent table.
+     */
+    private function ensureAndSyncMysqlMedia(): void
+    {
+        try {
+            $pdo = DatabaseService::getPdo();
+            if (!$pdo) {
+                return;
+            }
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS media_resources (
+                    id VARCHAR(80) PRIMARY KEY,
+                    title VARCHAR(500) NOT NULL,
+                    subtitle VARCHAR(500) NULL,
+                    media_type VARCHAR(40) DEFAULT 'video',
+                    resource_type VARCHAR(60) DEFAULT 'lecture_recording',
+                    creator VARCHAR(255) NOT NULL,
+                    creator_title VARCHAR(255) NULL,
+                    department_id VARCHAR(60) NULL,
+                    department_name VARCHAR(255) NULL,
+                    course_code VARCHAR(60) NULL,
+                    target_level VARCHAR(60) DEFAULT 'All Levels',
+                    semester VARCHAR(60) DEFAULT 'First Semester',
+                    duration_seconds INT DEFAULT 0,
+                    duration_formatted VARCHAR(40) DEFAULT '00:00',
+                    file_size_bytes BIGINT NULL,
+                    file_size_formatted VARCHAR(60) NULL,
+                    mime_type VARCHAR(100) NULL,
+                    video_resolution VARCHAR(60) NULL,
+                    audio_bitrate VARCHAR(60) NULL,
+                    description TEXT NULL,
+                    subject_keywords TEXT NULL,
+                    language VARCHAR(40) DEFAULT 'English',
+                    publication_date VARCHAR(40) NULL,
+                    publisher VARCHAR(255) DEFAULT 'FCC Central Library Press & AV Studio',
+                    call_number VARCHAR(100) NULL,
+                    shelf_location VARCHAR(150) DEFAULT 'Digital AV Repository',
+                    access_level VARCHAR(50) DEFAULT 'open_access',
+                    license_type VARCHAR(150) DEFAULT 'Institutional Educational License',
+                    copyright_owner VARCHAR(255) DEFAULT 'Federal Cooperative College, Ibadan',
+                    cover_image TEXT NULL,
+                    media_url TEXT NOT NULL,
+                    hls_manifest_url TEXT NULL,
+                    download_allowed TINYINT(1) DEFAULT 1,
+                    download_url TEXT NULL,
+                    companion_book_id VARCHAR(80) NULL,
+                    companion_pdf_url TEXT NULL,
+                    companion_pdf_title VARCHAR(255) NULL,
+                    view_count INT DEFAULT 0,
+                    play_count INT DEFAULT 0,
+                    rating DECIMAL(3,2) DEFAULT 5.00,
+                    is_featured TINYINT(1) DEFAULT 0,
+                    status VARCHAR(40) DEFAULT 'published',
+                    uploaded_by VARCHAR(255) NULL,
+                    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            ");
+
+            // 1. Sync any records from MySQL -> Laravel DB that are missing locally
+            $st = $pdo->query("SELECT * FROM media_resources ORDER BY created_at DESC LIMIT 200");
+            if ($st) {
+                $mysqlRows = $st->fetchAll(\PDO::FETCH_ASSOC);
+                foreach ($mysqlRows as $mRow) {
+                    if (empty($mRow['id'])) continue;
+                    $exists = DB::table('media_resources')->where('id', $mRow['id'])->exists();
+                    if (!$exists) {
+                        try {
+                            DB::table('media_resources')->insert([
+                                'id' => $mRow['id'],
+                                'title' => $mRow['title'] ?? 'Uploaded Media Resource',
+                                'subtitle' => $mRow['subtitle'] ?? null,
+                                'media_type' => $mRow['media_type'] ?? 'video',
+                                'resource_type' => $mRow['resource_type'] ?? 'lecture_recording',
+                                'creator' => $mRow['creator'] ?? 'Faculty Lecturer',
+                                'creator_title' => $mRow['creator_title'] ?? null,
+                                'department_id' => $mRow['department_id'] ?? 'CEM',
+                                'department_name' => $mRow['department_name'] ?? 'Co-operative Economics & Management',
+                                'course_code' => $mRow['course_code'] ?? null,
+                                'target_level' => $mRow['target_level'] ?? 'All Levels',
+                                'semester' => $mRow['semester'] ?? 'First Semester',
+                                'duration_seconds' => (int) ($mRow['duration_seconds'] ?? 0),
+                                'duration_formatted' => $mRow['duration_formatted'] ?? '00:00',
+                                'file_size_bytes' => $mRow['file_size_bytes'] ?? null,
+                                'file_size_formatted' => $mRow['file_size_formatted'] ?? null,
+                                'mime_type' => $mRow['mime_type'] ?? null,
+                                'video_resolution' => $mRow['video_resolution'] ?? '1080p Full HD',
+                                'audio_bitrate' => $mRow['audio_bitrate'] ?? null,
+                                'description' => $mRow['description'] ?? '',
+                                'subject_keywords' => is_string($mRow['subject_keywords'] ?? null) ? $mRow['subject_keywords'] : json_encode([]),
+                                'language' => $mRow['language'] ?? 'English',
+                                'publication_date' => $mRow['publication_date'] ?? date('Y'),
+                                'publisher' => $mRow['publisher'] ?? 'FCC Central Library Press & AV Studio',
+                                'call_number' => $mRow['call_number'] ?? null,
+                                'shelf_location' => $mRow['shelf_location'] ?? 'Digital AV Repository',
+                                'access_level' => $mRow['access_level'] ?? 'open_access',
+                                'license_type' => $mRow['license_type'] ?? 'Institutional Educational License',
+                                'copyright_owner' => $mRow['copyright_owner'] ?? 'Federal Cooperative College, Ibadan',
+                                'cover_image' => $mRow['cover_image'] ?? null,
+                                'media_url' => $mRow['media_url'] ?? '',
+                                'download_allowed' => (bool) ($mRow['download_allowed'] ?? true),
+                                'download_url' => $mRow['download_url'] ?? ($mRow['media_url'] ?? ''),
+                                'companion_pdf_url' => $mRow['companion_pdf_url'] ?? null,
+                                'companion_pdf_title' => $mRow['companion_pdf_title'] ?? null,
+                                'view_count' => (int) ($mRow['view_count'] ?? 0),
+                                'play_count' => (int) ($mRow['play_count'] ?? 0),
+                                'rating' => (float) ($mRow['rating'] ?? 5.0),
+                                'is_featured' => (bool) ($mRow['is_featured'] ?? false),
+                                'status' => $mRow['status'] ?? 'published',
+                                'uploaded_by' => $mRow['uploaded_by'] ?? ($mRow['creator'] ?? 'HOD'),
+                                'created_at' => $mRow['created_at'] ?? now(),
+                                'updated_at' => $mRow['updated_at'] ?? now(),
+                            ]);
+                        } catch (\Throwable $e) {}
+                    }
+                }
+            }
+
+            // 2. Sync any records from Laravel DB -> MySQL that are missing in MySQL
+            $localRows = DB::table('media_resources')->orderBy('created_at', 'desc')->take(100)->get();
+            $ins = $pdo->prepare("
+                INSERT IGNORE INTO media_resources
+                (id, title, subtitle, media_type, resource_type, creator, creator_title, department_id, department_name,
+                 course_code, target_level, semester, duration_seconds, duration_formatted, file_size_bytes, file_size_formatted,
+                 mime_type, video_resolution, audio_bitrate, description, subject_keywords, language, publication_date,
+                 publisher, call_number, shelf_location, access_level, license_type, copyright_owner, cover_image,
+                 media_url, download_allowed, download_url, companion_pdf_url, companion_pdf_title, view_count, play_count,
+                 rating, is_featured, status, uploaded_by, created_at, updated_at)
+                VALUES
+                (:id, :title, :subtitle, :media_type, :resource_type, :creator, :creator_title, :department_id, :department_name,
+                 :course_code, :target_level, :semester, :duration_seconds, :duration_formatted, :file_size_bytes, :file_size_formatted,
+                 :mime_type, :video_resolution, :audio_bitrate, :description, :subject_keywords, :language, :publication_date,
+                 :publisher, :call_number, :shelf_location, :access_level, :license_type, :copyright_owner, :cover_image,
+                 :media_url, :download_allowed, :download_url, :companion_pdf_url, :companion_pdf_title, :view_count, :play_count,
+                 :rating, :is_featured, :status, :uploaded_by, :created_at, :updated_at)
+            ");
+            foreach ($localRows as $lRow) {
+                try {
+                    $ins->execute([
+                        ':id' => $lRow->id,
+                        ':title' => $lRow->title,
+                        ':subtitle' => $lRow->subtitle,
+                        ':media_type' => $lRow->media_type,
+                        ':resource_type' => $lRow->resource_type,
+                        ':creator' => $lRow->creator,
+                        ':creator_title' => $lRow->creator_title,
+                        ':department_id' => $lRow->department_id,
+                        ':department_name' => $lRow->department_name,
+                        ':course_code' => $lRow->course_code,
+                        ':target_level' => $lRow->target_level,
+                        ':semester' => $lRow->semester,
+                        ':duration_seconds' => (int) ($lRow->duration_seconds ?? 0),
+                        ':duration_formatted' => $lRow->duration_formatted ?: '00:00',
+                        ':file_size_bytes' => $lRow->file_size_bytes,
+                        ':file_size_formatted' => $lRow->file_size_formatted,
+                        ':mime_type' => $lRow->mime_type,
+                        ':video_resolution' => $lRow->video_resolution,
+                        ':audio_bitrate' => $lRow->audio_bitrate,
+                        ':description' => $lRow->description,
+                        ':subject_keywords' => is_string($lRow->subject_keywords) ? $lRow->subject_keywords : json_encode($lRow->subject_keywords ?? []),
+                        ':language' => $lRow->language ?: 'English',
+                        ':publication_date' => $lRow->publication_date,
+                        ':publisher' => $lRow->publisher ?: 'FCC Central Library Press & AV Studio',
+                        ':call_number' => $lRow->call_number,
+                        ':shelf_location' => $lRow->shelf_location ?: 'Digital AV Repository',
+                        ':access_level' => $lRow->access_level ?: 'open_access',
+                        ':license_type' => $lRow->license_type ?: 'Institutional Educational License',
+                        ':copyright_owner' => $lRow->copyright_owner ?: 'Federal Cooperative College, Ibadan',
+                        ':cover_image' => $lRow->cover_image,
+                        ':media_url' => $lRow->media_url,
+                        ':download_allowed' => !empty($lRow->download_allowed) ? 1 : 0,
+                        ':download_url' => $lRow->download_url ?: $lRow->media_url,
+                        ':companion_pdf_url' => $lRow->companion_pdf_url,
+                        ':companion_pdf_title' => $lRow->companion_pdf_title,
+                        ':view_count' => (int) ($lRow->view_count ?? 0),
+                        ':play_count' => (int) ($lRow->play_count ?? 0),
+                        ':rating' => (float) ($lRow->rating ?? 5.0),
+                        ':is_featured' => !empty($lRow->is_featured) ? 1 : 0,
+                        ':status' => $lRow->status ?: 'published',
+                        ':uploaded_by' => $lRow->uploaded_by ?: $lRow->creator,
+                        ':created_at' => $lRow->created_at ?: now()->toDateTimeString(),
+                        ':updated_at' => $lRow->updated_at ?: now()->toDateTimeString(),
+                    ]);
+                } catch (\Throwable $e) {}
+            }
+        } catch (\Throwable $e) {}
+    }
+
+    /**
      * Search & Filter Media Catalogue Records
      * Audiobooks, Lectures, Practical Demos, Documentaries
      */
     public function index(Request $request)
     {
+        $this->ensureAndSyncMysqlMedia();
+
         $query = MediaResource::with(['chapters', 'transcripts']);
 
         // Only published unless preview requested by admin/hod
@@ -191,6 +385,8 @@ class MediaResourceController extends Controller
      */
     public function stream($id, Request $request)
     {
+        $this->ensureAndSyncMysqlMedia();
+
         $resource = MediaResource::find($id);
         if (!$resource) {
             abort(404, 'Media resource not found');
@@ -203,12 +399,17 @@ class MediaResourceController extends Controller
             return redirect()->away($mediaUrl);
         }
 
-        // Local storage resolution
+        // Local storage resolution (strip leading /storage/ so storage/app/public/media/... resolves properly)
+        $cleanRel = ltrim((string) preg_replace('#^/?storage/#', '', $mediaUrl), '/');
         $filePath = null;
         if (file_exists($mediaUrl)) {
             $filePath = $mediaUrl;
         } elseif (file_exists(public_path($mediaUrl))) {
             $filePath = public_path($mediaUrl);
+        } elseif ($cleanRel !== '' && file_exists(storage_path("app/public/{$cleanRel}"))) {
+            $filePath = storage_path("app/public/{$cleanRel}");
+        } elseif ($cleanRel !== '' && Storage::disk('public')->exists($cleanRel)) {
+            $filePath = Storage::disk('public')->path($cleanRel);
         } elseif (Storage::disk('public')->exists($mediaUrl)) {
             $filePath = Storage::disk('public')->path($mediaUrl);
         } elseif (file_exists(storage_path("app/public/{$mediaUrl}"))) {
@@ -401,10 +602,77 @@ class MediaResourceController extends Controller
     }
 
     /**
+     * POST /api/media/upload-chunk
+     * Chunked High-Definition Video/Audio File Upload Engine.
+     * Bypasses PHP upload_max_filesize / post_max_size limits on XAMPP & cPanel by uploading 1.5MB slices.
+     */
+    public function uploadMediaChunk(Request $request)
+    {
+        if (!$request->hasFile('chunk')) {
+            return response()->json(['success' => false, 'error' => 'No file chunk received'], 400);
+        }
+
+        $uploadId = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) $request->input('upload_id', uniqid('UPL_')));
+        $chunkIndex = (int) $request->input('chunk_index', 0);
+        $totalChunks = max(1, (int) $request->input('total_chunks', 1));
+        $originalName = (string) $request->input('original_name', 'lecture_video.mp4');
+        $mediaType = strtolower(trim((string) $request->input('media_type', 'video')));
+
+        $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+        if (!in_array($ext, ['mp4', 'webm', 'mov', 'mkv', 'mp3', 'wav', 'm4a', 'ogg', 'pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) {
+            $ext = $mediaType === 'audio' ? 'mp3' : 'mp4';
+        }
+
+        $destDir = storage_path('app/public/media');
+        if (!file_exists($destDir)) {
+            mkdir($destDir, 0777, true);
+        }
+
+        $filename = 'FCC-MED-' . $uploadId . '.' . $ext;
+        $destPath = $destDir . '/' . $filename;
+
+        $chunkFile = $request->file('chunk');
+        $chunkBytes = file_get_contents($chunkFile->getRealPath());
+
+        if ($chunkIndex === 0) {
+            file_put_contents($destPath, $chunkBytes);
+        } else {
+            file_put_contents($destPath, $chunkBytes, FILE_APPEND);
+        }
+
+        $isComplete = ($chunkIndex + 1) >= $totalChunks;
+        $totalSize = file_exists($destPath) ? filesize($destPath) : 0;
+
+        // Also mirror to public/storage/media if public/storage exists as a normal folder on Windows
+        if ($isComplete) {
+            $publicStorageDir = public_path('storage/media');
+            if (!is_link(public_path('storage')) && !file_exists($publicStorageDir)) {
+                @mkdir($publicStorageDir, 0777, true);
+            }
+            if (is_dir($publicStorageDir) && !is_link(public_path('storage'))) {
+                @copy($destPath, $publicStorageDir . '/' . $filename);
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'upload_id' => $uploadId,
+            'chunk_index' => $chunkIndex,
+            'total_chunks' => $totalChunks,
+            'completed' => $isComplete,
+            'media_url' => '/storage/media/' . $filename,
+            'file_size_bytes' => $totalSize,
+            'file_size_formatted' => round($totalSize / (1024 * 1024), 2) . ' MB',
+        ]);
+    }
+
+    /**
      * Ingest New Media Resource (Librarian, HOD, Staff & Developer Direct Upload API)
      */
     public function store(Request $request)
     {
+        $this->ensureAndSyncMysqlMedia();
+
         $request->validate([
             'title' => 'required|string|max:500',
             'creator' => 'required|string|max:255',
@@ -455,10 +723,27 @@ class MediaResourceController extends Controller
             'access_level', 'license_type', 'copyright_owner', 'cover_image', 'media_url',
             'hls_manifest_url', 'download_allowed', 'download_url', 'mime_type',
             'video_resolution', 'audio_bitrate', 'companion_book_id', 'companion_pdf_url',
-            'companion_pdf_title', 'status', 'uploaded_by'
+            'companion_pdf_title', 'status', 'uploaded_by', 'file_size_bytes', 'file_size_formatted'
         ]);
 
         $data['id'] = $id;
+        $data['status'] = $data['status'] ?? 'published';
+
+        // Accept chunk-uploaded file URL if uploaded via /api/media/upload-chunk
+        if ($request->filled('uploaded_media_url')) {
+            $data['media_url'] = $request->input('uploaded_media_url');
+            $data['download_url'] = $request->input('uploaded_media_url');
+            if ($request->filled('uploaded_file_size_bytes')) {
+                $data['file_size_bytes'] = (int) $request->input('uploaded_file_size_bytes');
+                $data['file_size_formatted'] = round($data['file_size_bytes'] / (1024 * 1024), 2) . ' MB';
+            }
+            if ($request->filled('uploaded_mime_type')) {
+                $data['mime_type'] = $request->input('uploaded_mime_type');
+            }
+            if (empty($data['video_resolution']) && $data['media_type'] === 'video') {
+                $data['video_resolution'] = '1080p Full HD';
+            }
+        }
 
         // Process direct media file upload (.mp4, .webm, .mov, .mkv, .mp3, .wav, .m4a)
         if ($request->hasFile('media_file')) {
@@ -466,7 +751,18 @@ class MediaResourceController extends Controller
             $extension = $mfile->getClientOriginalExtension() ?: ($data['media_type'] === 'audio' ? 'mp3' : 'mp4');
             $filename = 'FCC-MED-' . time() . '-' . uniqid() . '.' . $extension;
             $mfile->storeAs('public/media', $filename);
+
+            // Also copy to public/storage/media if public/storage is a directory on Windows
+            $publicStorageDir = public_path('storage/media');
+            if (!is_link(public_path('storage')) && !file_exists($publicStorageDir)) {
+                @mkdir($publicStorageDir, 0777, true);
+            }
+            if (is_dir($publicStorageDir) && !is_link(public_path('storage'))) {
+                @copy(storage_path('app/public/media/' . $filename), $publicStorageDir . '/' . $filename);
+            }
+
             $data['media_url'] = '/storage/media/' . $filename;
+            $data['download_url'] = '/storage/media/' . $filename;
             $data['mime_type'] = $mfile->getClientMimeType() ?: ($data['media_type'] === 'audio' ? 'audio/mpeg' : 'video/mp4');
             $data['file_size_bytes'] = $mfile->getSize();
             $data['file_size_formatted'] = round($mfile->getSize() / (1024 * 1024), 2) . ' MB';
@@ -515,6 +811,68 @@ class MediaResourceController extends Controller
 
         $resource = MediaResource::create($data);
 
+        // Also persist directly to authoritative MySQL database (gsashtub_brainfeels_library)
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("
+                    INSERT INTO media_resources
+                    (id, title, subtitle, media_type, resource_type, creator, creator_title, department_id, department_name,
+                     course_code, target_level, semester, duration_seconds, duration_formatted, file_size_bytes, file_size_formatted,
+                     mime_type, video_resolution, audio_bitrate, description, subject_keywords, language, publication_date,
+                     publisher, call_number, shelf_location, access_level, license_type, copyright_owner, cover_image,
+                     media_url, download_allowed, download_url, companion_pdf_url, companion_pdf_title, status, uploaded_by, created_at, updated_at)
+                    VALUES
+                    (:id, :title, :subtitle, :media_type, :resource_type, :creator, :creator_title, :department_id, :department_name,
+                     :course_code, :target_level, :semester, :duration_seconds, :duration_formatted, :file_size_bytes, :file_size_formatted,
+                     :mime_type, :video_resolution, :audio_bitrate, :description, :subject_keywords, :language, :publication_date,
+                     :publisher, :call_number, :shelf_location, :access_level, :license_type, :copyright_owner, :cover_image,
+                     :media_url, :download_allowed, :download_url, :companion_pdf_url, :companion_pdf_title, :status, :uploaded_by, NOW(), NOW())
+                    ON DUPLICATE KEY UPDATE
+                    title = VALUES(title), media_url = VALUES(media_url), updated_at = NOW()
+                ");
+                $st->execute([
+                    ':id' => $resource->id,
+                    ':title' => $resource->title,
+                    ':subtitle' => $resource->subtitle,
+                    ':media_type' => $resource->media_type,
+                    ':resource_type' => $resource->resource_type,
+                    ':creator' => $resource->creator,
+                    ':creator_title' => $resource->creator_title,
+                    ':department_id' => $resource->department_id,
+                    ':department_name' => $resource->department_name,
+                    ':course_code' => $resource->course_code,
+                    ':target_level' => $resource->target_level ?: 'All Levels',
+                    ':semester' => $resource->semester ?: 'First Semester',
+                    ':duration_seconds' => (int) ($resource->duration_seconds ?? 0),
+                    ':duration_formatted' => $resource->duration_formatted ?: '00:00',
+                    ':file_size_bytes' => $resource->file_size_bytes,
+                    ':file_size_formatted' => $resource->file_size_formatted,
+                    ':mime_type' => $resource->mime_type,
+                    ':video_resolution' => $resource->video_resolution ?: '1080p Full HD',
+                    ':audio_bitrate' => $resource->audio_bitrate,
+                    ':description' => $resource->description,
+                    ':subject_keywords' => is_array($resource->subject_keywords) ? json_encode($resource->subject_keywords) : (string) ($resource->subject_keywords ?? '[]'),
+                    ':language' => $resource->language ?: 'English',
+                    ':publication_date' => $resource->publication_date ?: date('Y'),
+                    ':publisher' => $resource->publisher ?: 'FCC Central Library Press & AV Studio',
+                    ':call_number' => $resource->call_number,
+                    ':shelf_location' => $resource->shelf_location ?: 'Digital AV Repository',
+                    ':access_level' => $resource->access_level ?: 'open_access',
+                    ':license_type' => $resource->license_type ?: 'Institutional Educational License',
+                    ':copyright_owner' => $resource->copyright_owner ?: 'Federal Cooperative College, Ibadan',
+                    ':cover_image' => $resource->cover_image,
+                    ':media_url' => $resource->media_url,
+                    ':download_allowed' => !empty($resource->download_allowed) ? 1 : 0,
+                    ':download_url' => $resource->download_url ?: $resource->media_url,
+                    ':companion_pdf_url' => $resource->companion_pdf_url,
+                    ':companion_pdf_title' => $resource->companion_pdf_title,
+                    ':status' => $resource->status ?: 'published',
+                    ':uploaded_by' => $resource->uploaded_by ?: $resource->creator,
+                ]);
+            }
+        } catch (\Throwable $e) {}
+
         // Store Chapters if provided (handle array or JSON string from FormData)
         $chaptersData = $request->input('chapters');
         if (is_string($chaptersData)) {
@@ -553,7 +911,7 @@ class MediaResourceController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'High-Definition Media Resource catalogued & published successfully',
+            'message' => 'High-Definition Media Resource catalogued & published to database successfully',
             'resource' => $resource->load(['chapters', 'transcripts'])
         ], 201);
     }
@@ -583,12 +941,17 @@ class MediaResourceController extends Controller
      */
     public function destroy($id)
     {
-        $resource = MediaResource::find($id);
-        if (!$resource) {
-            return response()->json(['error' => 'Not found'], 404);
-        }
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                $pdo->prepare("DELETE FROM media_resources WHERE id = :id")->execute([':id' => $id]);
+            }
+        } catch (\Throwable $e) {}
 
-        $resource->delete();
+        $resource = MediaResource::find($id);
+        if ($resource) {
+            $resource->delete();
+        }
 
         return response()->json([
             'success' => true,

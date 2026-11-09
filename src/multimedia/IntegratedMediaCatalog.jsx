@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { getApiBase } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
+import { navigateTo } from '../utils/router';
 import MultimediaStudioPlayer from './MultimediaStudioPlayer';
 import MultimediaUploadStudio from './MultimediaUploadStudio';
 import { StudentHodClearanceModal, HodDeveloperActivationModal } from './MediaUploadClearanceModals';
@@ -204,17 +205,25 @@ export default function IntegratedMediaCatalog({
     setShowUploadModal(true);
   };
 
-  const departments = [
-    'ALL',
-    'Co-operative Economics & Management',
-    'Computer Science',
-    'Banking & Finance',
-    'Agricultural Extension & Management',
-    'Accounting',
-    'Public Administration'
-  ];
+  const departments = useMemo(() => {
+    const baseDepts = [
+      'ALL',
+      'Co-operative Economics & Management',
+      'Computer Science',
+      'Banking & Finance',
+      'Agricultural Extension & Management',
+      'Accounting',
+      'Public Administration'
+    ];
+    mediaList.forEach(m => {
+      if (m.department_name && !baseDepts.includes(m.department_name)) {
+        baseDepts.push(m.department_name);
+      }
+    });
+    return baseDepts;
+  }, [mediaList]);
 
-  const levels = ['ALL', 'ND I', 'ND II', 'HND I', 'HND II'];
+  const levels = ['ALL', 'ND I', 'ND II', 'HND I', 'HND II', 'All Levels'];
 
   const videoCount = mediaList.filter(m => m.media_type === 'video').length;
   const audioCount = mediaList.filter(m => m.media_type === 'audio').length;
@@ -279,7 +288,7 @@ export default function IntegratedMediaCatalog({
               <Video size={24} className="animate-pulse" />
             </div>
             <div>
-              <div className="flex items-center gap-2 mb-0.5">
+              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black bg-rose-600 text-white shadow">
                   🔴 LIVE LECTURE IN PROGRESS
                 </span>
@@ -289,6 +298,12 @@ export default function IntegratedMediaCatalog({
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-black/60 text-amber-300 border border-amber-800">
                   {activeLiveStream.viewers_count} Students Online
                 </span>
+                <a
+                  href={`#/live-classroom/${activeLiveStream.id}`}
+                  className="text-[10px] font-mono text-rose-300 hover:text-white underline"
+                >
+                  #/live-classroom/{activeLiveStream.id}
+                </a>
               </div>
               <h3 className="text-sm sm:text-base font-black text-white line-clamp-1">
                 {activeLiveStream.title}
@@ -299,16 +314,18 @@ export default function IntegratedMediaCatalog({
             </div>
           </div>
 
-          <button
-            onClick={() => {
+          <a
+            href={`#/live-classroom/${activeLiveStream.id}`}
+            onClick={(e) => {
+              e.preventDefault();
               sounds.playSuccessChime();
-              setSelectedLiveBroadcast(activeLiveStream);
+              navigateTo(`/live-classroom/${activeLiveStream.id}`);
             }}
             className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-rose-700 hover:from-rose-500 hover:to-pink-500 text-white font-black text-xs flex items-center gap-2 shadow-xl shadow-rose-950 transition cursor-pointer shrink-0 self-end sm:self-auto"
           >
             <Play size={14} className="fill-white" />
             <span>Join Live Lecture</span>
-          </button>
+          </a>
         </div>
       )}
 

@@ -296,7 +296,7 @@ export default function PwaInstallPromptModal({ autoPromptOnMobile = true }) {
                           Select <strong className="text-white">"Install app"</strong> or <strong className="text-white">"Add to Home screen"</strong>.
                         </li>
                         <li>
-                          Tap <strong className="text-emerald-300">"Install"</strong> — FCC Pass will be added directly to your phone apps!
+                          Tap <strong className="text-emerald-300">"Install"</strong> - FCC Pass will be added directly to your phone apps!
                         </li>
                       </ol>
                     )}

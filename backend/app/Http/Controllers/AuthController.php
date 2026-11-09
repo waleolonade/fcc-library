@@ -769,7 +769,7 @@ class AuthController extends Controller
 
 
         // =========================================================================
-        // 4. No Match Found — REJECT UNREGISTERED USER WITH ROLE-SPECIFIC MESSAGE
+        // 4. No Match Found - REJECT UNREGISTERED USER WITH ROLE-SPECIFIC MESSAGE
         // =========================================================================
         $unregisteredError = match ($loginMode) {
             'admin' => "[Administrative Security] Access Denied: No authorized administrative staff record found for '{$identifier}'. Access restricted to Chief Librarians and Institutional Administrators.",

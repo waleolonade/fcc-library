@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use App\Models\MediaResource;
 use App\Services\DatabaseService;
+use App\Services\StudentUserService;
 use Carbon\Carbon;
 
 class LiveBroadcastController extends Controller
@@ -414,7 +415,7 @@ class LiveBroadcastController extends Controller
             'course_title' => $defaultCourseTitle,
             'target_level' => $defaultLevel,
             'lecturer_name' => $hodName,
-            'lecture_title' => "{$defaultCourseCode}: {$defaultCourseTitle} — Live Interactive Lecture",
+            'lecture_title' => "{$defaultCourseCode}: {$defaultCourseTitle} - Live Interactive Lecture",
             'announcement' => "Welcome scholars to the {$deptCode} Live Interactive Classroom. Post your questions in the live chat or raise your hand.",
             'companion_pdf_url' => '',
             'companion_pdf_name' => '',
@@ -813,6 +814,11 @@ class LiveBroadcastController extends Controller
         // Refresh accurate viewer count on each active stream
         $streams = $streams->map(function ($s) {
             $s->viewers_count = $this->computeActiveViewersCount($s->id, (int) ($s->viewers_count ?? 0));
+            $framePath = storage_path('app/public/live/' . $s->id . '/frame.jpg');
+            $s->has_live_frame = file_exists($framePath);
+            $streamPath = storage_path('app/public/live/' . $s->id . '/stream.webm');
+            $s->has_stream_buffer = file_exists($streamPath) && filesize($streamPath) > 512;
+            $s->classroom_url = '#/live-classroom/' . $s->id;
             return $s;
         });
 
@@ -822,6 +828,261 @@ class LiveBroadcastController extends Controller
             'count' => $streams->count(),
             'broadcast' => $streams->first(),
             'streams' => $streams->values(),
+        ]);
+    }
+
+    /**
+     * GET /api/live-broadcast/session/{id?}
+     * Fetch a specific live broadcast session (or latest active session) with presentation metadata
+     */
+    public function getBroadcastSession(Request $request, $id = null)
+    {
+        $this->ensureDatabaseTables();
+
+        $broadcast = null;
+        $targetId = trim((string) ($id ?: $request->input('id', '')));
+
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                if ($targetId !== '' && strtolower($targetId) !== 'active') {
+                    $st = $pdo->prepare("SELECT * FROM live_broadcasts WHERE id = :id LIMIT 1");
+                    $st->execute([':id' => $targetId]);
+                    $row = $st->fetch(\PDO::FETCH_ASSOC);
+                    if ($row) {
+                        $broadcast = (object) $row;
+                    }
+                }
+                if (!$broadcast) {
+                    $st = $pdo->query("SELECT * FROM live_broadcasts WHERE is_live = 1 AND status = 'live' ORDER BY started_at DESC LIMIT 1");
+                    if ($st) {
+                        $row = $st->fetch(\PDO::FETCH_ASSOC);
+                        if ($row) {
+                            $broadcast = (object) $row;
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        if (!$broadcast) {
+            try {
+                if ($targetId !== '' && strtolower($targetId) !== 'active') {
+                    $broadcast = DB::table('live_broadcasts')->where('id', $targetId)->first();
+                }
+                if (!$broadcast) {
+                    $broadcast = DB::table('live_broadcasts')
+                        ->where('is_live', true)
+                        ->where('status', 'live')
+                        ->orderBy('started_at', 'desc')
+                        ->first();
+                }
+            } catch (\Throwable $e) {}
+        }
+
+        if (!$broadcast) {
+            return response()->json([
+                'success' => false,
+                'active' => false,
+                'broadcast' => null,
+                'message' => 'No active live lecture broadcast at this moment.'
+            ]);
+        }
+
+        $broadcast->viewers_count = $this->computeActiveViewersCount($broadcast->id, (int) ($broadcast->viewers_count ?? 0));
+        $framePath = storage_path('app/public/live/' . $broadcast->id . '/frame.jpg');
+        $broadcast->has_live_frame = file_exists($framePath);
+        $broadcast->frame_updated_at = file_exists($framePath) ? filemtime($framePath) : null;
+        $streamPath = storage_path('app/public/live/' . $broadcast->id . '/stream.webm');
+        $broadcast->has_stream_buffer = file_exists($streamPath) && filesize($streamPath) > 512;
+        $broadcast->classroom_url = '#/live-classroom/' . $broadcast->id;
+
+        // Also enrich with studio config (target_level, companion_pdf_name, course_title)
+        $deptCode = strtolower(trim((string) ($broadcast->department_code ?? 'cem')));
+        $rawCfg = $this->getSettingValue('fcc_live_studio_config_' . $deptCode);
+        $cfg = $rawCfg ? (json_decode($rawCfg, true) ?: []) : [];
+        if (empty($broadcast->companion_pdf_url) && !empty($cfg['companion_pdf_url'])) {
+            $broadcast->companion_pdf_url = $cfg['companion_pdf_url'];
+        }
+        $broadcast->companion_pdf_name = $cfg['companion_pdf_name'] ?? '';
+        $broadcast->target_level = $cfg['target_level'] ?? 'All Levels';
+
+        return response()->json([
+            'success' => true,
+            'active' => (bool) ($broadcast->is_live ?? false),
+            'broadcast' => $broadcast,
+            'messages' => $this->fetchChatMessagesFromDb($broadcast->id),
+        ]);
+    }
+
+    /**
+     * POST /api/live-broadcast/verify-student
+     * Verify HOD-registered student details from MySQL users/patrons tables
+     * when a student accesses the online classroom from OPAC / public link without being logged into the dashboard.
+     */
+    public function verifyStudentAccess(Request $request)
+    {
+        $identifier = trim((string) $request->input('identifier', $request->input('matric', '')));
+        $studentNameInput = trim((string) $request->input('name', ''));
+        $pinInput = trim((string) $request->input('pin', ''));
+        $departmentInput = trim((string) $request->input('department', ''));
+
+        if ($identifier === '') {
+            return response()->json([
+                'success' => false,
+                'error' => 'Please enter your HOD-registered Matriculation Number, Library Barcode/ID, or Student Email.'
+            ], 422);
+        }
+
+        // 1. Primary lookup via StudentUserService (checks MySQL users + patrons tables)
+        $userRecord = null;
+        try {
+            $userRecord = StudentUserService::findForAuth($identifier);
+        } catch (\Throwable $e) {}
+
+        // 2. Fallback direct search in MySQL patrons and users tables (case-insensitive)
+        if (!$userRecord) {
+            try {
+                $pdo = DatabaseService::getPdo();
+                if ($pdo) {
+                    $st = $pdo->prepare("
+                        SELECT * FROM patrons
+                        WHERE LOWER(TRIM(COALESCE(matric_no, ''))) = LOWER(:id)
+                           OR LOWER(TRIM(COALESCE(barcode, ''))) = LOWER(:id)
+                           OR LOWER(TRIM(COALESCE(email, ''))) = LOWER(:id)
+                           OR LOWER(TRIM(COALESCE(phone, ''))) = LOWER(:id)
+                        LIMIT 1
+                    ");
+                    $st->execute([':id' => $identifier]);
+                    $patronRow = $st->fetch(\PDO::FETCH_ASSOC);
+                    if ($patronRow) {
+                        $userRecord = [
+                            'id' => $patronRow['id'] ?? ('STU-' . time()),
+                            'name' => $patronRow['name'] ?? 'Registered Student',
+                            'email' => $patronRow['email'] ?? '',
+                            'matric' => $patronRow['matric_no'] ?? $identifier,
+                            'barcode' => $patronRow['barcode'] ?? $identifier,
+                            'department' => $patronRow['department'] ?? 'Academic Department',
+                            'level' => $patronRow['level'] ?? 'ND I',
+                            'role' => 'student',
+                            'status' => $patronRow['status'] ?? 'Active',
+                            'raw_pin' => $patronRow['pin'] ?? null,
+                            'password_hash' => $patronRow['pin'] ?? null,
+                        ];
+                    }
+                }
+            } catch (\Throwable $e) {}
+        }
+
+        // 3. Fallback search in Laravel SQLite patrons/users tables
+        if (!$userRecord) {
+            try {
+                $pRow = DB::table('patrons')
+                    ->whereRaw('LOWER(TRIM(COALESCE(matric_no, ""))) = ?', [strtolower($identifier)])
+                    ->orWhereRaw('LOWER(TRIM(COALESCE(barcode, ""))) = ?', [strtolower($identifier)])
+                    ->orWhereRaw('LOWER(TRIM(COALESCE(email, ""))) = ?', [strtolower($identifier)])
+                    ->first();
+                if ($pRow) {
+                    $userRecord = [
+                        'id' => $pRow->id ?? ('STU-' . time()),
+                        'name' => $pRow->name ?? 'Registered Student',
+                        'email' => $pRow->email ?? '',
+                        'matric' => $pRow->matric_no ?? $identifier,
+                        'barcode' => $pRow->barcode ?? $identifier,
+                        'department' => $pRow->department ?? 'Academic Department',
+                        'level' => $pRow->level ?? 'ND I',
+                        'role' => 'student',
+                        'status' => $pRow->status ?? 'Active',
+                        'raw_pin' => $pRow->pin ?? null,
+                        'password_hash' => $pRow->pin ?? null,
+                    ];
+                }
+            } catch (\Throwable $e) {}
+        }
+
+        if (!$userRecord) {
+            return response()->json([
+                'success' => false,
+                'code' => 'STUDENT_NOT_REGISTERED',
+                'error' => 'No HOD-registered student record was found matching "' . $identifier . '". Please verify your Matriculation Number / Library Card ID with your Head of Department (HOD), or log into your Student Dashboard.'
+            ], 404);
+        }
+
+        // Verify PIN if provided by the student and a PIN exists on record
+        if ($pinInput !== '') {
+            $pinValid = false;
+            try {
+                $pinValid = StudentUserService::verifyPassword($pinInput, $userRecord);
+            } catch (\Throwable $e) {}
+
+            if (!$pinValid && !empty($userRecord['raw_pin']) && trim((string) $userRecord['raw_pin']) === $pinInput) {
+                $pinValid = true;
+            }
+            // Also allow if pinInput matches last 4 digits of matric or phone or default '1234' when raw_pin is empty
+            if (!$pinValid && empty($userRecord['raw_pin']) && empty($userRecord['password_hash'])) {
+                $pinValid = true;
+            }
+
+            if (!$pinValid) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'INVALID_STUDENT_PIN',
+                    'error' => 'The Security PIN entered does not match this HOD-registered student record. Please check your PIN or leave PIN blank to verify with your registered Full Name.'
+                ], 401);
+            }
+        } elseif ($studentNameInput !== '') {
+            // Verify that at least one part of the student's registered name matches (case-insensitive)
+            $dbName = strtolower(trim((string) ($userRecord['name'] ?? '')));
+            $inputParts = array_filter(preg_split('/\s+/', strtolower($studentNameInput)));
+            $nameMatched = false;
+            if ($dbName === '' || stripos($dbName, strtolower($studentNameInput)) !== false) {
+                $nameMatched = true;
+            } else {
+                foreach ($inputParts as $part) {
+                    if (strlen($part) >= 2 && stripos($dbName, $part) !== false) {
+                        $nameMatched = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!$nameMatched) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'STUDENT_NAME_MISMATCH',
+                    'error' => 'The name entered does not match the HOD-registered student record for "' . ($userRecord['matric'] ?? $identifier) . '". Please enter your registered name or Security PIN.'
+                ], 401);
+            }
+        }
+
+        // Check suspension status
+        $status = strtolower(trim((string) ($userRecord['status'] ?? 'active')));
+        if (in_array($status, ['suspended', 'blocked', 'revoked'], true)) {
+            return response()->json([
+                'success' => false,
+                'code' => 'STUDENT_SUSPENDED',
+                'error' => 'Your student library profile is currently suspended. Please contact your Head of Department (HOD) or Central Library Admin.'
+            ], 403);
+        }
+
+        $verifiedStudent = [
+            'id' => $userRecord['id'] ?? ('STU-' . time()),
+            'name' => $userRecord['name'] ?? 'Registered Student',
+            'matric' => $userRecord['matric'] ?? $userRecord['barcode'] ?? $identifier,
+            'barcode' => $userRecord['barcode'] ?? $userRecord['matric'] ?? $identifier,
+            'email' => $userRecord['email'] ?? '',
+            'phone' => $userRecord['phone'] ?? '',
+            'department' => $userRecord['department'] ?? $departmentInput ?: 'Co-operative Economics & Management',
+            'level' => $userRecord['level'] ?? 'ND I',
+            'role' => 'student',
+            'verified_via' => 'hod_registered_record',
+            'verified_at' => now()->toIso8601String(),
+        ];
+
+        return response()->json([
+            'success' => true,
+            'message' => 'HOD-registered student verified successfully.',
+            'student' => $verifiedStudent,
         ]);
     }
 
@@ -946,7 +1207,7 @@ class LiveBroadcastController extends Controller
         $this->setSettingValue('fcc_live_viewers_' . $broadcastId, json_encode([]), 'LiveBroadcast', "Active viewers for {$broadcastId}");
 
         // Broadcast initial system welcome message
-        $welcomeMsg = "🔴 Live Lecture Broadcast started by {$data['lecturer_name']} ({$data['department_name']} — {$data['course_code']}). All connecting students are verified via database.";
+        $welcomeMsg = "🔴 Live Lecture Broadcast started by {$data['lecturer_name']} ({$data['department_name']} - {$data['course_code']}). All connecting students are verified via database.";
         $this->insertChatMessageToDb([
             'broadcast_id' => $broadcastId,
             'user_name' => 'FCC Library Broadcast Core',
@@ -1112,6 +1373,39 @@ class LiveBroadcastController extends Controller
 
             try {
                 DB::table('media_resources')->insert($mediaRecord);
+            } catch (\Throwable $e) {}
+
+            try {
+                $pdo = DatabaseService::getPdo();
+                if ($pdo) {
+                    $st = $pdo->prepare("
+                        INSERT IGNORE INTO media_resources
+                        (id, title, subtitle, media_type, resource_type, creator, creator_title, department_id, department_name, course_code, target_level, duration_seconds, duration_formatted, description, subject_keywords, media_url, video_resolution, access_level, status, uploaded_by, created_at, updated_at)
+                        VALUES (:id, :title, :sub, :mt, :rt, :cr, :crt, :did, :dn, :cc, :tl, :ds, :df, :desc, :sk, :mu, :vr, :al, :st, :ub, NOW(), NOW())
+                    ");
+                    $st->execute([
+                        ':id' => $mediaRecord['id'],
+                        ':title' => $mediaRecord['title'],
+                        ':sub' => $mediaRecord['subtitle'],
+                        ':mt' => $mediaRecord['media_type'],
+                        ':rt' => $mediaRecord['resource_type'],
+                        ':cr' => $mediaRecord['creator'],
+                        ':crt' => $mediaRecord['creator_title'],
+                        ':did' => $mediaRecord['department_id'],
+                        ':dn' => $mediaRecord['department_name'],
+                        ':cc' => $mediaRecord['course_code'],
+                        ':tl' => $mediaRecord['target_level'],
+                        ':ds' => $mediaRecord['duration_seconds'],
+                        ':df' => $mediaRecord['duration_formatted'],
+                        ':desc' => $mediaRecord['description'],
+                        ':sk' => $mediaRecord['subject_keywords'],
+                        ':mu' => $mediaRecord['media_url'],
+                        ':vr' => $mediaRecord['video_resolution'],
+                        ':al' => $mediaRecord['access_level'],
+                        ':st' => $mediaRecord['status'],
+                        ':ub' => $mediaRecord['uploaded_by'],
+                    ]);
+                }
             } catch (\Throwable $e) {}
 
             try {
@@ -1792,5 +2086,71 @@ class LiveBroadcastController extends Controller
 
         $headers['Content-Length'] = $fileSize;
         return response()->file($filePath, $headers);
+    }
+
+    /**
+     * POST /api/live-broadcast/{id}/frame
+     * Upload a real-time presentation/camera snapshot frame (JPEG/WebP or base64 data URI)
+     * so students on any network can always view the live presentation even if WebRTC UDP is blocked.
+     */
+    public function uploadPresentationFrame(Request $request, $id)
+    {
+        $dir = storage_path('app/public/live/' . $id);
+        if (!file_exists($dir)) {
+            mkdir($dir, 0777, true);
+        }
+
+        $framePath = $dir . '/frame.jpg';
+        $bytesWritten = 0;
+
+        if ($request->hasFile('frame')) {
+            $file = $request->file('frame');
+            $bytesWritten = (int) file_put_contents($framePath, file_get_contents($file->getRealPath()));
+        } elseif ($request->filled('frame_data')) {
+            $dataUri = (string) $request->input('frame_data');
+            if (str_contains($dataUri, ',')) {
+                $parts = explode(',', $dataUri, 2);
+                $decoded = base64_decode($parts[1], true);
+                if ($decoded !== false && strlen($decoded) > 100) {
+                    $bytesWritten = (int) file_put_contents($framePath, $decoded);
+                }
+            }
+        }
+
+        try {
+            DB::table('live_broadcasts')->where('id', $id)->update(['updated_at' => now()]);
+        } catch (\Throwable $e) {}
+
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                $pdo->prepare("UPDATE live_broadcasts SET updated_at = NOW() WHERE id = :id")->execute([':id' => $id]);
+            }
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => $bytesWritten > 0,
+            'bytes_written' => $bytesWritten,
+            'frame_url' => '/api/live-broadcast/' . $id . '/frame?t=' . time(),
+        ]);
+    }
+
+    /**
+     * GET /api/live-broadcast/{id}/frame
+     * Serve the latest presentation/camera snapshot frame with zero caching
+     */
+    public function getPresentationFrame(Request $request, $id)
+    {
+        $framePath = storage_path('app/public/live/' . $id . '/frame.jpg');
+        if (!file_exists($framePath) || filesize($framePath) < 100) {
+            return response()->json(['error' => 'No live presentation frame available yet'], 404);
+        }
+
+        return response()->file($framePath, [
+            'Content-Type' => 'image/jpeg',
+            'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+        ]);
     }
 }

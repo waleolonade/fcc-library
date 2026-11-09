@@ -929,7 +929,7 @@ export default function MobilePassVerificationModal({
                 className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-950 flex items-center justify-center gap-2 transition cursor-pointer"
               >
                 <Monitor size={14} className="text-white" />
-                <span>Done — Return to Workstation Screen &rarr;</span>
+                <span>Done - Return to Workstation Screen &rarr;</span>
               </button>
 
               <button

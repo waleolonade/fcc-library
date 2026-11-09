@@ -721,6 +721,7 @@ Route::prefix('media')->group(function () {
     Route::get('/world-apis', [\App\Http\Controllers\MediaResourceController::class, 'getWorldApis']);
     Route::get('/world-apis/search', [\App\Http\Controllers\MediaResourceController::class, 'searchWorldApis']);
     Route::get('/collections', [\App\Http\Controllers\MediaResourceController::class, 'collections']);
+    Route::post('/upload-chunk', [\App\Http\Controllers\MediaResourceController::class, 'uploadMediaChunk']);
     Route::get('/', [\App\Http\Controllers\MediaResourceController::class, 'index']);
     Route::post('/', [\App\Http\Controllers\MediaResourceController::class, 'store']);
     Route::get('/{id}', [\App\Http\Controllers\MediaResourceController::class, 'show']);
@@ -747,6 +748,8 @@ Route::prefix('live-broadcast')->group(function () {
     Route::get('/studio-context', [\App\Http\Controllers\LiveBroadcastController::class, 'getStudioContext']);
     Route::post('/studio-config', [\App\Http\Controllers\LiveBroadcastController::class, 'saveStudioConfig']);
     Route::post('/companion-pdf', [\App\Http\Controllers\LiveBroadcastController::class, 'uploadCompanionPdf']);
+    Route::post('/verify-student', [\App\Http\Controllers\LiveBroadcastController::class, 'verifyStudentAccess']);
+    Route::get('/session/{id?}', [\App\Http\Controllers\LiveBroadcastController::class, 'getBroadcastSession']);
     Route::get('/active', [\App\Http\Controllers\LiveBroadcastController::class, 'getActiveStreams']);
     Route::post('/start', [\App\Http\Controllers\LiveBroadcastController::class, 'start']);
     Route::get('/social-destinations', [\App\Http\Controllers\LiveBroadcastController::class, 'getSocialDestinations']);
@@ -763,6 +766,8 @@ Route::prefix('live-broadcast')->group(function () {
     Route::get('/{id}/signal', [\App\Http\Controllers\LiveBroadcastController::class, 'getSignals']);
     Route::post('/{id}/chunk', [\App\Http\Controllers\LiveBroadcastController::class, 'uploadChunk']);
     Route::get('/{id}/stream', [\App\Http\Controllers\LiveBroadcastController::class, 'getLiveStream']);
+    Route::post('/{id}/frame', [\App\Http\Controllers\LiveBroadcastController::class, 'uploadPresentationFrame']);
+    Route::get('/{id}/frame', [\App\Http\Controllers\LiveBroadcastController::class, 'getPresentationFrame']);
 });
 
 

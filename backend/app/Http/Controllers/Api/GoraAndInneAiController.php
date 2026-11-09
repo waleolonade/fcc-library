@@ -392,7 +392,7 @@ class GoraAndInneAiController extends Controller
         }
 
         $bookSummaryLines = count($citations) > 0
-            ? implode("\n", array_map(fn($c) => "• **{$c['title']}** by {$c['author']} ({$c['year']}) — Call No: `{$c['call_number']}`", $citations))
+            ? implode("\n", array_map(fn($c) => "• **{$c['title']}** by {$c['author']} ({$c['year']}) - Call No: `{$c['call_number']}`", $citations))
             : "• **Principles & Practice of Co-operative Management** (FCC Central Collection)\n• **Quantitative Methods & Research Methodology for HND Scholars**";
 
         $synthesizedResponse = $externalReply ?: (

@@ -2724,7 +2724,7 @@ export default function FccAdminLibrary({
                 <div className="text-center py-10 text-slate-500 text-xs">
                   <Globe size={32} className="mx-auto mb-3 text-slate-700" />
                   <p className="font-semibold text-slate-400">Enter a topic above and click <span className="text-indigo-400">Query OpenAlex</span> to harvest real academic papers.</p>
-                  <p className="mt-1">Results come live from OpenAlex — the world's largest open scholarly index.</p>
+                  <p className="mt-1">Results come live from OpenAlex - the world's largest open scholarly index.</p>
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

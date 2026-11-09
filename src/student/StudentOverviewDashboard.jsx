@@ -23,6 +23,7 @@ import {
 import TraceBadge from '../common/TraceBadge';
 import { INSTITUTION } from '../data/institutionalSeedData';
 import { getApiBase } from '../api/libraryApi';
+import { navigateTo } from '../utils/router';
 
 export default function StudentOverviewDashboard({
   user,
@@ -151,13 +152,17 @@ export default function StudentOverviewDashboard({
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => onNavigateTab('library_multimedia')}
+                <a
+                  href={`#/live-classroom/${activeLiveStream.id}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigateTo(`/live-classroom/${activeLiveStream.id}`);
+                  }}
                   className="px-6 py-3 rounded-2xl bg-white hover:bg-rose-50 text-rose-900 font-black text-xs flex items-center gap-2 shadow-xl cursor-pointer transition shrink-0"
                 >
                   <Play size={14} className="fill-rose-900" />
                   <span>Join Live Classroom</span>
-                </button>
+                </a>
               </div>
             )}
 

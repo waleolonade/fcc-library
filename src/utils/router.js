@@ -6,6 +6,7 @@
 export const SYSTEM_ROUTES = [
   // Public & Discovery Pages
   { path: '/opac', label: 'Public Discovery OPAC', category: 'Public', desc: 'Central public catalog search and discovery' },
+  { path: '/live-classroom', label: 'Institutional Live Lecture Classroom', category: 'Public', desc: 'Dedicated interactive live lecture & presentation classroom with Two-Way Student Verification' },
   { path: '/opac/partner-libraries', label: 'Linked External Libraries', category: 'Public', desc: 'Direct gateway to university and national partner libraries' },
   { path: '/kiosk', label: 'Self-Service Library Station (Module 8)', category: 'Public', desc: 'Touchscreen self-checkout and self-return station with instant digital receipts' },
   { path: '/login', label: 'Student Scholar Portal Login', category: 'Auth', desc: 'Matric number and security PIN authentication for students' },

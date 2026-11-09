@@ -3345,8 +3345,8 @@ export default function DeveloperMasterPortal({ onImpersonate, onLogout }) {
                       <span className={`w-3 h-3 rounded-full ${otpMatrix.global_paused ? 'bg-rose-500 animate-ping' : 'bg-emerald-400 animate-pulse'}`} />
                       <span className="text-xs font-black uppercase tracking-wider">
                         {otpMatrix.global_paused
-                          ? 'GLOBAL 2FA BYPASSED — ALL USERS ENTER WITHOUT OTP'
-                          : 'STRICT 2FA ACTIVE — LIVE EMAIL OTP DISPATCH ENFORCED'}
+                          ? 'GLOBAL 2FA BYPASSED - ALL USERS ENTER WITHOUT OTP'
+                          : 'STRICT 2FA ACTIVE - LIVE EMAIL OTP DISPATCH ENFORCED'}
                       </span>
                     </div>
                     <p className="text-xs text-slate-300 font-sans">
@@ -4040,7 +4040,7 @@ export default function DeveloperMasterPortal({ onImpersonate, onLogout }) {
                                 {dept.code}
                               </span>
                               <span className="text-[10px] text-teal-400 font-bold px-2 py-0.5 rounded bg-teal-950/60 border border-teal-800">
-                                {dept.established ? 'Est. ' + dept.established : 'Est. —'}
+                                {dept.established ? 'Est. ' + dept.established : 'Est. -'}
                               </span>
                             </div>
                             <h4 className="text-sm font-bold text-white font-sans leading-snug">
@@ -5691,7 +5691,7 @@ export default function DeveloperMasterPortal({ onImpersonate, onLogout }) {
                       className="w-4 h-4 object-contain rounded-sm shrink-0"
                     />
                     <span className="truncate font-sans font-semibold">
-                      {config.branding?.projectName || 'FCC Digital Library'} — {config.branding?.shortName || 'FCC IBADAN'}
+                      {config.branding?.projectName || 'FCC Digital Library'} - {config.branding?.shortName || 'FCC IBADAN'}
                     </span>
                     <span className="text-slate-500 text-[10px] ml-2">✕</span>
                   </div>
@@ -6150,7 +6150,7 @@ export default function DeveloperMasterPortal({ onImpersonate, onLogout }) {
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-teal-900/60 pb-3">
                     <div>
                       <h3 className="text-xs sm:text-sm font-black text-teal-300 uppercase tracking-wider">
-                        HOD Academic Portal — Pages &amp; Features (Individual &amp; Bulk)
+                        HOD Academic Portal - Pages &amp; Features (Individual &amp; Bulk)
                       </h3>
                       <p className="text-[11px] text-slate-400 font-sans">
                         Control every tab and capability inside <code className="text-teal-300">#/hod</code>. Disabled tabs are immediately hidden from HOD navigation.
@@ -6273,7 +6273,7 @@ export default function DeveloperMasterPortal({ onImpersonate, onLogout }) {
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-900/60 pb-3">
                     <div>
                       <h3 className="text-xs sm:text-sm font-black text-indigo-300 uppercase tracking-wider">
-                        Chief Librarian Admin Console — Pages &amp; Features (Individual &amp; Bulk)
+                        Chief Librarian Admin Console - Pages &amp; Features (Individual &amp; Bulk)
                       </h3>
                       <p className="text-[11px] text-slate-400 font-sans">
                         Control every operational module inside <code className="text-indigo-300">#/admin</code>. Disabled modules are hidden from the Admin sidebar and top bar.
@@ -6392,7 +6392,7 @@ export default function DeveloperMasterPortal({ onImpersonate, onLogout }) {
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-900/60 pb-3">
                     <div>
                       <h3 className="text-xs sm:text-sm font-black text-emerald-300 uppercase tracking-wider">
-                        Student &amp; Scholar Portal — Pages &amp; Features (Individual &amp; Bulk)
+                        Student &amp; Scholar Portal - Pages &amp; Features (Individual &amp; Bulk)
                       </h3>
                       <p className="text-[11px] text-slate-400 font-sans">
                         Control every menu item and digital library feature inside <code className="text-emerald-300">#/scholar</code>.

@@ -16,6 +16,8 @@ export default function LiveBroadcastStudio({
   onClose = null
 }) {
   // Broadcaster & Database states
+  const [isStudioActivated, setIsStudioActivated] = useState(false);
+  const [copiedClassroomLink, setCopiedClassroomLink] = useState(false);
   const [isLoadingContext, setIsLoadingContext] = useState(true);
   const [dbSyncStatus, setDbSyncStatus] = useState('connected'); // 'syncing' | 'saved' | 'connected' | 'error'
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
@@ -453,11 +455,49 @@ export default function LiveBroadcastStudio({
     } catch (e) {}
   };
 
-  // Initial mount: load database context + start camera preview
+  // Activate the Studio Engine (Camera, Microphone & Transmission Hardware) on explicit user action
+  const handleActivateStudio = async () => {
+    sounds.playSuccessChime();
+    setIsStudioActivated(true);
+    await initDevices();
+    await startCameraStream(selectedVideoDeviceId, streamMode, resolution, selectedAudioDeviceId);
+  };
+
+  // Deactivate the Studio Engine & turn off camera/microphone hardware when on standby
+  const handleDeactivateStudio = () => {
+    if (isLive) {
+      alert('Please click "End Live Broadcast" before putting the studio hardware into standby.');
+      return;
+    }
+    sounds.playClick();
+    stopHelperStreams();
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(t => t.stop());
+      mediaStreamRef.current = null;
+    }
+    if (liveVideoRef.current) {
+      liveVideoRef.current.srcObject = null;
+    }
+    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    setAudioLevel(0);
+    setIsStudioActivated(false);
+  };
+
+  // Copy dedicated Live Classroom Page Link
+  const handleCopyClassroomLink = () => {
+    const origin = window.location.origin + window.location.pathname;
+    const url = broadcastId
+      ? `${origin}#/live-classroom/${broadcastId}`
+      : `${origin}#/live-classroom`;
+    navigator.clipboard?.writeText(url).catch(() => {});
+    setCopiedClassroomLink(true);
+    sounds.playSuccessChime();
+    setTimeout(() => setCopiedClassroomLink(false), 3000);
+  };
+
+  // Initial mount: ONLY load database context (do NOT start camera/studio until explicitly activated)
   useEffect(() => {
     fetchStudioContext(currentDept?.code || currentUser?.department_code);
-    initDevices();
-    startCameraStream();
 
     return () => {
       stopHelperStreams();
@@ -484,37 +524,71 @@ export default function LiveBroadcastStudio({
     };
   }, [isLive]);
 
-  // Start MediaRecorder chunk streaming whenever broadcast is live and camera stream is ready
+  // Start MediaRecorder chunk streaming + live presentation frame snapshots whenever broadcast is live & studio is activated
   useEffect(() => {
-    if (!isLive || !broadcastId || !mediaStreamRef.current || !window.MediaRecorder) return;
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') return;
+    if (!isLive || !broadcastId || !isStudioActivated || !mediaStreamRef.current) return;
 
-    try {
-      recordedChunksRef.current = [];
-      chunkIndexRef.current = 0;
-      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
-        ? 'video/webm;codecs=vp8,opus'
-        : 'video/webm';
-      const rec = new MediaRecorder(mediaStreamRef.current, { mimeType: mime });
-      rec.ondataavailable = async (e) => {
-        if (e.data && e.data.size > 0) {
-          recordedChunksRef.current.push(e.data);
-          try {
-            const chunkBase = getApiBase();
-            const form = new FormData();
-            form.append('chunk', e.data);
-            form.append('chunk_index', chunkIndexRef.current++);
-            fetch(`${chunkBase}/live-broadcast/${broadcastId}/chunk`, {
-              method: 'POST',
-              body: form
-            }).catch(() => {});
-          } catch (err) {}
+    // 1. MediaRecorder WebM chunk stream
+    if (window.MediaRecorder && (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording')) {
+      try {
+        recordedChunksRef.current = [];
+        chunkIndexRef.current = 0;
+        const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+          ? 'video/webm;codecs=vp8,opus'
+          : 'video/webm';
+        const rec = new MediaRecorder(mediaStreamRef.current, { mimeType: mime });
+        rec.ondataavailable = async (e) => {
+          if (e.data && e.data.size > 0) {
+            recordedChunksRef.current.push(e.data);
+            try {
+              const chunkBase = getApiBase();
+              const form = new FormData();
+              form.append('chunk', e.data);
+              form.append('chunk_index', chunkIndexRef.current++);
+              fetch(`${chunkBase}/live-broadcast/${broadcastId}/chunk`, {
+                method: 'POST',
+                body: form
+              }).catch(() => {});
+            } catch (err) {}
+          }
+        };
+        rec.start(2000);
+        mediaRecorderRef.current = rec;
+      } catch (e) {}
+    }
+
+    // 2. Real-time Presentation / Camera Frame Snapshot Upload (every 2.5s)
+    // Guarantees students always see the live presentation/camera feed even across strict NAT/firewalls
+    const frameCanvas = document.createElement('canvas');
+    frameCanvas.width = 960;
+    frameCanvas.height = 540;
+    const frameCtx = frameCanvas.getContext('2d');
+
+    const captureAndSendFrame = () => {
+      try {
+        const vid = liveVideoRef.current;
+        if (!vid || vid.readyState < 2 || !frameCtx) return;
+        frameCtx.drawImage(vid, 0, 0, frameCanvas.width, frameCanvas.height);
+        const dataUri = frameCanvas.toDataURL('image/jpeg', 0.72);
+        if (dataUri && dataUri.length > 200) {
+          const base = getApiBase();
+          fetch(`${base}/live-broadcast/${broadcastId}/frame`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ frame_data: dataUri })
+          }).catch(() => {});
         }
-      };
-      rec.start(2000);
-      mediaRecorderRef.current = rec;
-    } catch (e) {}
-  }, [isLive, broadcastId]);
+      } catch (e) {}
+    };
+
+    const initialTimer = setTimeout(captureAndSendFrame, 1000);
+    const frameInterval = setInterval(captureAndSendFrame, 2500);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(frameInterval);
+    };
+  }, [isLive, broadcastId, isStudioActivated]);
 
   // WebRTC Host Signaling Engine
   const sendSignalToViewer = async (viewerId, type, data) => {
@@ -945,6 +1019,153 @@ export default function LiveBroadcastStudio({
   const enabledSocialCount = socialDestinations.filter(d => d.enabled).length;
   const availableCourses = deptCourses.length > 0 ? deptCourses : allCourses;
 
+  // EXPLICIT STUDIO ACTIVATION GATE: Do not run camera/microphone or broadcast studio until activated by button click
+  if (!isStudioActivated) {
+    return (
+      <div className="bg-gradient-to-br from-[#021810] via-[#01140d] to-[#041f16] border-2 border-emerald-600/80 rounded-3xl p-6 sm:p-9 text-white shadow-2xl space-y-6 animate-fadeIn">
+        {/* TOP BADGES */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-900/80 pb-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`px-3 py-1 rounded-full text-[11px] font-mono font-bold flex items-center gap-1.5 shadow ${
+              isLive
+                ? 'bg-rose-600 text-white animate-pulse'
+                : 'bg-amber-950/90 text-amber-300 border border-amber-600/70'
+            }`}>
+              <Video size={13} />
+              <span>{isLive ? '🔴 ACTIVE DATABASE BROADCAST DETECTED' : '⏸️ STUDIO DORMANT / AWAITING ACTIVATION'}</span>
+            </span>
+
+            <span className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-[#01140d] text-cyan-300 border border-cyan-800">
+              {deptCode || 'DEPT'} • {lecturerName || deptName}
+            </span>
+
+            <span className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-emerald-950/80 text-emerald-300 border border-emerald-700 flex items-center gap-1">
+              <Database size={11} />
+              <span>{isLoadingContext ? 'Loading Database Context...' : 'MySQL DB Connected'}</span>
+            </span>
+
+            <span className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-purple-950 text-purple-300 border border-purple-800 flex items-center gap-1">
+              <Share2 size={11} />
+              <span>{enabledSocialCount} Social Simulcasts Ready</span>
+            </span>
+          </div>
+
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* MAIN ACTIVATION HERO CARD */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+          <div className="lg:col-span-8 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-600 to-pink-700 flex items-center justify-center text-white shadow-xl shadow-rose-950 shrink-0">
+                <Video size={28} />
+              </div>
+              <div>
+                <h2 className="text-xl sm:text-2xl font-black text-white">
+                  🔴 Institutional Live Broadcast &amp; Social Simulcast Studio
+                </h2>
+                <p className="text-xs sm:text-sm text-emerald-200/80">
+                  Camera, microphone, and live WebRTC/RTMP transmission engines are safely kept off until you explicitly activate the studio below.
+                </p>
+              </div>
+            </div>
+
+            {/* PRE-LOADED DATABASE CONFIGURATION SUMMARY */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-[#01140d] border border-emerald-800/80 text-xs">
+              <div>
+                <span className="text-[10px] font-mono text-slate-400 uppercase block">Department &amp; Host</span>
+                <span className="font-bold text-white block truncate">{lecturerName || 'Head of Department'}</span>
+                <span className="text-[11px] text-emerald-300 font-mono truncate block">{deptCode} — {deptName}</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-mono text-slate-400 uppercase block">Configured Course &amp; Level</span>
+                <span className="font-bold text-cyan-300 font-mono block">{courseCode || `${deptCode} 111`} ({targetLevel || 'ND I'})</span>
+                <span className="text-[11px] text-slate-300 truncate block" title={lectureTitle}>{lectureTitle || 'Ready to configure lecture topic'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-mono text-slate-400 uppercase block">Presentation &amp; Quality</span>
+                <span className="font-bold text-amber-300 font-mono block">{resolution || '1080p Full HD'}</span>
+                <span className="text-[11px] text-purple-300 font-mono block">
+                  {companionPdfUrl ? '📄 Handout PDF Attached ✓' : `${enabledSocialCount} Simulcast Channels`}
+                </span>
+              </div>
+            </div>
+
+            {isLive && broadcastId && (
+              <div className="p-4 rounded-2xl bg-rose-950/70 border border-rose-500/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-black text-rose-200 uppercase font-mono flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
+                    <span>Live Lecture Session Currently Open in Database ({viewersCount} Students Online)</span>
+                  </div>
+                  <p className="text-xs text-rose-100/90">
+                    Session <strong>{courseCode}: {lectureTitle}</strong> is marked active. Activate the studio to resume camera/presentation transmission, or terminate the session below.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleStopBroadcast}
+                    className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-rose-900 text-rose-200 border border-rose-500/60 text-xs font-bold transition cursor-pointer"
+                  >
+                    ⏹️ End Database Session
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT ACTION PANEL: ACTIVATE STUDIO BUTTON */}
+          <div className="lg:col-span-4 p-6 rounded-3xl bg-[#01140d] border-2 border-emerald-600/70 flex flex-col items-center text-center space-y-4 shadow-xl">
+            <div className="w-16 h-16 rounded-full bg-emerald-950 border-2 border-emerald-500/70 flex items-center justify-center text-emerald-300 shadow-lg">
+              <Camera size={28} />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-black text-white">
+                {isLive ? 'Resume Live Broadcast Studio' : 'Ready to Launch Studio?'}
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Click below to initialize your system webcam, external USB camera, microphone, screen presentation engine, and social simulcast controls.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleActivateStudio}
+              disabled={isLoadingContext}
+              className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-rose-700 hover:from-rose-500 hover:to-pink-500 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xl shadow-rose-950/90 transition cursor-pointer disabled:opacity-50"
+            >
+              <Play size={16} className="fill-white" />
+              <span>
+                {isLive
+                  ? '🔴 Activate Studio & Resume Broadcast'
+                  : '🔴 Activate Institutional Live Broadcast Studio'}
+              </span>
+            </button>
+
+            <div className="flex items-center justify-center gap-3 text-[11px] font-mono text-slate-400 pt-1">
+              <button
+                type="button"
+                onClick={handleCopyClassroomLink}
+                className="text-cyan-300 hover:text-white flex items-center gap-1 cursor-pointer"
+              >
+                <Share2 size={11} />
+                <span>{copiedClassroomLink ? 'Classroom Link Copied ✓' : 'Copy Student Classroom Link'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-[#021810] border-2 border-emerald-600/70 rounded-3xl p-4 sm:p-7 space-y-6 text-white shadow-2xl animate-fadeIn">
       {/* APEX HEADER */}
@@ -957,7 +1178,7 @@ export default function LiveBroadcastStudio({
                 : 'bg-emerald-950 text-emerald-300 border border-emerald-700'
             }`}>
               <Video size={12} className={isLive ? 'animate-pulse' : ''} />
-              <span>{isLive ? '🔴 ON AIR: BROADCASTING LIVE' : 'STUDIO STANDBY / READY TO TRANSMIT'}</span>
+              <span>{isLive ? '🔴 ON AIR: BROADCASTING LIVE' : 'STUDIO ACTIVATED / READY TO TRANSMIT'}</span>
             </span>
 
             <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-[#01140d] text-cyan-300 border border-cyan-800">
@@ -1001,12 +1222,34 @@ export default function LiveBroadcastStudio({
         {/* TOP CONTROLS */}
         <div className="flex items-center gap-2 self-end md:self-auto shrink-0 flex-wrap">
           <button
+            type="button"
+            onClick={handleCopyClassroomLink}
+            className="px-3 py-2 rounded-xl bg-[#01140d] hover:bg-emerald-950 border border-cyan-700/80 text-xs font-bold text-cyan-200 flex items-center gap-1.5 transition shadow cursor-pointer"
+            title="Copy Dedicated Student Live Classroom Page Link"
+          >
+            <Share2 size={13} className="text-cyan-400" />
+            <span>{copiedClassroomLink ? 'Classroom Link Copied ✓' : 'Classroom Link'}</span>
+          </button>
+
+          <button
             onClick={() => { sounds.playClick(); setShowSocialModal(true); }}
             className="px-3.5 py-2 rounded-xl bg-[#01140d] hover:bg-emerald-950 border border-emerald-700 text-xs font-bold text-emerald-200 flex items-center gap-1.5 transition shadow cursor-pointer"
           >
             <Settings size={14} className="text-purple-400" />
             <span>Social Simulcast ({enabledSocialCount})</span>
           </button>
+
+          {!isLive && (
+            <button
+              type="button"
+              onClick={handleDeactivateStudio}
+              className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-bold text-slate-300 flex items-center gap-1.5 transition cursor-pointer"
+              title="Turn off camera & return studio to standby"
+            >
+              <Square size={12} />
+              <span>Deactivate Studio</span>
+            </button>
+          )}
 
           {isLive ? (
             <button

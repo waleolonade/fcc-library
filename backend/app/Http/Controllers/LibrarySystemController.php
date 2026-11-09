@@ -703,7 +703,7 @@ class LibrarySystemController extends Controller
                 ->groupBy('department')
                 ->get();
 
-            // Monthly loan trend (last 6 months) — uses borrow_date column
+            // Monthly loan trend (last 6 months) - uses borrow_date column
             $loanTrend = DB::table('loans')
                 ->select(DB::raw("strftime('%Y-%m', borrow_date) as month"), DB::raw('count(*) as total'))
                 ->where('borrow_date', '>=', date('Y-m-d', strtotime('-6 months')))

@@ -19,6 +19,7 @@ import PublicDiscovery from './public_opac/PublicDiscovery';
 import DigitalBookReader from './student/DigitalBookReader';
 import StudentPortal from './student/StudentPortal';
 import DeveloperMasterPortal from './developer/DeveloperMasterPortal';
+import LiveClassroomPage from './multimedia/LiveClassroomPage';
 import PageMaintenanceGuard from './common/PageMaintenanceGuard';
 import InstitutionalFooter from './common/InstitutionalFooter';
 import PwaDesktopNavBar from './common/PwaDesktopNavBar';
@@ -43,6 +44,7 @@ export default function App() {
       const h = window.location.hash || '';
       const p = window.location.pathname || '';
       if (p.includes('/qr-approve') || h.includes('/qr-approve') || h.includes('/qr-login') || p.includes('/mobile-pass') || h.includes('/mobile-pass')) return 'qr_approval';
+      if (h.includes('/live-classroom') || h.includes('/opac/live')) return 'live_classroom';
       if (h.includes('/developer') || h.includes('/dev') || h.includes('/root') || h.includes('/master')) return 'developer';
       if (h.includes('/kiosk')) return 'kiosk';
       if (h.includes('/book')) return 'book_dossier';
@@ -537,8 +539,14 @@ export default function App() {
         setActiveBookForReader(null);
       }
 
-      // Route switching for authenticated / admin / hod / scholar / opac view
-      if (path === '/developer' || path === '/dev' || path === '/root' || path === '/master' || path.startsWith('/developer')) {
+      // Route switching for authenticated / admin / hod / scholar / opac / live_classroom view
+      if (path === '/live-classroom' || path.startsWith('/live-classroom') || path.startsWith('/opac/live')) {
+        const active = getActiveUserSession();
+        if (active) {
+          setCurrentUser(active);
+        }
+        setViewMode('live_classroom');
+      } else if (path === '/developer' || path === '/dev' || path === '/root' || path === '/master' || path.startsWith('/developer')) {
         setViewMode('developer');
       } else if (path === '/kiosk' || path.startsWith('/kiosk')) {
         setViewMode('kiosk');
@@ -856,7 +864,23 @@ export default function App() {
 
       {/* Main View Router */}
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
-        {viewMode === 'kiosk' ? (
+        {viewMode === 'live_classroom' ? (
+          <LiveClassroomPage
+            currentUser={currentUser}
+            onBack={() => {
+              if (currentUser?.role === 'student') {
+                setViewMode('student');
+                navigateTo('/scholar/profile');
+              } else if (currentUser?.role === 'hod' || currentUser?.role === 'hod_staff') {
+                setViewMode('hod');
+                navigateTo('/hod/multimedia');
+              } else {
+                setViewMode('public_opac');
+                navigateTo('/opac');
+              }
+            }}
+          />
+        ) : viewMode === 'kiosk' ? (
           devConfig?.pageStatus?.kiosk?.enabled === false ? (
             <PageMaintenanceGuard
               pageTitle={devConfig.pageStatus.kiosk.title || 'Self-Service Kiosk'}
@@ -1026,6 +1050,13 @@ export default function App() {
               } else {
                 clearAllAuthStores({ reason: 'world_class_login_null' });
                 setCurrentUser(null);
+              }
+              const returnToLiveClass = sessionStorage.getItem('fcc_return_to_live_class');
+              if (returnToLiveClass) {
+                sessionStorage.removeItem('fcc_return_to_live_class');
+                setViewMode('live_classroom');
+                navigateTo(`/live-classroom/${returnToLiveClass}`);
+                return;
               }
               const returnToOpac = sessionStorage.getItem('fcc_return_to_opac_after_login');
               if (returnToOpac) {

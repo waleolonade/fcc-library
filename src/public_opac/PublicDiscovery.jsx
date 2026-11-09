@@ -93,6 +93,30 @@ export default function PublicDiscovery({
   });
   const [isSyncingCatalog, setIsSyncingCatalog] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
+  const [activeOpacLiveStream, setActiveOpacLiveStream] = useState(null);
+
+  // Poll Active Live Lecture Broadcast for OPAC Home Banner
+  useEffect(() => {
+    let mounted = true;
+    const checkOpacLive = async () => {
+      try {
+        const base = getApiBase();
+        const res = await fetch(`${base}/live-broadcast/active`);
+        if (res.ok) {
+          const data = await res.json();
+          if (mounted) {
+            setActiveOpacLiveStream(data.broadcast || null);
+          }
+        }
+      } catch (e) {}
+    };
+    checkOpacLive();
+    const timer = setInterval(checkOpacLive, 8000);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, []);
 
   // Live Backend API & Database Stacks Fetcher
   const fetchBackendCatalog = async () => {
@@ -1641,6 +1665,55 @@ export default function PublicDiscovery({
         {/* VIEW: DISCOVERY HOME & CATALOG */}
         {(activeTab === 'home' || activeTab === 'catalog') && (
           <>
+            {/* 🔴 ACTIVE LIVE LECTURE IN PROGRESS BANNER (DIRECT DEDICATED PAGE LINK) */}
+            {activeOpacLiveStream && (
+              <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-rose-950 via-[#1a0510] to-rose-950 border-2 border-rose-500/80 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-pulse">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center shadow-lg shadow-rose-950 shrink-0">
+                    <Video size={24} className="animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black bg-rose-600 text-white shadow">
+                        🔴 LIVE LECTURE IN PROGRESS
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-black/60 text-cyan-300 border border-cyan-800">
+                        {activeOpacLiveStream.course_code || activeOpacLiveStream.department_code}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-black/60 text-amber-300 border border-amber-800">
+                        {activeOpacLiveStream.viewers_count} Students Online
+                      </span>
+                      <a
+                        href={`#/live-classroom/${activeOpacLiveStream.id}`}
+                        className="text-[10px] font-mono text-rose-300 hover:text-white underline"
+                      >
+                        #/live-classroom/{activeOpacLiveStream.id}
+                      </a>
+                    </div>
+                    <h3 className="text-sm sm:text-base font-black text-white line-clamp-1">
+                      {activeOpacLiveStream.title}
+                    </h3>
+                    <p className="text-xs text-rose-200/90">
+                      Lecturer: <strong className="text-white">{activeOpacLiveStream.lecturer_name}</strong> &bull; {activeOpacLiveStream.department_name}
+                    </p>
+                  </div>
+                </div>
+
+                <a
+                  href={`#/live-classroom/${activeOpacLiveStream.id}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    sounds.playSuccessChime();
+                    navigateTo(`/live-classroom/${activeOpacLiveStream.id}`);
+                  }}
+                  className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-rose-700 hover:from-rose-500 hover:to-pink-500 text-white font-black text-xs flex items-center gap-2 shadow-xl shadow-rose-950 transition cursor-pointer shrink-0 self-end sm:self-auto"
+                >
+                  <Video size={14} />
+                  <span>Join Live Lecture</span>
+                </a>
+              </div>
+            )}
+
             {/* HERO SEARCH WITH MODERN INSTITUTIONAL BRANDING */}
             <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#063b27] via-[#04281c] to-[#021810] border-2 border-emerald-600/40 p-6 sm:p-10 shadow-2xl space-y-6">
               <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />

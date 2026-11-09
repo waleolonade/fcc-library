@@ -72,7 +72,22 @@ export default function MultimediaUploadStudio({
   const pdfFileInputRef = useRef(null);
   const hiddenVideoDetectorRef = useRef(null);
 
-  // Prepopulate department if prop changes
+  const [dbDepartments, setDbDepartments] = useState([
+    { id: 'CEM', name: 'Co-operative Economics & Management' },
+    { id: 'CS', name: 'Computer Science' },
+    { id: 'COM', name: 'Computer Science' },
+    { id: 'BFN', name: 'Banking & Finance' },
+    { id: 'AGR', name: 'Agricultural Extension & Management' },
+    { id: 'ACC', name: 'Accounting' },
+    { id: 'PAD', name: 'Public Administration' },
+    { id: 'OTM', name: 'Office Technology & Management' },
+    { id: 'BAM', name: 'Business Administration & Management' },
+    { id: 'SLT', name: 'Science Laboratory Technology' },
+    { id: 'STA', name: 'Statistics' },
+    { id: 'MKT', name: 'Marketing' }
+  ]);
+
+  // Prepopulate department if prop changes & load real departments from database
   useEffect(() => {
     if (currentDept) {
       setFormData(prev => ({
@@ -81,6 +96,31 @@ export default function MultimediaUploadStudio({
         department_name: currentDept.name || prev.department_name
       }));
     }
+
+    const loadDepts = async () => {
+      try {
+        const base = getApiBase();
+        const res = await fetch(`${base}/departments`);
+        if (res.ok) {
+          const data = await res.json();
+          const list = Array.isArray(data) ? data : (data.departments || data.data || []);
+          if (list.length > 0) {
+            const mapped = list.map(d => ({
+              id: d.code || d.id || 'CEM',
+              name: d.name || d.code || 'Academic Department'
+            }));
+            if (currentDept?.code && !mapped.some(m => m.id === currentDept.code)) {
+              mapped.unshift({
+                id: currentDept.code,
+                name: currentDept.name || currentDept.code
+              });
+            }
+            setDbDepartments(mapped);
+          }
+        }
+      } catch (e) {}
+    };
+    loadDepts();
   }, [currentDept]);
 
   // Handle media file selection & extract duration/resolution client-side
@@ -288,10 +328,55 @@ export default function MultimediaUploadStudio({
         body.append('transcript_text', transcriptText.trim());
       }
 
-      // Files
+      // 1. Upload Media File in 1.25MB Chunks via /api/media/upload-chunk so large HD videos never fail PHP limits
+      let chunkUploadedUrl = '';
       if (mediaFile) {
-        body.append('media_file', mediaFile);
+        const CHUNK_SIZE = 1280 * 1024; // 1.25 MB per slice
+        const totalChunks = Math.max(1, Math.ceil(mediaFile.size / CHUNK_SIZE));
+        const uploadId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+        try {
+          for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+            const start = chunkIdx * CHUNK_SIZE;
+            const end = Math.min(mediaFile.size, start + CHUNK_SIZE);
+            const slice = mediaFile.slice(start, end);
+
+            const chunkForm = new FormData();
+            chunkForm.append('chunk', slice, mediaFile.name);
+            chunkForm.append('upload_id', uploadId);
+            chunkForm.append('chunk_index', String(chunkIdx));
+            chunkForm.append('total_chunks', String(totalChunks));
+            chunkForm.append('original_name', mediaFile.name);
+            chunkForm.append('media_type', mediaType);
+
+            const chunkRes = await fetch(`${base}/media/upload-chunk`, {
+              method: 'POST',
+              body: chunkForm
+            });
+
+            if (!chunkRes.ok) {
+              throw new Error('Chunk upload fallback');
+            }
+            const chunkJson = await chunkRes.json();
+            if (chunkJson.media_url) {
+              chunkUploadedUrl = chunkJson.media_url;
+            }
+            const pct = Math.min(80, 15 + Math.round(((chunkIdx + 1) / totalChunks) * 65));
+            setUploadProgress(pct);
+          }
+        } catch (chunkErr) {
+          chunkUploadedUrl = '';
+        }
+
+        if (chunkUploadedUrl) {
+          body.append('uploaded_media_url', chunkUploadedUrl);
+          body.append('uploaded_file_size_bytes', String(mediaFile.size));
+          body.append('uploaded_mime_type', mediaFile.type || (mediaType === 'audio' ? 'audio/mpeg' : 'video/mp4'));
+        } else {
+          body.append('media_file', mediaFile);
+        }
       }
+
       if (coverFile) {
         body.append('cover_file', coverFile);
       }
@@ -299,20 +384,20 @@ export default function MultimediaUploadStudio({
         body.append('companion_pdf_file', pdfFile);
       }
 
-      setUploadProgress(40);
+      setUploadProgress(82);
 
       const res = await fetch(`${base}/media`, {
         method: 'POST',
         body
       });
 
-      setUploadProgress(85);
+      setUploadProgress(92);
       const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.success) {
         setUploadProgress(100);
         sounds.playSuccessChime();
-        setSuccessAlert(`High-Quality ${mediaType === 'video' ? 'Video Lecture' : 'Audio Resource'} successfully published to FCC Library Stacks!`);
+        setSuccessAlert(`High-Quality ${mediaType === 'video' ? 'Video Lecture' : 'Audio Resource'} "${formData.title}" successfully published to the FCC Library Database & Audiobooks/Video Catalogue!`);
 
         // Reset form
         setFormData({
@@ -358,14 +443,7 @@ export default function MultimediaUploadStudio({
     }
   };
 
-  const departmentsList = [
-    { id: 'CEM', name: 'Co-operative Economics & Management' },
-    { id: 'CS', name: 'Computer Science' },
-    { id: 'BFN', name: 'Banking & Finance' },
-    { id: 'AGR', name: 'Agricultural Extension & Management' },
-    { id: 'ACC', name: 'Accounting' },
-    { id: 'PAD', name: 'Public Administration' }
-  ];
+  const departmentsList = dbDepartments;
 
   return (
     <div className="bg-[#041a12] border-2 border-emerald-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden font-sans text-slate-100 animate-fadeIn">

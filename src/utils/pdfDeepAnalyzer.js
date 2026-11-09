@@ -256,10 +256,10 @@ export function parseTitleAndAuthorFromFilename(filename = '') {
       // Heuristic: if last part looks like a person name (2-4 words, or contains comma/initials/Dr./Prof.)
       if (/^(?:Dr\.?|Prof\.?|Mr\.?|Mrs\.?|[A-Z]\.\s*)?[A-Z][a-z]+(?:\s+[A-Z]\.?|\s+[A-Z][a-z]+){1,3}$/.test(last)) {
         extractedAuthor = last;
-        raw = parts.slice(0, -1).join(' — ');
+        raw = parts.slice(0, -1).join(' - ');
       } else if (/^(?:Dr\.?|Prof\.?|Mr\.?|Mrs\.?|[A-Z]\.\s*)?[A-Z][a-z]+(?:\s+[A-Z]\.?|\s+[A-Z][a-z]+){1,2}$/.test(first) && last.length > first.length) {
         extractedAuthor = first;
-        raw = parts.slice(1).join(' — ');
+        raw = parts.slice(1).join(' - ');
       }
     }
   }
@@ -694,7 +694,7 @@ async function lookupOpenSourceIsbnMetadata(isbn) {
       }
     }
   } catch (e) {
-    // Offline or blocked — ignore gracefully
+    // Offline or blocked - ignore gracefully
   }
 
   return null;

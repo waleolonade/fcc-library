@@ -496,7 +496,7 @@ class MailNotificationService
               <!-- Automated No-Reply Notice -->
               <div style='background-color: #1a1625; border: 1px solid #dc2626; border-left: 5px solid #ef4444; padding: 14px 18px; border-radius: 8px; margin: 24px 0;'>
                 <div style='color: #f87171; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;'>
-                  ⚠️ Automated Dispatch — Please Do Not Reply
+                  ⚠️ Automated Dispatch - Please Do Not Reply
                 </div>
                 <div style='color: #cbd5e1; font-size: 12px; line-height: 1.5;'>
                   This is an automated institutional message sent from a notification-only address (<strong>noreply@fccibadanlibrary.com.ng</strong>). <strong>Direct replies to this email will not be received or answered.</strong> If you need help, please contact library staff through the portal or visit the physical circulation desk.
@@ -603,7 +603,7 @@ class MailNotificationService
               <!-- Automated No-Reply Notice -->
               <div style='background-color: #1a1625; border: 1px solid #dc2626; border-left: 5px solid #ef4444; padding: 14px 18px; border-radius: 8px; margin: 24px 0;'>
                 <div style='color: #f87171; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;'>
-                  ⚠️ Automated Dispatch — Please Do Not Reply
+                  ⚠️ Automated Dispatch - Please Do Not Reply
                 </div>
                 <div style='color: #cbd5e1; font-size: 12px; line-height: 1.5;'>
                   This is an automated institutional notification dispatched from an unmonitored system address (<strong>noreply@fccibadanlibrary.com.ng</strong>). <strong>Replies to this email cannot be received or answered.</strong> If you require assistance, please log in to the library portal or contact staff at the library circulation desk.
