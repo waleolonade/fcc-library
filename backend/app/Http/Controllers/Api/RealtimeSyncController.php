@@ -100,18 +100,18 @@ class RealtimeSyncController extends Controller
 
     /**
      * Server-Sent Events (SSE) live push stream
+     * Uses non-blocking single-burst SSE delivery with `retry: 2500` so PHP workers
+     * are never locked in a long-running while() loop.
      */
     public function stream(Request $request)
     {
         $response = new StreamedResponse(function () use ($request) {
-            $lastTimestamp = (float) $request->query('since', round(microtime(true) * 1000) - 1500);
-            $startTime = time();
+            $lastTimestamp = (float) $request->query('since', round(microtime(true) * 1000) - 3000);
 
-            // Run stream for up to 30 seconds per persistent HTTP connection
-            while (time() - $startTime < 30) {
-                if (connection_aborted()) break;
+            echo "retry: 2500\n";
 
-                $events = [];
+            $events = [];
+            try {
                 if (Storage::disk('local')->exists(self::$eventsFile)) {
                     $content = Storage::disk('local')->get(self::$eventsFile);
                     $all = json_decode($content, true) ?: [];
@@ -119,28 +119,23 @@ class RealtimeSyncController extends Controller
                         return ($e['timestamp'] ?? 0) > $lastTimestamp;
                     }));
                 }
+            } catch (\Throwable $e) {}
 
-                if (!empty($events)) {
-                    // Send oldest first to preserve chronological order
-                    foreach (array_reverse($events) as $evt) {
-                        echo "data: " . json_encode($evt) . "\n\n";
-                        $lastTimestamp = max($lastTimestamp, $evt['timestamp'] ?? 0);
-                    }
-                    if (ob_get_level() > 0) ob_flush();
-                    flush();
-                } else {
-                    echo ": heartbeat\n\n";
-                    if (ob_get_level() > 0) ob_flush();
-                    flush();
+            if (!empty($events)) {
+                foreach (array_reverse($events) as $evt) {
+                    echo "data: " . json_encode($evt) . "\n\n";
                 }
-
-                usleep(800000); // 800ms polling cycle
+            } else {
+                echo ": heartbeat\n\n";
             }
+
+            if (ob_get_level() > 0) @ob_flush();
+            @flush();
         });
 
         $response->headers->set('Content-Type', 'text/event-stream');
         $response->headers->set('Cache-Control', 'no-cache, no-transform');
-        $response->headers->set('Connection', 'keep-alive');
+        $response->headers->set('Connection', 'close');
         $response->headers->set('X-Accel-Buffering', 'no');
 
         return $response;

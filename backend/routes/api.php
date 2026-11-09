@@ -748,6 +748,7 @@ Route::prefix('live-broadcast')->group(function () {
     Route::get('/studio-context', [\App\Http\Controllers\LiveBroadcastController::class, 'getStudioContext']);
     Route::post('/studio-config', [\App\Http\Controllers\LiveBroadcastController::class, 'saveStudioConfig']);
     Route::post('/companion-pdf', [\App\Http\Controllers\LiveBroadcastController::class, 'uploadCompanionPdf']);
+    Route::get('/handout/{filename}', [\App\Http\Controllers\LiveBroadcastController::class, 'getCompanionHandout']);
     Route::post('/verify-student', [\App\Http\Controllers\LiveBroadcastController::class, 'verifyStudentAccess']);
     Route::get('/session/{id?}', [\App\Http\Controllers\LiveBroadcastController::class, 'getBroadcastSession']);
     Route::get('/active', [\App\Http\Controllers\LiveBroadcastController::class, 'getActiveStreams']);

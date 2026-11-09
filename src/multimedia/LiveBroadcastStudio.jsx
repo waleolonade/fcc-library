@@ -861,38 +861,64 @@ export default function LiveBroadcastStudio({
     }
   };
 
-  // Start Live Broadcast in Database
+  // Start Live Broadcast in Database (with automatic retry & resilient JSON handling)
   const handleStartBroadcast = async () => {
     sounds.playSuccessChime();
     setDbSyncStatus('syncing');
+
+    const base = getApiBase();
+    const enabledSocial = socialDestinations.filter(d => d.enabled);
+
+    const payload = {
+      title: (lectureTitle && lectureTitle.trim()) || `${courseCode || deptCode || 'CEM'} Live Interactive Lecture`,
+      department_code: (deptCode && deptCode.trim()) || 'CEM',
+      department_name: (deptName && deptName.trim()) || 'Co-operative Economics & Management',
+      course_code: (courseCode && courseCode.trim()) || `${deptCode || 'CEM'} 111`,
+      course_title: (courseTitle && courseTitle.trim()) || lectureTitle || 'Live Interactive Lecture',
+      target_level: (targetLevel && targetLevel.trim()) || 'ND I',
+      lecturer_name: (lecturerName && lecturerName.trim()) || 'Head of Department',
+      lecturer_role: role || 'hod',
+      stream_mode: streamMode || 'camera',
+      resolution: resolution || '720p',
+      simulcast_destinations: enabledSocial,
+      announcement: announcement || '',
+      companion_pdf_url: companionPdfUrl || ''
+    };
+
+    const attemptStartRequest = async (url) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache'
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        return res;
+      } catch (e) {
+        clearTimeout(timeoutId);
+        throw e;
+      }
+    };
+
     try {
-      const base = getApiBase();
-      const enabledSocial = socialDestinations.filter(d => d.enabled);
+      let res = null;
+      try {
+        res = await attemptStartRequest(`${base}/live-broadcast/start`);
+      } catch (firstErr) {
+        // Retry once after 350ms if transient socket glitch occurs
+        await new Promise(r => setTimeout(r, 350));
+        res = await attemptStartRequest(`/api/live-broadcast/start`);
+      }
 
-      const payload = {
-        title: lectureTitle || `${courseCode || deptCode} Live Interactive Lecture`,
-        department_code: deptCode || 'CEM',
-        department_name: deptName || 'Co-operative Economics & Management',
-        course_code: courseCode || `${deptCode} 111`,
-        course_title: courseTitle || lectureTitle,
-        target_level: targetLevel || 'ND I',
-        lecturer_name: lecturerName || 'Head of Department',
-        lecturer_role: role,
-        stream_mode: streamMode,
-        resolution: resolution,
-        simulcast_destinations: enabledSocial,
-        announcement: announcement,
-        companion_pdf_url: companionPdfUrl
-      };
-
-      const res = await fetch(`${base}/live-broadcast/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (res.ok) {
-        const json = await res.json();
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.broadcast) {
         const bId = json.broadcast.id;
         setBroadcastId(bId);
         setIsLive(true);
@@ -902,7 +928,9 @@ export default function LiveBroadcastStudio({
         setLastSyncedAt(new Date().toLocaleTimeString());
 
         // Fetch initial welcome chat message from DB
-        fetch(`${base}/live-broadcast/${bId}/chat`)
+        fetch(`${base}/live-broadcast/${encodeURIComponent(bId)}/chat`, {
+          headers: { 'Accept': 'application/json' }
+        })
           .then(r => r.json())
           .then(d => {
             if (d.messages) setChatMessages(d.messages);
@@ -925,13 +953,12 @@ export default function LiveBroadcastStudio({
           }
         } catch (e) {}
       } else {
-        const errJson = await res.json();
         setDbSyncStatus('error');
-        alert(errJson.error || 'Unable to start live stream.');
+        alert(json.error || json.message || `Unable to start live stream (HTTP ${res.status}).`);
       }
     } catch (err) {
       setDbSyncStatus('error');
-      alert('Network error initiating live stream.');
+      alert(`Unable to connect to live broadcast server: ${err?.message || 'Please check backend server connection.'}`);
     }
   };
 

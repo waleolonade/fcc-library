@@ -13,12 +13,102 @@ use Carbon\Carbon;
 
 class LiveBroadcastController extends Controller
 {
+    private static bool $tablesVerified = false;
+
     /**
      * Ensure live broadcast tables exist in both Laravel's default DB (SQLite/MySQL)
      * and the authoritative MySQL database (gsashtub_brainfeels_library).
      */
     private function ensureDatabaseTables(): void
     {
+        if (self::$tablesVerified) {
+            return;
+        }
+        $pdoCheck = DatabaseService::getPdo();
+        $flagFile = storage_path('app/live_tables_v4_' . ($pdoCheck ? 'mysql' : 'sqlite') . '.ready');
+        if (file_exists($flagFile) && (time() - filemtime($flagFile) < 3600)) {
+            self::$tablesVerified = true;
+            return;
+        }
+
+        // 1. Ensure SQLite / Laravel default DB tables & columns exist
+        try {
+            DB::statement("
+                CREATE TABLE IF NOT EXISTS live_broadcasts (
+                    id VARCHAR(80) PRIMARY KEY,
+                    title VARCHAR(500) NOT NULL,
+                    department_code VARCHAR(30) DEFAULT 'CEM',
+                    department_name VARCHAR(200) DEFAULT 'Co-operative Economics & Management',
+                    course_code VARCHAR(60) NULL,
+                    course_title VARCHAR(255) NULL,
+                    lecturer_name VARCHAR(255) NOT NULL,
+                    lecturer_role VARCHAR(50) DEFAULT 'hod',
+                    status VARCHAR(40) DEFAULT 'live',
+                    is_live TINYINT(1) DEFAULT 1,
+                    stream_mode VARCHAR(40) DEFAULT 'system_camera',
+                    resolution VARCHAR(40) DEFAULT '1080p Full HD',
+                    viewers_count INT DEFAULT 0,
+                    simulcast_destinations TEXT NULL,
+                    announcement TEXT NULL,
+                    companion_pdf_url VARCHAR(500) NULL,
+                    recording_media_id VARCHAR(80) NULL,
+                    started_at TIMESTAMP NULL,
+                    ended_at TIMESTAMP NULL,
+                    created_at TIMESTAMP NULL,
+                    updated_at TIMESTAMP NULL
+                )
+            ");
+            try { DB::statement("ALTER TABLE live_broadcasts ADD COLUMN course_title VARCHAR(255) NULL"); } catch (\Throwable $e) {}
+            try { DB::statement("ALTER TABLE live_broadcasts ADD COLUMN announcement TEXT NULL"); } catch (\Throwable $e) {}
+            try { DB::statement("ALTER TABLE live_broadcasts ADD COLUMN companion_pdf_url VARCHAR(500) NULL"); } catch (\Throwable $e) {}
+            try { DB::statement("ALTER TABLE live_broadcasts ADD COLUMN recording_media_id VARCHAR(80) NULL"); } catch (\Throwable $e) {}
+
+            DB::statement("
+                CREATE TABLE IF NOT EXISTS live_broadcast_chats (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    broadcast_id VARCHAR(80) NOT NULL,
+                    user_name VARCHAR(255) NOT NULL,
+                    user_role VARCHAR(50) DEFAULT 'student',
+                    user_matric VARCHAR(100) NULL,
+                    message TEXT NOT NULL,
+                    is_question TINYINT(1) DEFAULT 0,
+                    hand_raised TINYINT(1) DEFAULT 0,
+                    created_at TIMESTAMP NULL,
+                    updated_at TIMESTAMP NULL
+                )
+            ");
+
+            DB::statement("
+                CREATE TABLE IF NOT EXISTS live_social_destinations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    department_code VARCHAR(30) DEFAULT 'GLOBAL',
+                    platform VARCHAR(50) NOT NULL,
+                    platform_name VARCHAR(100) NOT NULL,
+                    server_url TEXT NULL,
+                    stream_key TEXT NULL,
+                    enabled TINYINT(1) DEFAULT 0,
+                    status VARCHAR(40) DEFAULT 'configured',
+                    created_at TIMESTAMP NULL,
+                    updated_at TIMESTAMP NULL
+                )
+            ");
+
+            DB::statement("
+                CREATE TABLE IF NOT EXISTS live_broadcast_signals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    broadcast_id VARCHAR(80) NOT NULL,
+                    sender_id VARCHAR(120) NOT NULL,
+                    recipient_id VARCHAR(120) NOT NULL,
+                    signal_type VARCHAR(50) NOT NULL,
+                    payload LONGTEXT NOT NULL,
+                    consumed TINYINT(1) DEFAULT 0,
+                    created_at TIMESTAMP NULL,
+                    updated_at TIMESTAMP NULL
+                )
+            ");
+        } catch (\Throwable $e) {}
+
+        // 2. Ensure MySQL tables exist if MySQL is connected
         try {
             $pdo = DatabaseService::getPdo();
             if ($pdo) {
@@ -47,6 +137,18 @@ class LiveBroadcastController extends Controller
                         updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 ");
+
+                $mysqlCols = [
+                    'course_title' => 'VARCHAR(255) NULL',
+                    'announcement' => 'TEXT NULL',
+                    'companion_pdf_url' => 'VARCHAR(500) NULL',
+                    'recording_media_id' => 'VARCHAR(80) NULL',
+                ];
+                foreach ($mysqlCols as $col => $def) {
+                    try {
+                        $pdo->exec("ALTER TABLE live_broadcasts ADD COLUMN {$col} {$def}");
+                    } catch (\Throwable $e) {}
+                }
 
                 $pdo->exec("
                     CREATE TABLE IF NOT EXISTS live_broadcast_chats (
@@ -98,6 +200,9 @@ class LiveBroadcastController extends Controller
                 ");
             }
         } catch (\Throwable $e) {}
+
+        @file_put_contents($flagFile, (string) time());
+        self::$tablesVerified = true;
     }
 
     /**
@@ -717,7 +822,7 @@ class LiveBroadcastController extends Controller
         $filename = 'FCC-LIVE-HANDOUT-' . $deptCode . '-' . time() . '.' . $ext;
 
         $file->storeAs('public/media/handouts', $filename);
-        $pdfUrl = '/storage/media/handouts/' . $filename;
+        $pdfUrl = '/api/live-broadcast/handout/' . $filename;
 
         // Save to studio config in DB
         $configKey = 'fcc_live_studio_config_' . strtolower($deptCode);
@@ -757,6 +862,23 @@ class LiveBroadcastController extends Controller
             'message' => 'Companion lecture handout uploaded and linked in database',
             'companion_pdf_url' => $pdfUrl,
             'companion_pdf_name' => $originalName,
+        ]);
+    }
+
+    /**
+     * GET /api/live-broadcast/handout/{filename}
+     * Serve companion PDF handout directly over the API proxy
+     */
+    public function getCompanionHandout(Request $request, $filename)
+    {
+        $safeName = basename((string) $filename);
+        $path = storage_path('app/public/media/handouts/' . $safeName);
+        if (!file_exists($path)) {
+            return response()->json(['error' => 'Handout PDF not found'], 404);
+        }
+        return response()->file($path, [
+            'Content-Type' => 'application/pdf',
+            'Cache-Control' => 'public, max-age=3600',
         ]);
     }
 
@@ -884,7 +1006,7 @@ class LiveBroadcastController extends Controller
             }
         } catch (\Throwable $e) {}
 
-        if (!$mysqlQueried && !$broadcast) {
+        if (!$broadcast) {
             try {
                 if ($specificIdRequested) {
                     $broadcast = DB::table('live_broadcasts')->where('id', $targetId)->first();
@@ -1136,12 +1258,6 @@ class LiveBroadcastController extends Controller
     {
         $this->ensureDatabaseTables();
 
-        $request->validate([
-            'title' => 'required|string|max:500',
-            'department_code' => 'required|string|max:30',
-            'lecturer_name' => 'required|string|max:255',
-        ]);
-
         $gov = $this->getGovernance();
 
         // 1. Master developer kill-switch check
@@ -1153,15 +1269,24 @@ class LiveBroadcastController extends Controller
             ], 403);
         }
 
-        // 2. Departmental permission check
-        $deptCode = strtolower(trim((string) $request->input('department_code', 'cem')));
+        // 2. Departmental permission check & safe defaults (never 302 redirect on validation)
+        $deptCode = strtolower(trim((string) ($request->input('department_code') ?: 'cem')));
+        if ($deptCode === 'oao') {
+            $deptCode = 'cem';
+        }
         $deptUpper = strtoupper($deptCode);
+        $deptName = trim((string) ($request->input('department_name') ?: 'Co-operative Economics & Management'));
+        $courseCode = trim((string) ($request->input('course_code') ?: ($deptUpper . ' 111')));
+        $courseTitle = trim((string) ($request->input('course_title') ?: $courseCode));
+        $lecturerName = trim((string) ($request->input('lecturer_name') ?: 'Head of Department'));
+        $title = trim((string) ($request->input('title') ?: ($courseCode . ': ' . $courseTitle . ' — Live Interactive Lecture')));
+
         $deptKey = 'live_broadcast_dept_' . $deptCode;
         if (isset($gov[$deptKey]) && empty($gov[$deptKey])) {
             return response()->json([
                 'success' => false,
                 'code' => 'DEPT_LIVE_LOCKED',
-                'error' => "Live streaming for the Department of {$request->input('department_name')} is currently locked. Please contact the Library Developer through the Developer Authority Portal to activate live broadcasting."
+                'error' => "Live streaming for the Department of {$deptName} is currently locked. Please contact the Library Developer through the Developer Authority Portal to activate live broadcasting."
             ], 403);
         }
 
@@ -1188,12 +1313,12 @@ class LiveBroadcastController extends Controller
 
         $data = [
             'id' => $broadcastId,
-            'title' => trim((string) $request->input('title')),
+            'title' => $title,
             'department_code' => $deptUpper,
-            'department_name' => $request->input('department_name', 'Co-operative Economics & Management'),
-            'course_code' => $request->input('course_code'),
-            'course_title' => $request->input('course_title'),
-            'lecturer_name' => trim((string) $request->input('lecturer_name')),
+            'department_name' => $deptName,
+            'course_code' => $courseCode,
+            'course_title' => $courseTitle,
+            'lecturer_name' => $lecturerName,
             'lecturer_role' => $request->input('lecturer_role', 'hod'),
             'status' => 'live',
             'is_live' => true,
@@ -1201,8 +1326,8 @@ class LiveBroadcastController extends Controller
             'resolution' => $request->input('resolution', '1080p Full HD'),
             'viewers_count' => 0,
             'simulcast_destinations' => $simulcastJson,
-            'announcement' => $request->input('announcement'),
-            'companion_pdf_url' => $request->input('companion_pdf_url'),
+            'announcement' => $request->input('announcement', ''),
+            'companion_pdf_url' => $request->input('companion_pdf_url', ''),
             'started_at' => $nowStr,
             'created_at' => $nowStr,
             'updated_at' => $nowStr,
@@ -1727,17 +1852,22 @@ class LiveBroadcastController extends Controller
     {
         $this->ensureDatabaseTables();
 
-        $request->validate([
-            'user_name' => 'required|string|max:255',
-            'message' => 'required|string|max:1000',
-        ]);
+        $userName = trim((string) $request->input('user_name', 'Student'));
+        $message = trim((string) $request->input('message', ''));
+        if ($message === '') {
+            return response()->json([
+                'success' => false,
+                'error' => 'Message cannot be empty.',
+                'messages' => $this->fetchChatMessagesFromDb($id),
+            ], 422);
+        }
 
         $chatId = $this->insertChatMessageToDb([
             'broadcast_id' => $id,
-            'user_name' => $request->input('user_name'),
+            'user_name' => $userName !== '' ? substr($userName, 0, 255) : 'Student',
             'user_role' => $request->input('user_role', 'student'),
             'user_matric' => $request->input('user_matric', 'STUDENT'),
-            'message' => trim((string) $request->input('message')),
+            'message' => substr($message, 0, 1000),
             'is_question' => $request->boolean('is_question'),
             'hand_raised' => $request->boolean('hand_raised'),
         ]);
@@ -2023,16 +2153,21 @@ class LiveBroadcastController extends Controller
     {
         $this->ensureDatabaseTables();
 
-        $request->validate([
-            'sender_id' => 'required|string|max:120',
-            'recipient_id' => 'required|string|max:120',
-            'signal_type' => 'required|string|max:50',
-            'payload' => 'required',
-        ]);
+        $senderId = trim((string) $request->input('sender_id', ''));
+        $recipientId = trim((string) $request->input('recipient_id', ''));
+        $signalType = trim((string) $request->input('signal_type', ''));
+        $rawPayload = $request->input('payload');
 
-        $payload = is_string($request->input('payload'))
-            ? $request->input('payload')
-            : json_encode($request->input('payload'));
+        if ($senderId === '' || $recipientId === '' || $signalType === '' || $rawPayload === null) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Missing required WebRTC signal fields',
+            ], 422);
+        }
+
+        $payload = is_string($rawPayload)
+            ? $rawPayload
+            : json_encode($rawPayload);
 
         // If viewer is joining, also register them in active viewers immediately
         if ($request->input('signal_type') === 'join' && $request->input('sender_id') !== 'host') {

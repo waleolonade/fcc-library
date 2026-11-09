@@ -7,10 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "backend": "php backend/artisan serve --host=0.0.0.0 --port=8000",
+    "backend": "node scripts/multi-php-server.cjs",
     "backend:migrate": "php backend/artisan migrate --seed",
     "init-db": "php database/init-db.php",
-    "start": "php backend/artisan serve --host=0.0.0.0 --port=8000",
+    "start": "node scripts/multi-php-server.cjs",
     "mobile": "cd mobile && npm start",
     "mobile:android": "cd mobile && npm run android",
     "mobile:ios": "cd mobile && npm run ios"

@@ -175,7 +175,7 @@ export default function StudentLiveBroadcastViewer({
       const base = getApiBase();
       const res = await fetch(`${base}/live-broadcast/verify-student`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({
           identifier: identifierInput.trim(),
           name: nameInput.trim(),
