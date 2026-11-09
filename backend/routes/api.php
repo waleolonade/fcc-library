@@ -750,6 +750,10 @@ Route::prefix('live-broadcast')->group(function () {
     Route::get('/{id}/chat', [\App\Http\Controllers\LiveBroadcastController::class, 'getChatMessages']);
     Route::post('/{id}/chat', [\App\Http\Controllers\LiveBroadcastController::class, 'sendChatMessage']);
     Route::post('/{id}/heartbeat', [\App\Http\Controllers\LiveBroadcastController::class, 'heartbeat']);
+    Route::post('/{id}/signal', [\App\Http\Controllers\LiveBroadcastController::class, 'sendSignal']);
+    Route::get('/{id}/signal', [\App\Http\Controllers\LiveBroadcastController::class, 'getSignals']);
+    Route::post('/{id}/chunk', [\App\Http\Controllers\LiveBroadcastController::class, 'uploadChunk']);
+    Route::get('/{id}/stream', [\App\Http\Controllers\LiveBroadcastController::class, 'getLiveStream']);
     Route::get('/social-destinations', [\App\Http\Controllers\LiveBroadcastController::class, 'getSocialDestinations']);
     Route::post('/social-destinations', [\App\Http\Controllers\LiveBroadcastController::class, 'saveSocialDestinations']);
 });

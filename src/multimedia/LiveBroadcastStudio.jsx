@@ -61,14 +61,32 @@ export default function LiveBroadcastStudio({
   const audioContextRef = useRef(null);
   const animationFrameRef = useRef(null);
   const timerRef = useRef(null);
+  const peersRef = useRef({});
+  const signalingChannelRef = useRef(null);
+  const chunkIndexRef = useRef(0);
 
   const deptCode = currentDept?.code || currentUser?.department_code || 'COM 221';
   const deptName = currentDept?.name || currentUser?.department_name || 'Basic Computer Network';
   const lecturerName = currentUser?.name || currentDept?.hod_name || currentDept?.hod || 'Engineer Olawale';
 
+  // Fetch saved social destinations from backend
+  const fetchSocialDestinations = async () => {
+    try {
+      const base = getApiBase();
+      const res = await fetch(`${base}/live-broadcast/social-destinations?department_code=${deptCode}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.destinations && data.destinations.length > 0) {
+          setSocialDestinations(data.destinations);
+        }
+      }
+    } catch (e) {}
+  };
+
   // 1. Enumerate and initialize audio/video capture devices
   const initDevices = async () => {
     try {
+      fetchSocialDestinations();
       if (!navigator.mediaDevices?.enumerateDevices) return;
       const devices = await navigator.mediaDevices.enumerateDevices();
       const vDevs = devices.filter(d => d.kind === 'videoinput');
@@ -164,6 +182,141 @@ export default function LiveBroadcastStudio({
     };
   }, []);
 
+  // WebRTC Host Signaling Engine
+  const sendSignalToViewer = async (viewerId, type, data) => {
+    // 1. Broadcast locally for instant same-browser / same-LAN transmission
+    if (signalingChannelRef.current) {
+      signalingChannelRef.current.postMessage({
+        sender_id: 'host',
+        recipient_id: viewerId,
+        signal_type: type,
+        payload: data
+      });
+    }
+
+    // 2. Transmit via Laravel backend for remote LAN / Internet students
+    if (broadcastId) {
+      try {
+        const base = getApiBase();
+        await fetch(`${base}/live-broadcast/${broadcastId}/signal`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sender_id: 'host',
+            recipient_id: viewerId,
+            signal_type: type,
+            payload: data
+          })
+        });
+      } catch (e) {}
+    }
+  };
+
+  const handleViewerSignal = async (signal) => {
+    const { sender_id, signal_type, payload } = signal;
+    if (!sender_id || sender_id === 'host') return;
+
+    if (signal_type === 'join') {
+      try {
+        const pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun.services.mozilla.com' }
+          ]
+        });
+
+        peersRef.current[sender_id] = pc;
+
+        // Add local video & audio tracks
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach(track => {
+            pc.addTrack(track, mediaStreamRef.current);
+          });
+        }
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            sendSignalToViewer(sender_id, 'ice_candidate', event.candidate);
+          }
+        };
+
+        const offer = await pc.createOffer({
+          offerToReceiveAudio: false,
+          offerToReceiveVideo: false
+        });
+        await pc.setLocalDescription(offer);
+
+        sendSignalToViewer(sender_id, 'offer', offer);
+      } catch (err) {
+        console.warn('Error handling viewer join:', err);
+      }
+    } else if (signal_type === 'answer') {
+      const pc = peersRef.current[sender_id];
+      if (pc) {
+        try {
+          const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
+          await pc.setRemoteDescription(new RTCSessionDescription(parsed));
+        } catch (e) {}
+      }
+    } else if (signal_type === 'ice_candidate') {
+      const pc = peersRef.current[sender_id];
+      if (pc) {
+        try {
+          const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
+          await pc.addIceCandidate(new RTCIceCandidate(parsed));
+        } catch (e) {}
+      }
+    }
+  };
+
+  // Setup WebRTC Host Listener when broadcast becomes live
+  useEffect(() => {
+    if (!isLive || !broadcastId) return;
+
+    // 1. BroadcastChannel setup
+    try {
+      if (typeof window !== 'undefined' && window.BroadcastChannel) {
+        const bc = new BroadcastChannel('fcc_live_signaling_' + broadcastId);
+        bc.onmessage = (e) => {
+          if (e.data && e.data.recipient_id === 'host') {
+            handleViewerSignal(e.data);
+          }
+        };
+        signalingChannelRef.current = bc;
+      }
+    } catch (e) {}
+
+    // 2. Polling signals from Laravel backend
+    const signalInterval = setInterval(async () => {
+      try {
+        const base = getApiBase();
+        const res = await fetch(`${base}/live-broadcast/${broadcastId}/signal?recipient_id=host`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.signals && data.signals.length > 0) {
+            for (const sig of data.signals) {
+              handleViewerSignal(sig);
+            }
+          }
+        }
+      } catch (e) {}
+    }, 1500);
+
+    return () => {
+      clearInterval(signalInterval);
+      if (signalingChannelRef.current) {
+        signalingChannelRef.current.close();
+        signalingChannelRef.current = null;
+      }
+      // Close all peer connections
+      Object.values(peersRef.current).forEach(pc => {
+        try { pc.close(); } catch (e) {}
+      });
+      peersRef.current = {};
+    };
+  }, [isLive, broadcastId]);
+
   // Poll Chat Messages when live
   useEffect(() => {
     if (!isLive || !broadcastId) return;
@@ -220,15 +373,32 @@ export default function LiveBroadcastStudio({
         setIsLive(true);
         setElapsedSeconds(0);
 
-        // Start Recording using MediaRecorder
+        // Start Recording and Live Chunk Streaming using MediaRecorder
         if (mediaStreamRef.current && window.MediaRecorder) {
           try {
             recordedChunksRef.current = [];
-            const rec = new MediaRecorder(mediaStreamRef.current, { mimeType: 'video/webm;codecs=vp8,opus' });
-            rec.ondataavailable = (e) => {
-              if (e.data && e.data.size > 0) recordedChunksRef.current.push(e.data);
+            chunkIndexRef.current = 0;
+            const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+              ? 'video/webm;codecs=vp8,opus'
+              : 'video/webm';
+            const rec = new MediaRecorder(mediaStreamRef.current, { mimeType: mime });
+            rec.ondataavailable = async (e) => {
+              if (e.data && e.data.size > 0) {
+                recordedChunksRef.current.push(e.data);
+                // Push live chunk to server for real-time buffer streaming
+                try {
+                  const chunkBase = getApiBase();
+                  const form = new FormData();
+                  form.append('chunk', e.data);
+                  form.append('chunk_index', chunkIndexRef.current++);
+                  fetch(`${chunkBase}/live-broadcast/${bId}/chunk`, {
+                    method: 'POST',
+                    body: form
+                  }).catch(() => {});
+                } catch (err) {}
+              }
             };
-            rec.start(1000);
+            rec.start(2000); // 2-second chunks for instant streaming
             mediaRecorderRef.current = rec;
           } catch (e) {}
         }
@@ -745,17 +915,68 @@ export default function LiveBroadcastStudio({
                       />
                     </div>
                   </div>
+
+                  {/* Direct Portal Launch Buttons */}
+                  <div className="flex items-center justify-end gap-2 pt-1 text-[10px]">
+                    {dest.platform === 'youtube' && (
+                      <a
+                        href="https://studio.youtube.com/channel/live/ingest"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-purple-300 hover:text-white flex items-center gap-1 font-sans"
+                      >
+                        <ExternalLink size={10} />
+                        <span>Open YouTube Live Studio</span>
+                      </a>
+                    )}
+                    {dest.platform === 'facebook' && (
+                      <a
+                        href="https://www.facebook.com/live/producer/"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-purple-300 hover:text-white flex items-center gap-1 font-sans"
+                      >
+                        <ExternalLink size={10} />
+                        <span>Open Facebook Live Producer</span>
+                      </a>
+                    )}
+                    {dest.platform === 'twitch' && (
+                      <a
+                        href="https://dashboard.twitch.tv/stream-manager"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-purple-300 hover:text-white flex items-center gap-1 font-sans"
+                      >
+                        <ExternalLink size={10} />
+                        <span>Open Twitch Dashboard</span>
+                      </a>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-purple-950">
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-purple-950">
+              <span className="text-[10px] text-slate-400 font-mono">
+                Keys encrypted &amp; saved in institutional database
+              </span>
               <button
-                onClick={() => {
+                onClick={async () => {
                   sounds.playSuccessChime();
+                  try {
+                    const base = getApiBase();
+                    await fetch(`${base}/live-broadcast/social-destinations`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        department_code: deptCode,
+                        destinations: socialDestinations
+                      })
+                    });
+                  } catch (e) {}
                   setShowSocialModal(false);
                 }}
-                className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs"
+                className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs cursor-pointer shadow-lg shadow-purple-950"
               >
                 Save &amp; Apply Simulcast Destinations
               </button>

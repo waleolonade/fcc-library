@@ -68,4 +68,22 @@ CREATE TABLE IF NOT EXISTS `live_social_destinations` (
   INDEX `idx_lsd_dept` (`department_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 4. Real-time WebRTC Live Broadcast Signaling Table
+CREATE TABLE IF NOT EXISTS `live_broadcast_signals` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `broadcast_id` VARCHAR(80) NOT NULL,
+  `sender_id` VARCHAR(120) NOT NULL,
+  `recipient_id` VARCHAR(120) NOT NULL,
+  `signal_type` VARCHAR(50) NOT NULL,
+  `payload` LONGTEXT NOT NULL,
+  `consumed` TINYINT(1) NOT NULL DEFAULT 0,
+  `created_at` TIMESTAMP NULL DEFAULT NULL,
+  `updated_at` TIMESTAMP NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `idx_lbs_broadcast` (`broadcast_id`),
+  INDEX `idx_lbs_recipient` (`recipient_id`),
+  INDEX `idx_lbs_consumed` (`consumed`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
+
