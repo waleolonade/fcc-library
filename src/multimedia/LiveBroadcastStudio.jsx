@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { getApiBase } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
+import { publishRealtimeEvent, subscribeRealtimeEvents } from '../services/realtimeSync';
 
 export default function LiveBroadcastStudio({
   role = 'hod',
@@ -196,6 +197,7 @@ export default function LiveBroadcastStudio({
 
       const payload = {
         broadcast_id: broadcastId,
+        is_live: isLive,
         department_code: overrides.department_code ?? deptCode,
         department_name: overrides.department_name ?? deptName,
         course_code: overrides.course_code ?? courseCode,
@@ -584,9 +586,30 @@ export default function LiveBroadcastStudio({
     const initialTimer = setTimeout(captureAndSendFrame, 1000);
     const frameInterval = setInterval(captureAndSendFrame, 2500);
 
+    // 3. Broadcaster Host Liveness Heartbeat (every 8s)
+    const sendHostHeartbeat = () => {
+      try {
+        const base = getApiBase();
+        fetch(`${base}/live-broadcast/${broadcastId}/host-heartbeat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ department_code: deptCode })
+        })
+          .then(r => r.ok ? r.json() : null)
+          .then(d => {
+            if (d && typeof d.viewers_count === 'number') {
+              setViewersCount(d.viewers_count);
+            }
+          })
+          .catch(() => {});
+      } catch (e) {}
+    };
+    const hbInterval = setInterval(sendHostHeartbeat, 8000);
+
     return () => {
       clearTimeout(initialTimer);
       clearInterval(frameInterval);
+      clearInterval(hbInterval);
     };
   }, [isLive, broadcastId, isStudioActivated]);
 
@@ -754,7 +777,7 @@ export default function LiveBroadcastStudio({
       const nextCode = matched.code;
       const nextTitle = matched.title || '';
       const nextLevel = matched.level || 'ND I';
-      const nextLectureTitle = `${nextCode}: ${nextTitle} — Live Interactive Lecture`;
+      const nextLectureTitle = `${nextCode}: ${nextTitle} - Live Interactive Lecture`;
 
       setCourseCode(nextCode);
       setCourseTitle(nextTitle);
@@ -887,6 +910,20 @@ export default function LiveBroadcastStudio({
           .catch(() => {});
 
         window.dispatchEvent(new CustomEvent('fcc-live-broadcast-started', { detail: json.broadcast }));
+        publishRealtimeEvent({
+          action: 'LIVE_BROADCAST_STARTED',
+          entity: 'live_broadcast',
+          id: bId,
+          title: json.broadcast.title,
+          data: json.broadcast
+        });
+        try {
+          if (typeof window !== 'undefined' && window.BroadcastChannel) {
+            const ch = new BroadcastChannel('fcc_live_broadcast_channel');
+            ch.postMessage({ type: 'LIVE_BROADCAST_STARTED', broadcast: json.broadcast });
+            ch.close();
+          }
+        } catch (e) {}
       } else {
         const errJson = await res.json();
         setDbSyncStatus('error');
@@ -898,48 +935,73 @@ export default function LiveBroadcastStudio({
     }
   };
 
-  // Stop Live Broadcast & Auto-Archive to Database
+  // Stop Live Broadcast & Auto-Archive to Database (Strong Real-Time API Termination)
   const handleStopBroadcast = async () => {
     sounds.playClick();
-    if (!confirm('Are you sure you want to end this live broadcast? The recorded session will be archived into the FCC Central Library Database Catalogue for student revision.')) {
-      return;
-    }
 
+    const targetEndId = broadcastId || 'active';
+    const finalElapsed = elapsedSeconds;
+    const finalFormatted = formatDuration(elapsedSeconds);
+
+    // 1. Immediately halt local recording, timers, and UI live state so no further frames/chunks are sent
+    setIsLive(false);
+    setViewersCount(0);
     setDbSyncStatus('syncing');
+
     try {
       if (timerRef.current) clearInterval(timerRef.current);
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }
+      Object.values(peersRef.current || {}).forEach(pc => {
+        try { pc.close(); } catch (e) {}
+      });
+      peersRef.current = {};
+    } catch (e) {}
 
-      const base = getApiBase();
-      const formData = new FormData();
-      formData.append('duration_seconds', elapsedSeconds);
-      formData.append('duration_formatted', formatDuration(elapsedSeconds));
-      formData.append('target_level', targetLevel || 'ND I');
-
-      if (recordedChunksRef.current.length > 0) {
-        const recordedBlob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
-        formData.append('recording_file', recordedBlob, `live-lecture-${deptCode}-${Date.now()}.webm`);
+    // 2. Immediately notify all open OPAC / Classroom / Student tabs & LAN clients
+    window.dispatchEvent(new CustomEvent('fcc-live-broadcast-ended', { detail: { id: targetEndId } }));
+    publishRealtimeEvent({
+      action: 'LIVE_BROADCAST_ENDED',
+      entity: 'live_broadcast',
+      id: targetEndId,
+      title: lectureTitle || 'Live Lecture Ended',
+      data: { id: targetEndId, active: false, is_live: false, status: 'ended' }
+    });
+    try {
+      if (typeof window !== 'undefined' && window.BroadcastChannel) {
+        const ch = new BroadcastChannel('fcc_live_broadcast_channel');
+        ch.postMessage({ type: 'LIVE_BROADCAST_ENDED', id: targetEndId });
+        ch.close();
       }
+    } catch (e) {}
 
-      const res = await fetch(`${base}/live-broadcast/${broadcastId}/end`, {
+    // 3. Call strong backend termination API (lightweight JSON payload so PHP post_max_size is never exceeded)
+    try {
+      const base = getApiBase();
+      const res = await fetch(`${base}/live-broadcast/${encodeURIComponent(targetEndId)}/end`, {
         method: 'POST',
-        body: formData
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
+        body: JSON.stringify({
+          broadcast_id: targetEndId,
+          department_code: deptCode,
+          duration_seconds: finalElapsed,
+          duration_formatted: finalFormatted,
+          target_level: targetLevel || 'ND I',
+          end_all: true
+        })
       });
 
-      if (res.ok) {
-        setIsLive(false);
-        setViewersCount(0);
-        sounds.playSuccessChime();
-        setDbSyncStatus('saved');
-        setLastSyncedAt(new Date().toLocaleTimeString());
-        window.dispatchEvent(new CustomEvent('fcc-live-broadcast-ended', { detail: { id: broadcastId } }));
-        // Refresh studio context so broadcast history updates immediately from DB
-        fetchStudioContext(deptCode);
-      }
+      setBroadcastId(null);
+      setElapsedSeconds(0);
+      sounds.playSuccessChime();
+      setDbSyncStatus(res.ok ? 'saved' : 'connected');
+      setLastSyncedAt(new Date().toLocaleTimeString());
+
+      // Refresh studio context so broadcast history updates immediately from DB
+      fetchStudioContext(deptCode);
     } catch (err) {
-      setIsLive(false);
+      setBroadcastId(null);
       setDbSyncStatus('error');
     }
   };
@@ -1082,7 +1144,7 @@ export default function LiveBroadcastStudio({
               <div>
                 <span className="text-[10px] font-mono text-slate-400 uppercase block">Department &amp; Host</span>
                 <span className="font-bold text-white block truncate">{lecturerName || 'Head of Department'}</span>
-                <span className="text-[11px] text-emerald-300 font-mono truncate block">{deptCode} — {deptName}</span>
+                <span className="text-[11px] text-emerald-300 font-mono truncate block">{deptCode} - {deptName}</span>
               </div>
               <div>
                 <span className="text-[10px] font-mono text-slate-400 uppercase block">Configured Course &amp; Level</span>
@@ -1504,7 +1566,7 @@ export default function LiveBroadcastStudio({
                     <optgroup label={`${deptCode} Departmental Courses`}>
                       {deptCourses.map(c => (
                         <option key={`dept-${c.code}`} value={c.code}>
-                          {c.code} — {c.title} ({c.level || 'ND I'})
+                          {c.code} - {c.title} ({c.level || 'ND I'})
                         </option>
                       ))}
                     </optgroup>
@@ -1513,7 +1575,7 @@ export default function LiveBroadcastStudio({
                     <optgroup label="All College Curriculum Courses">
                       {allCourses.map(c => (
                         <option key={`all-${c.code}`} value={c.code}>
-                          {c.code} — {c.title} ({c.department || 'General'})
+                          {c.code} - {c.title} ({c.department || 'General'})
                         </option>
                       ))}
                     </optgroup>

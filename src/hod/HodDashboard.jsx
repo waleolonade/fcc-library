@@ -3779,7 +3779,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
 
                   <div className="flex items-center justify-between pt-2">
                     <span className="text-[11px] text-slate-400">
-                      ✓ Connected to Backend API (`/api/department-uploads`) — Select from DB or edit any field manually.
+                      ✓ Connected to Backend API (`/api/department-uploads`) - Select from DB or edit any field manually.
                     </span>
 
                     <button
@@ -5045,7 +5045,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                                       onClick={() => { sounds.playClick(); setSelectedCourseSyllabusDossier({ course: c, linkedBooks }); }}
                                       className="w-full text-[10px] text-teal-400 hover:text-teal-300 font-bold py-1"
                                     >
-                                      + {linkedBooks.length - 3} more HOD {linkedBooks.length - 3 === 1 ? 'book' : 'books'} — view all
+                                      + {linkedBooks.length - 3} more HOD {linkedBooks.length - 3 === 1 ? 'book' : 'books'} - view all
                                     </button>
                                   </li>
                                 )}

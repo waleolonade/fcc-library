@@ -752,12 +752,15 @@ Route::prefix('live-broadcast')->group(function () {
     Route::get('/session/{id?}', [\App\Http\Controllers\LiveBroadcastController::class, 'getBroadcastSession']);
     Route::get('/active', [\App\Http\Controllers\LiveBroadcastController::class, 'getActiveStreams']);
     Route::post('/start', [\App\Http\Controllers\LiveBroadcastController::class, 'start']);
+    Route::post('/end', [\App\Http\Controllers\LiveBroadcastController::class, 'end']);
+    Route::post('/end-all', [\App\Http\Controllers\LiveBroadcastController::class, 'end']);
     Route::get('/social-destinations', [\App\Http\Controllers\LiveBroadcastController::class, 'getSocialDestinations']);
     Route::post('/social-destinations', [\App\Http\Controllers\LiveBroadcastController::class, 'saveSocialDestinations']);
     Route::post('/social-destinations/toggle', [\App\Http\Controllers\LiveBroadcastController::class, 'toggleSocialDestination']);
     Route::put('/{id}', [\App\Http\Controllers\LiveBroadcastController::class, 'updateBroadcast']);
     Route::delete('/{id}', [\App\Http\Controllers\LiveBroadcastController::class, 'deleteBroadcast']);
     Route::post('/{id}/end', [\App\Http\Controllers\LiveBroadcastController::class, 'end']);
+    Route::post('/{id}/host-heartbeat', [\App\Http\Controllers\LiveBroadcastController::class, 'hostHeartbeat']);
     Route::get('/{id}/chat', [\App\Http\Controllers\LiveBroadcastController::class, 'getChatMessages']);
     Route::post('/{id}/chat', [\App\Http\Controllers\LiveBroadcastController::class, 'sendChatMessage']);
     Route::delete('/{id}/chat', [\App\Http\Controllers\LiveBroadcastController::class, 'clearChat']);

@@ -394,7 +394,7 @@ export default function HodStaffPageBuilder({
     try {
       const res = await onUpdateStaff(activeStaff.id, {
         designation: preset.designation,
-        page_title: `${activeStaff.name} — ${preset.name}`,
+        page_title: `${activeStaff.name} - ${preset.name}`,
         allowed_pages: { ...preset.pages },
         allowed_features: { ...preset.features }
       });

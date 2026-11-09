@@ -2491,7 +2491,7 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                     <option
                       key={`db-course-${idx}`}
                       value={courseCode}
-                      label={detail?.title ? `${courseCode} — ${detail.title}` : courseCode}
+                      label={detail?.title ? `${courseCode} - ${detail.title}` : courseCode}
                     />
                   );
                 })}
@@ -2928,8 +2928,8 @@ export default function HodUploadStudio({ user, theme: propTheme, onUploadSucces
                         <Sparkles size={16} className="text-amber-400" />
                         <h4 className="text-xs font-bold text-white uppercase tracking-wider">
                           {bulkCategory === 'journal'
-                            ? `Batch Academic Journal Defaults — Apply to All ${batchItems.length} Staged Journals`
-                            : `Batch Metadata Defaults — Apply to All ${batchItems.length} Staged Books (Database-Connected & Manually Editable)`}
+                            ? `Batch Academic Journal Defaults - Apply to All ${batchItems.length} Staged Journals`
+                            : `Batch Metadata Defaults - Apply to All ${batchItems.length} Staged Books (Database-Connected & Manually Editable)`}
                         </h4>
                       </div>
                       <span className="text-[11px] text-slate-400">

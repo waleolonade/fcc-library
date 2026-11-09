@@ -95,26 +95,85 @@ export default function PublicDiscovery({
   const [lastSyncTime, setLastSyncTime] = useState(null);
   const [activeOpacLiveStream, setActiveOpacLiveStream] = useState(null);
 
-  // Poll Active Live Lecture Broadcast for OPAC Home Banner
+  // Poll Active Live Lecture Broadcast for OPAC Home Banner with Real-Time Event Sync
   useEffect(() => {
     let mounted = true;
     const checkOpacLive = async () => {
       try {
         const base = getApiBase();
-        const res = await fetch(`${base}/live-broadcast/active`);
+        const res = await fetch(`${base}/live-broadcast/active?t=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' }
+        });
         if (res.ok) {
           const data = await res.json();
           if (mounted) {
-            setActiveOpacLiveStream(data.broadcast || null);
+            const b = data.broadcast;
+            const isValidLive = Boolean(
+              data.active &&
+              b &&
+              b.id &&
+              Boolean(Number(b.is_live ?? 0)) &&
+              String(b.status || '').toLowerCase() === 'live'
+            );
+            setActiveOpacLiveStream(isValidLive ? b : null);
           }
         }
       } catch (e) {}
     };
+
     checkOpacLive();
-    const timer = setInterval(checkOpacLive, 8000);
+    const timer = setInterval(checkOpacLive, 4000);
+
+    const onEnded = () => {
+      if (mounted) setActiveOpacLiveStream(null);
+      setTimeout(checkOpacLive, 400);
+    };
+    const onStarted = (e) => {
+      if (mounted && e?.detail?.id) setActiveOpacLiveStream(e.detail);
+      checkOpacLive();
+    };
+    const onFocus = () => checkOpacLive();
+
+    window.addEventListener('fcc-live-broadcast-ended', onEnded);
+    window.addEventListener('fcc-live-broadcast-started', onStarted);
+    window.addEventListener('focus', onFocus);
+
+    let bc = null;
+    try {
+      if (typeof window !== 'undefined' && window.BroadcastChannel) {
+        bc = new BroadcastChannel('fcc_live_broadcast_channel');
+        bc.onmessage = (msg) => {
+          if (!mounted) return;
+          if (msg.data?.type === 'LIVE_BROADCAST_ENDED') {
+            setActiveOpacLiveStream(null);
+          } else if (msg.data?.type === 'LIVE_BROADCAST_STARTED') {
+            if (msg.data.broadcast) setActiveOpacLiveStream(msg.data.broadcast);
+            checkOpacLive();
+          }
+        };
+      }
+    } catch (e) {}
+
+    const unsubRealtime = subscribeRealtimeEvents((evt) => {
+      if (!mounted || !evt) return;
+      if (evt.action === 'LIVE_BROADCAST_ENDED') {
+        setActiveOpacLiveStream(null);
+      } else if (evt.action === 'LIVE_BROADCAST_STARTED') {
+        checkOpacLive();
+      }
+    });
+
     return () => {
       mounted = false;
       clearInterval(timer);
+      window.removeEventListener('fcc-live-broadcast-ended', onEnded);
+      window.removeEventListener('fcc-live-broadcast-started', onStarted);
+      window.removeEventListener('focus', onFocus);
+      if (bc) {
+        try { bc.close(); } catch (e) {}
+      }
+      if (typeof unsubRealtime === 'function') unsubRealtime();
     };
   }, []);
 

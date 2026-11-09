@@ -9,6 +9,7 @@ import { getApiBase } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
 import { getActiveUserSession, storeUserSession } from '../utils/authSessionManager';
 import { navigateTo } from '../utils/router';
+import { subscribeRealtimeEvents } from '../services/realtimeSync';
 
 const ICE_CONFIG = {
   iceServers: [
@@ -23,6 +24,7 @@ export default function StudentLiveBroadcastViewer({
   broadcast: initialBroadcast,
   currentUser = null,
   onClose = null,
+  onBroadcastEnded = null,
   isStandalonePage = false
 }) {
   const [broadcast, setBroadcast] = useState(initialBroadcast || null);
@@ -112,6 +114,52 @@ export default function StudentLiveBroadcastViewer({
       setBroadcast(initialBroadcast);
     }
   }, [initialBroadcast]);
+
+  // Unconditional liveness listener (handles broadcast termination even while on the Student Access Gate)
+  useEffect(() => {
+    if (!broadcast?.id) return;
+    let active = true;
+
+    const triggerEnded = (endedInfo = null) => {
+      if (!active) return;
+      active = false;
+      if (onBroadcastEnded) {
+        onBroadcastEnded(endedInfo);
+      } else if (onClose) {
+        onClose();
+      }
+    };
+
+    const onEndedWindow = () => triggerEnded(null);
+    window.addEventListener('fcc-live-broadcast-ended', onEndedWindow);
+
+    let liveBc = null;
+    try {
+      if (typeof window !== 'undefined' && window.BroadcastChannel) {
+        liveBc = new BroadcastChannel('fcc_live_broadcast_channel');
+        liveBc.onmessage = (msg) => {
+          if (msg.data?.type === 'LIVE_BROADCAST_ENDED') {
+            triggerEnded(null);
+          }
+        };
+      }
+    } catch (e) {}
+
+    const unsubRealtime = subscribeRealtimeEvents((evt) => {
+      if (evt && evt.action === 'LIVE_BROADCAST_ENDED') {
+        triggerEnded(evt.data || null);
+      }
+    });
+
+    return () => {
+      active = false;
+      window.removeEventListener('fcc-live-broadcast-ended', onEndedWindow);
+      if (liveBc) {
+        try { liveBc.close(); } catch (e) {}
+      }
+      if (typeof unsubRealtime === 'function') unsubRealtime();
+    };
+  }, [broadcast?.id]);
 
   // Way 1 Handler: Verify HOD-Registered Student Details against Database (POST /api/live-broadcast/verify-student)
   const handleVerifyHodStudentDetails = async (e) => {
@@ -379,22 +427,45 @@ export default function StudentLiveBroadcastViewer({
     }, 1500);
 
     // Poll Live Presentation Frame & Broadcast Metadata every 2.5s
+    const handleRemoteEnded = (endedInfo = null) => {
+      if (!isSubscribed) return;
+      isSubscribed = false;
+      if (onBroadcastEnded) {
+        onBroadcastEnded(endedInfo);
+      } else if (onClose) {
+        onClose();
+      }
+    };
+
     const pollFrameAndSession = async () => {
       if (!isSubscribed) return;
       try {
         const base = getApiBase();
-        const sRes = await fetch(`${base}/live-broadcast/session/${broadcast.id}`);
+        const sRes = await fetch(`${base}/live-broadcast/session/${encodeURIComponent(broadcast.id)}?t=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' }
+        });
         if (sRes.ok) {
           const sData = await sRes.json();
-          if (sData.broadcast) {
-            setBroadcast(prev => ({ ...prev, ...sData.broadcast }));
-            if (sData.broadcast.has_live_frame) {
-              setHasLiveFrame(true);
-              setLiveFrameUrl(`${base}/live-broadcast/${broadcast.id}/frame?t=${Date.now()}`);
-              if (!videoRef.current?.srcObject) {
-                setStreamActive(true);
-                setStreamMode(prev => (prev === 'webrtc' ? 'webrtc' : 'live_frame'));
-              }
+          const b = sData.broadcast;
+          const isStillLive = Boolean(
+            sData.active &&
+            !sData.ended &&
+            b &&
+            Boolean(Number(b.is_live ?? 0)) &&
+            String(b.status || '').toLowerCase() === 'live'
+          );
+          if (!isStillLive) {
+            handleRemoteEnded(sData.ended_broadcast || null);
+            return;
+          }
+          setBroadcast(prev => ({ ...prev, ...b }));
+          if (b.has_live_frame) {
+            setHasLiveFrame(true);
+            setLiveFrameUrl(`${base}/live-broadcast/${broadcast.id}/frame?t=${Date.now()}`);
+            if (!videoRef.current?.srcObject) {
+              setStreamActive(true);
+              setStreamMode(prev => (prev === 'webrtc' ? 'webrtc' : 'live_frame'));
             }
           }
         }
@@ -403,6 +474,27 @@ export default function StudentLiveBroadcastViewer({
 
     pollFrameAndSession();
     const framePollInterval = setInterval(pollFrameAndSession, 2500);
+
+    const onEndedWindow = () => handleRemoteEnded(null);
+    window.addEventListener('fcc-live-broadcast-ended', onEndedWindow);
+
+    let liveBc = null;
+    try {
+      if (typeof window !== 'undefined' && window.BroadcastChannel) {
+        liveBc = new BroadcastChannel('fcc_live_broadcast_channel');
+        liveBc.onmessage = (msg) => {
+          if (msg.data?.type === 'LIVE_BROADCAST_ENDED') {
+            handleRemoteEnded(null);
+          }
+        };
+      }
+    } catch (e) {}
+
+    const unsubRealtime = subscribeRealtimeEvents((evt) => {
+      if (evt && evt.action === 'LIVE_BROADCAST_ENDED') {
+        handleRemoteEnded(evt.data || null);
+      }
+    });
 
     // Check HTTP chunk stream or Presentation Board after 2.5s
     const bufferCheckTimer = setTimeout(() => {
@@ -416,6 +508,11 @@ export default function StudentLiveBroadcastViewer({
       clearInterval(signalInterval);
       clearInterval(framePollInterval);
       clearTimeout(bufferCheckTimer);
+      window.removeEventListener('fcc-live-broadcast-ended', onEndedWindow);
+      if (liveBc) {
+        try { liveBc.close(); } catch (e) {}
+      }
+      if (typeof unsubRealtime === 'function') unsubRealtime();
       if (signalingChannelRef.current) {
         signalingChannelRef.current.close();
         signalingChannelRef.current = null;
@@ -848,7 +945,7 @@ export default function StudentLiveBroadcastViewer({
       <div className="my-auto py-6 space-y-5 max-w-3xl mx-auto text-center">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-rose-950/80 border border-rose-500/60 text-rose-200 text-xs font-mono">
           <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
-          <span>Interactive Classroom Presentation — Active Session</span>
+          <span>Interactive Classroom Presentation - Active Session</span>
         </div>
 
         <h2 className="text-xl sm:text-3xl font-black text-white leading-tight">

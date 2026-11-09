@@ -24,6 +24,7 @@ import TraceBadge from '../common/TraceBadge';
 import { INSTITUTION } from '../data/institutionalSeedData';
 import { getApiBase } from '../api/libraryApi';
 import { navigateTo } from '../utils/router';
+import { subscribeRealtimeEvents } from '../services/realtimeSync';
 
 export default function StudentOverviewDashboard({
   user,
@@ -42,7 +43,7 @@ export default function StudentOverviewDashboard({
   onRenewLoan,
   onOpenAi
 }) {
-  // Active Institutional Live Broadcast Poll
+  // Active Institutional Live Broadcast Poll with Real-Time Event Sync
   const [activeLiveStream, setActiveLiveStream] = useState(null);
 
   useEffect(() => {
@@ -50,21 +51,76 @@ export default function StudentOverviewDashboard({
     const checkLive = async () => {
       try {
         const base = getApiBase();
-        const res = await fetch(`${base}/live-broadcast/active`);
+        const res = await fetch(`${base}/live-broadcast/active?t=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' }
+        });
         if (res.ok) {
           const data = await res.json();
           if (isMounted) {
-            setActiveLiveStream(data.broadcast || null);
+            const b = data.broadcast;
+            const isValidLive = Boolean(
+              data.active &&
+              b &&
+              b.id &&
+              Boolean(Number(b.is_live ?? 0)) &&
+              String(b.status || '').toLowerCase() === 'live'
+            );
+            setActiveLiveStream(isValidLive ? b : null);
           }
         }
       } catch (e) {}
     };
 
     checkLive();
-    const timer = setInterval(checkLive, 8000);
+    const timer = setInterval(checkLive, 4000);
+
+    const onEnded = () => {
+      if (isMounted) setActiveLiveStream(null);
+      setTimeout(checkLive, 400);
+    };
+    const onStarted = (e) => {
+      if (isMounted && e?.detail?.id) setActiveLiveStream(e.detail);
+      checkLive();
+    };
+
+    window.addEventListener('fcc-live-broadcast-ended', onEnded);
+    window.addEventListener('fcc-live-broadcast-started', onStarted);
+
+    let bc = null;
+    try {
+      if (typeof window !== 'undefined' && window.BroadcastChannel) {
+        bc = new BroadcastChannel('fcc_live_broadcast_channel');
+        bc.onmessage = (msg) => {
+          if (!isMounted) return;
+          if (msg.data?.type === 'LIVE_BROADCAST_ENDED') {
+            setActiveLiveStream(null);
+          } else if (msg.data?.type === 'LIVE_BROADCAST_STARTED') {
+            if (msg.data.broadcast) setActiveLiveStream(msg.data.broadcast);
+            checkLive();
+          }
+        };
+      }
+    } catch (e) {}
+
+    const unsubRealtime = subscribeRealtimeEvents((evt) => {
+      if (!isMounted || !evt) return;
+      if (evt.action === 'LIVE_BROADCAST_ENDED') {
+        setActiveLiveStream(null);
+      } else if (evt.action === 'LIVE_BROADCAST_STARTED') {
+        checkLive();
+      }
+    });
+
     return () => {
       isMounted = false;
       clearInterval(timer);
+      window.removeEventListener('fcc-live-broadcast-ended', onEnded);
+      window.removeEventListener('fcc-live-broadcast-started', onStarted);
+      if (bc) {
+        try { bc.close(); } catch (e) {}
+      }
+      if (typeof unsubRealtime === 'function') unsubRealtime();
     };
   }, []);
 

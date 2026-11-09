@@ -404,8 +404,8 @@ export function applyThemeToDom(themeConfig, brandingConfig) {
     if (branding) {
       // Update browser tab title dynamically
       const titleStr = branding.projectName
-        ? `${branding.projectName} — ${branding.shortName || branding.institutionName || 'FCC'}`
-        : `${branding.institutionName || 'FCC Ibadan'} — ${branding.libraryTitle || 'Digital Library'}`;
+        ? `${branding.projectName} - ${branding.shortName || branding.institutionName || 'FCC'}`
+        : `${branding.institutionName || 'FCC Ibadan'} - ${branding.libraryTitle || 'Digital Library'}`;
       if (titleStr && document.title !== titleStr) {
         document.title = titleStr;
       }

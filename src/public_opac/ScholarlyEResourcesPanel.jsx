@@ -401,7 +401,7 @@ export default function ScholarlyEResourcesPanel({ query = '', searchNonce = 0 }
               <span className="ml-2 text-[10px] align-middle px-2 py-0.5 rounded-full bg-teal-500/15 text-teal-300 border border-teal-500/40 font-mono">Federated Engine v3</span>
             </h3>
             <p className="text-[11px] text-emerald-200/80">
-              AGORA • JSTOR • ScienceDirect • EBSCOhost • DOAJ • Europe PMC — peer-reviewed journal articles only, searched concurrently.
+              AGORA • JSTOR • ScienceDirect • EBSCOhost • DOAJ • Europe PMC - peer-reviewed journal articles only, searched concurrently.
             </p>
           </div>
         </div>

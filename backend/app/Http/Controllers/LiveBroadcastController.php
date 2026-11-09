@@ -450,11 +450,14 @@ class LiveBroadcastController extends Controller
         // Load social simulcast destinations from DB
         $destinations = $this->ensureAndFetchSocialDestinations($deptCode);
 
-        // Check for an active live broadcast for this department in DB
+        // Check for an active live broadcast for this department (or any active broadcast on the studio server)
         $activeBroadcast = null;
         try {
             $pdo = DatabaseService::getPdo();
             if ($pdo) {
+                // Clean up any known stale ghost broadcast
+                $pdo->exec("UPDATE live_broadcasts SET is_live = 0, status = 'ended', ended_at = COALESCE(ended_at, NOW()) WHERE id = 'LIVE-OAO-20261109-100116-GFDM' AND is_live = 1");
+
                 $st = $pdo->prepare("
                     SELECT * FROM live_broadcasts
                     WHERE is_live = 1 AND status = 'live' AND department_code = :d
@@ -462,22 +465,32 @@ class LiveBroadcastController extends Controller
                 ");
                 $st->execute([':d' => $deptCode]);
                 $row = $st->fetch(\PDO::FETCH_ASSOC);
+                if (!$row) {
+                    $stAny = $pdo->query("SELECT * FROM live_broadcasts WHERE is_live = 1 AND status = 'live' ORDER BY started_at DESC LIMIT 1");
+                    if ($stAny) {
+                        $row = $stAny->fetch(\PDO::FETCH_ASSOC);
+                    }
+                }
                 if ($row) {
                     $activeBroadcast = (object) $row;
                 }
-            }
-        } catch (\Throwable $e) {}
-
-        if (!$activeBroadcast) {
-            try {
+            } else {
+                DB::table('live_broadcasts')->where('id', 'LIVE-OAO-20261109-100116-GFDM')->where('is_live', true)->update(['is_live' => false, 'status' => 'ended']);
                 $activeBroadcast = DB::table('live_broadcasts')
                     ->where('is_live', true)
                     ->where('status', 'live')
                     ->where('department_code', $deptCode)
                     ->orderBy('started_at', 'desc')
                     ->first();
-            } catch (\Throwable $e) {}
-        }
+                if (!$activeBroadcast) {
+                    $activeBroadcast = DB::table('live_broadcasts')
+                        ->where('is_live', true)
+                        ->where('status', 'live')
+                        ->orderBy('started_at', 'desc')
+                        ->first();
+                }
+            }
+        } catch (\Throwable $e) {}
 
         $activeMessages = [];
         $elapsedSeconds = 0;
@@ -626,42 +639,41 @@ class LiveBroadcastController extends Controller
             "Live Broadcast Studio Configuration for {$deptCode}"
         );
 
-        // If a broadcast is currently live for this department or broadcast_id is passed, update it in live_broadcasts
-        $broadcastId = $request->input('broadcast_id');
-        $liveUpdate = [
-            'title' => $existing['lecture_title'] ?? 'Live Lecture',
-            'department_code' => $deptCode,
-            'department_name' => $existing['department_name'] ?? 'Academic Department',
-            'course_code' => $existing['course_code'] ?? '',
-            'course_title' => $existing['course_title'] ?? '',
-            'lecturer_name' => $existing['lecturer_name'] ?? 'Lecturer',
-            'stream_mode' => $existing['stream_mode'] ?? 'system_camera',
-            'resolution' => $existing['resolution'] ?? '1080p Full HD',
-            'announcement' => $existing['announcement'] ?? '',
-            'companion_pdf_url' => $existing['companion_pdf_url'] ?? '',
-            'updated_at' => now(),
-        ];
+        // Only update live_broadcasts if the studio explicitly reports an active live session
+        $broadcastId = trim((string) $request->input('broadcast_id', ''));
+        $isActivelyLive = $request->boolean('is_live', false);
+        if ($isActivelyLive && $broadcastId !== '') {
+            $liveUpdate = [
+                'title' => $existing['lecture_title'] ?? 'Live Lecture',
+                'department_code' => $deptCode,
+                'department_name' => $existing['department_name'] ?? 'Academic Department',
+                'course_code' => $existing['course_code'] ?? '',
+                'course_title' => $existing['course_title'] ?? '',
+                'lecturer_name' => $existing['lecturer_name'] ?? 'Lecturer',
+                'stream_mode' => $existing['stream_mode'] ?? 'system_camera',
+                'resolution' => $existing['resolution'] ?? '1080p Full HD',
+                'announcement' => $existing['announcement'] ?? '',
+                'companion_pdf_url' => $existing['companion_pdf_url'] ?? '',
+                'updated_at' => now(),
+            ];
 
-        try {
-            $q = DB::table('live_broadcasts')->where('is_live', true)->where('status', 'live');
-            if ($broadcastId) {
-                $q->where('id', $broadcastId);
-            } else {
-                $q->where('department_code', $deptCode);
-            }
-            $q->update($liveUpdate);
-        } catch (\Throwable $e) {}
+            try {
+                DB::table('live_broadcasts')
+                    ->where('id', $broadcastId)
+                    ->where('is_live', true)
+                    ->where('status', 'live')
+                    ->update($liveUpdate);
+            } catch (\Throwable $e) {}
 
-        try {
-            $pdo = DatabaseService::getPdo();
-            if ($pdo) {
-                if ($broadcastId) {
+            try {
+                $pdo = DatabaseService::getPdo();
+                if ($pdo) {
                     $st = $pdo->prepare("
                         UPDATE live_broadcasts
                         SET title = :title, department_name = :dn, course_code = :cc, course_title = :ct,
                             lecturer_name = :ln, stream_mode = :sm, resolution = :res,
                             announcement = :ann, companion_pdf_url = :pdf, updated_at = NOW()
-                        WHERE id = :id
+                        WHERE id = :id AND is_live = 1 AND status = 'live'
                     ");
                     $st->execute([
                         ':title' => $liveUpdate['title'],
@@ -675,29 +687,9 @@ class LiveBroadcastController extends Controller
                         ':pdf' => $liveUpdate['companion_pdf_url'],
                         ':id' => $broadcastId,
                     ]);
-                } else {
-                    $st = $pdo->prepare("
-                        UPDATE live_broadcasts
-                        SET title = :title, department_name = :dn, course_code = :cc, course_title = :ct,
-                            lecturer_name = :ln, stream_mode = :sm, resolution = :res,
-                            announcement = :ann, companion_pdf_url = :pdf, updated_at = NOW()
-                        WHERE is_live = 1 AND status = 'live' AND department_code = :dc
-                    ");
-                    $st->execute([
-                        ':title' => $liveUpdate['title'],
-                        ':dn' => $liveUpdate['department_name'],
-                        ':cc' => $liveUpdate['course_code'],
-                        ':ct' => $liveUpdate['course_title'],
-                        ':ln' => $liveUpdate['lecturer_name'],
-                        ':sm' => $liveUpdate['stream_mode'],
-                        ':res' => $liveUpdate['resolution'],
-                        ':ann' => $liveUpdate['announcement'],
-                        ':pdf' => $liveUpdate['companion_pdf_url'],
-                        ':dc' => $deptCode,
-                    ]);
                 }
-            }
-        } catch (\Throwable $e) {}
+            } catch (\Throwable $e) {}
+        }
 
         return response()->json([
             'success' => true,
@@ -745,7 +737,7 @@ class LiveBroadcastController extends Controller
         // Update active broadcast if live
         if ($broadcastId) {
             try {
-                DB::table('live_broadcasts')->where('id', $broadcastId)->update([
+                DB::table('live_broadcasts')->where('id', $broadcastId)->where('is_live', true)->update([
                     'companion_pdf_url' => $pdfUrl,
                     'updated_at' => now(),
                 ]);
@@ -754,7 +746,7 @@ class LiveBroadcastController extends Controller
             try {
                 $pdo = DatabaseService::getPdo();
                 if ($pdo) {
-                    $st = $pdo->prepare("UPDATE live_broadcasts SET companion_pdf_url = :u, updated_at = NOW() WHERE id = :id");
+                    $st = $pdo->prepare("UPDATE live_broadcasts SET companion_pdf_url = :u, updated_at = NOW() WHERE id = :id AND is_live = 1");
                     $st->execute([':u' => $pdfUrl, ':id' => $broadcastId]);
                 }
             } catch (\Throwable $e) {}
@@ -784,25 +776,45 @@ class LiveBroadcastController extends Controller
                 'broadcast' => null,
                 'streams' => [],
                 'governance_message' => 'Live Broadcasting is currently placed on scheduled maintenance by Library Systems Engineering.'
-            ]);
+            ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
         }
 
         $streams = collect();
+        $mysqlQueried = false;
+
         try {
             $pdo = DatabaseService::getPdo();
             if ($pdo) {
+                $mysqlQueried = true;
+                // Ensure any known orphan session is terminated
+                $pdo->exec("UPDATE live_broadcasts SET is_live = 0, status = 'ended', ended_at = COALESCE(ended_at, NOW()) WHERE id = 'LIVE-OAO-20261109-100116-GFDM' AND is_live = 1");
+
                 $st = $pdo->query("SELECT * FROM live_broadcasts WHERE is_live = 1 AND status = 'live' ORDER BY started_at DESC");
                 if ($st) {
                     $rows = $st->fetchAll(\PDO::FETCH_ASSOC);
                     if (!empty($rows)) {
                         $streams = collect($rows)->map(fn($r) => (object) $r);
+                    } else {
+                        // Sync SQLite so it never returns a ghost row when MySQL has 0 active streams
+                        try {
+                            DB::table('live_broadcasts')->where('is_live', true)->update([
+                                'is_live' => false,
+                                'status' => 'ended',
+                                'ended_at' => now()
+                            ]);
+                        } catch (\Throwable $e) {}
                     }
                 }
             }
         } catch (\Throwable $e) {}
 
-        if ($streams->isEmpty()) {
+        if (!$mysqlQueried) {
             try {
+                DB::table('live_broadcasts')
+                    ->where('id', 'LIVE-OAO-20261109-100116-GFDM')
+                    ->where('is_live', true)
+                    ->update(['is_live' => false, 'status' => 'ended']);
+
                 $streams = DB::table('live_broadcasts')
                     ->where('is_live', true)
                     ->where('status', 'live')
@@ -812,7 +824,9 @@ class LiveBroadcastController extends Controller
         }
 
         // Refresh accurate viewer count on each active stream
-        $streams = $streams->map(function ($s) {
+        $streams = $streams->filter(function ($s) {
+            return (int) ($s->is_live ?? 0) === 1 && strtolower((string) ($s->status ?? '')) === 'live';
+        })->map(function ($s) {
             $s->viewers_count = $this->computeActiveViewersCount($s->id, (int) ($s->viewers_count ?? 0));
             $framePath = storage_path('app/public/live/' . $s->id . '/frame.jpg');
             $s->has_live_frame = file_exists($framePath);
@@ -820,15 +834,16 @@ class LiveBroadcastController extends Controller
             $s->has_stream_buffer = file_exists($streamPath) && filesize($streamPath) > 512;
             $s->classroom_url = '#/live-classroom/' . $s->id;
             return $s;
-        });
+        })->values();
 
         return response()->json([
             'success' => true,
             'active' => $streams->isNotEmpty(),
             'count' => $streams->count(),
             'broadcast' => $streams->first(),
-            'streams' => $streams->values(),
-        ]);
+            'streams' => $streams,
+            'server_time' => round(microtime(true) * 1000),
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
 
     /**
@@ -841,19 +856,23 @@ class LiveBroadcastController extends Controller
 
         $broadcast = null;
         $targetId = trim((string) ($id ?: $request->input('id', '')));
+        $specificIdRequested = ($targetId !== '' && strtolower($targetId) !== 'active');
+        $mysqlQueried = false;
 
         try {
             $pdo = DatabaseService::getPdo();
             if ($pdo) {
-                if ($targetId !== '' && strtolower($targetId) !== 'active') {
+                $mysqlQueried = true;
+                $pdo->exec("UPDATE live_broadcasts SET is_live = 0, status = 'ended', ended_at = COALESCE(ended_at, NOW()) WHERE id = 'LIVE-OAO-20261109-100116-GFDM' AND is_live = 1");
+
+                if ($specificIdRequested) {
                     $st = $pdo->prepare("SELECT * FROM live_broadcasts WHERE id = :id LIMIT 1");
                     $st->execute([':id' => $targetId]);
                     $row = $st->fetch(\PDO::FETCH_ASSOC);
                     if ($row) {
                         $broadcast = (object) $row;
                     }
-                }
-                if (!$broadcast) {
+                } else {
                     $st = $pdo->query("SELECT * FROM live_broadcasts WHERE is_live = 1 AND status = 'live' ORDER BY started_at DESC LIMIT 1");
                     if ($st) {
                         $row = $st->fetch(\PDO::FETCH_ASSOC);
@@ -865,12 +884,11 @@ class LiveBroadcastController extends Controller
             }
         } catch (\Throwable $e) {}
 
-        if (!$broadcast) {
+        if (!$mysqlQueried && !$broadcast) {
             try {
-                if ($targetId !== '' && strtolower($targetId) !== 'active') {
+                if ($specificIdRequested) {
                     $broadcast = DB::table('live_broadcasts')->where('id', $targetId)->first();
-                }
-                if (!$broadcast) {
+                } else {
                     $broadcast = DB::table('live_broadcasts')
                         ->where('is_live', true)
                         ->where('status', 'live')
@@ -884,9 +902,32 @@ class LiveBroadcastController extends Controller
             return response()->json([
                 'success' => false,
                 'active' => false,
+                'ended' => true,
                 'broadcast' => null,
                 'message' => 'No active live lecture broadcast at this moment.'
-            ]);
+            ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        }
+
+        // CRITICAL CHECK: If this broadcast session has ended (is_live == 0 or status !== 'live'),
+        // DO NOT return it as an active classroom session!
+        $isCurrentlyLive = ((int) ($broadcast->is_live ?? 0) === 1) && (strtolower((string) ($broadcast->status ?? '')) === 'live');
+        if (!$isCurrentlyLive) {
+            return response()->json([
+                'success' => true,
+                'active' => false,
+                'ended' => true,
+                'broadcast' => null,
+                'ended_broadcast' => [
+                    'id' => $broadcast->id,
+                    'title' => $broadcast->title ?? 'Live Lecture',
+                    'course_code' => $broadcast->course_code ?? '',
+                    'lecturer_name' => $broadcast->lecturer_name ?? '',
+                    'department_name' => $broadcast->department_name ?? '',
+                    'ended_at' => $broadcast->ended_at ?? $broadcast->updated_at,
+                    'recording_media_id' => $broadcast->recording_media_id ?? null,
+                ],
+                'message' => 'This live lecture broadcast has ended and been archived.'
+            ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
         }
 
         $broadcast->viewers_count = $this->computeActiveViewersCount($broadcast->id, (int) ($broadcast->viewers_count ?? 0));
@@ -909,10 +950,11 @@ class LiveBroadcastController extends Controller
 
         return response()->json([
             'success' => true,
-            'active' => (bool) ($broadcast->is_live ?? false),
+            'active' => true,
+            'ended' => false,
             'broadcast' => $broadcast,
             'messages' => $this->fetchChatMessagesFromDb($broadcast->id),
-        ]);
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
 
     /**
@@ -1123,10 +1165,9 @@ class LiveBroadcastController extends Controller
             ], 403);
         }
 
-        // Close any previous dangling live sessions for this same department before starting a fresh one
+        // Close any previous dangling live sessions across the studio before starting a fresh one
         try {
             DB::table('live_broadcasts')
-                ->where('department_code', $deptUpper)
                 ->where('is_live', true)
                 ->update(['is_live' => false, 'status' => 'ended', 'ended_at' => now(), 'updated_at' => now()]);
         } catch (\Throwable $e) {}
@@ -1134,8 +1175,7 @@ class LiveBroadcastController extends Controller
         try {
             $pdo = DatabaseService::getPdo();
             if ($pdo) {
-                $closeSt = $pdo->prepare("UPDATE live_broadcasts SET is_live = 0, status = 'ended', ended_at = NOW(), updated_at = NOW() WHERE department_code = :dc AND is_live = 1");
-                $closeSt->execute([':dc' => $deptUpper]);
+                $pdo->exec("UPDATE live_broadcasts SET is_live = 0, status = 'ended', ended_at = NOW(), updated_at = NOW() WHERE is_live = 1 OR status = 'live'");
             }
         } catch (\Throwable $e) {}
 
@@ -1203,8 +1243,9 @@ class LiveBroadcastController extends Controller
         // Also persist current studio config so reload keeps exact metadata
         $this->saveStudioConfig($request);
 
-        // Initialize empty active viewer map in DB
+        // Initialize empty active viewer map & host heartbeat in DB
         $this->setSettingValue('fcc_live_viewers_' . $broadcastId, json_encode([]), 'LiveBroadcast', "Active viewers for {$broadcastId}");
+        $this->setSettingValue('fcc_live_host_hb_' . $broadcastId, (string) time(), 'LiveBroadcast', "Host heartbeat for {$broadcastId}");
 
         // Broadcast initial system welcome message
         $welcomeMsg = "🔴 Live Lecture Broadcast started by {$data['lecturer_name']} ({$data['department_name']} - {$data['course_code']}). All connecting students are verified via database.";
@@ -1218,11 +1259,60 @@ class LiveBroadcastController extends Controller
             'hand_raised' => false,
         ]);
 
+        // Emit instant cross-device realtime sync event
+        try {
+            \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+                'action' => 'LIVE_BROADCAST_STARTED',
+                'entity' => 'live_broadcast',
+                'id' => $broadcastId,
+                'title' => $data['title'],
+                'data' => $data,
+                'source' => 'live_broadcast_studio',
+            ]);
+        } catch (\Throwable $e) {}
+
         return response()->json([
             'success' => true,
             'message' => 'Live broadcast session created and persisted in database',
             'broadcast' => $data,
-        ]);
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    }
+
+    /**
+     * POST /api/live-broadcast/{id}/host-heartbeat
+     * Keep active broadcast session alive while studio is transmitting
+     */
+    public function hostHeartbeat(Request $request, $id)
+    {
+        $this->setSettingValue('fcc_live_host_hb_' . $id, (string) time(), 'LiveBroadcast', "Host heartbeat for {$id}");
+
+        $isLive = false;
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                $pdo->prepare("UPDATE live_broadcasts SET updated_at = NOW() WHERE id = :id AND is_live = 1")->execute([':id' => $id]);
+                $st = $pdo->prepare("SELECT is_live FROM live_broadcasts WHERE id = :id LIMIT 1");
+                $st->execute([':id' => $id]);
+                $row = $st->fetch(\PDO::FETCH_ASSOC);
+                if ($row) {
+                    $isLive = (int) ($row['is_live'] ?? 0) === 1;
+                }
+            } else {
+                DB::table('live_broadcasts')->where('id', $id)->where('is_live', true)->update(['updated_at' => now()]);
+                $row = DB::table('live_broadcasts')->where('id', $id)->first();
+                if ($row) {
+                    $isLive = (bool) ($row->is_live ?? false);
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => true,
+            'id' => $id,
+            'is_live' => $isLive,
+            'viewers_count' => $this->computeActiveViewersCount($id, 0),
+            'timestamp' => time(),
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
 
     /**
@@ -1242,7 +1332,7 @@ class LiveBroadcastController extends Controller
         $updates['updated_at'] = now();
 
         try {
-            DB::table('live_broadcasts')->where('id', $id)->update($updates);
+            DB::table('live_broadcasts')->where('id', $id)->where('is_live', true)->update($updates);
         } catch (\Throwable $e) {}
 
         try {
@@ -1259,7 +1349,7 @@ class LiveBroadcastController extends Controller
                         announcement = COALESCE(:ann, announcement),
                         companion_pdf_url = COALESCE(:pdf, companion_pdf_url),
                         updated_at = NOW()
-                    WHERE id = :id
+                    WHERE id = :id AND is_live = 1
                 ");
                 $st->execute([
                     ':title' => $request->input('title'),
@@ -1282,153 +1372,220 @@ class LiveBroadcastController extends Controller
     }
 
     /**
-     * POST /api/live-broadcast/{id}/end
-     * Stop active broadcast and archive recorded video to Central Library Catalogue
+     * POST /api/live-broadcast/{id?}/end
+     * Stop active broadcast, terminate all active live sessions in both MySQL and SQLite,
+     * emit instant cross-device termination event, and archive recorded video to Central Library Catalogue
      */
-    public function end(Request $request, $id)
+    public function end(Request $request, $id = null)
     {
         $this->ensureDatabaseTables();
 
+        $targetId = trim((string) ($id ?: $request->input('broadcast_id', $request->input('id', ''))));
         $broadcast = null;
+
         try {
             $pdo = DatabaseService::getPdo();
             if ($pdo) {
-                $st = $pdo->prepare("SELECT * FROM live_broadcasts WHERE id = :id LIMIT 1");
-                $st->execute([':id' => $id]);
-                $row = $st->fetch(\PDO::FETCH_ASSOC);
-                if ($row) $broadcast = (object) $row;
+                if ($targetId !== '' && !in_array(strtolower($targetId), ['active', 'all'], true)) {
+                    $st = $pdo->prepare("SELECT * FROM live_broadcasts WHERE id = :id LIMIT 1");
+                    $st->execute([':id' => $targetId]);
+                    $row = $st->fetch(\PDO::FETCH_ASSOC);
+                    if ($row) $broadcast = (object) $row;
+                }
+                if (!$broadcast) {
+                    $stAny = $pdo->query("SELECT * FROM live_broadcasts WHERE is_live = 1 OR status = 'live' ORDER BY started_at DESC LIMIT 1");
+                    if ($stAny) {
+                        $row = $stAny->fetch(\PDO::FETCH_ASSOC);
+                        if ($row) $broadcast = (object) $row;
+                    }
+                }
             }
         } catch (\Throwable $e) {}
 
         if (!$broadcast) {
-            $broadcast = DB::table('live_broadcasts')->where('id', $id)->first();
+            try {
+                if ($targetId !== '' && !in_array(strtolower($targetId), ['active', 'all'], true)) {
+                    $broadcast = DB::table('live_broadcasts')->where('id', $targetId)->first();
+                }
+                if (!$broadcast) {
+                    $broadcast = DB::table('live_broadcasts')
+                        ->where('is_live', true)
+                        ->orderBy('started_at', 'desc')
+                        ->first();
+                }
+            } catch (\Throwable $e) {}
         }
 
-        if (!$broadcast) {
-            return response()->json(['error' => 'Broadcast session not found'], 404);
-        }
+        $resolvedId = $broadcast->id ?? ($targetId !== '' ? $targetId : 'ALL');
 
+        // 1. Unconditionally terminate ALL active live sessions in SQLite
         try {
-            DB::table('live_broadcasts')->where('id', $id)->update([
-                'is_live' => false,
-                'status' => 'ended',
-                'ended_at' => now(),
-                'updated_at' => now()
+            DB::table('live_broadcasts')
+                ->where(function ($q) use ($resolvedId) {
+                    $q->where('is_live', true)
+                      ->orWhere('status', 'live')
+                      ->orWhere('id', $resolvedId);
+                })
+                ->update([
+                    'is_live' => false,
+                    'status' => 'ended',
+                    'ended_at' => now(),
+                    'updated_at' => now()
+                ]);
+        } catch (\Throwable $e) {}
+
+        // 2. Unconditionally terminate ALL active live sessions in MySQL
+        try {
+            $pdo = DatabaseService::getPdo();
+            if ($pdo) {
+                $st = $pdo->prepare("
+                    UPDATE live_broadcasts
+                    SET is_live = 0,
+                        status = 'ended',
+                        ended_at = COALESCE(ended_at, NOW()),
+                        updated_at = NOW()
+                    WHERE is_live = 1 OR status = 'live' OR id = :id
+                ");
+                $st->execute([':id' => $resolvedId]);
+            }
+        } catch (\Throwable $e) {}
+
+        // 3. Clear active viewer map and remove live snapshot frame so no stale frame remains
+        if ($resolvedId && $resolvedId !== 'ALL') {
+            $this->setSettingValue('fcc_live_viewers_' . $resolvedId, json_encode([]), 'LiveBroadcast', "Ended viewers for {$resolvedId}");
+            $framePath = storage_path('app/public/live/' . $resolvedId . '/frame.jpg');
+            if (file_exists($framePath)) {
+                @unlink($framePath);
+            }
+        }
+
+        // 4. Emit instant cross-device realtime sync termination signal
+        try {
+            \App\Http\Controllers\Api\RealtimeSyncController::recordEvent([
+                'action' => 'LIVE_BROADCAST_ENDED',
+                'entity' => 'live_broadcast',
+                'id' => $resolvedId,
+                'title' => $broadcast->title ?? 'Live Lecture Ended',
+                'data' => [
+                    'id' => $resolvedId,
+                    'active' => false,
+                    'is_live' => false,
+                    'status' => 'ended',
+                    'ended_at' => now()->toIso8601String(),
+                ],
+                'source' => 'live_broadcast_studio',
             ]);
-        } catch (\Throwable $e) {}
-
-        try {
-            $pdo = DatabaseService::getPdo();
-            if ($pdo) {
-                $st = $pdo->prepare("UPDATE live_broadcasts SET is_live = 0, status = 'ended', ended_at = NOW(), updated_at = NOW() WHERE id = :id");
-                $st->execute([':id' => $id]);
-            }
         } catch (\Throwable $e) {}
 
         $archivedMediaId = null;
         $mediaUrl = null;
 
-        // Auto-archive recorded lecture if file is submitted or live stream buffer exists
-        $liveBufferPath = storage_path('app/public/live/' . $id . '/stream.webm');
-        if ($request->hasFile('recording_file')) {
-            $file = $request->file('recording_file');
-            $ext = $file->getClientOriginalExtension() ?: 'webm';
-            $filename = 'FCC-LIVE-ARCHIVE-' . time() . '-' . uniqid() . '.' . $ext;
-            $file->storeAs('public/media', $filename);
-            $mediaUrl = '/storage/media/' . $filename;
-        } elseif (file_exists($liveBufferPath) && filesize($liveBufferPath) > 1024) {
-            $filename = 'FCC-LIVE-ARCHIVE-' . time() . '-' . uniqid() . '.webm';
-            $destDir = storage_path('app/public/media');
-            if (!file_exists($destDir)) mkdir($destDir, 0777, true);
-            @copy($liveBufferPath, $destDir . '/' . $filename);
-            $mediaUrl = '/storage/media/' . $filename;
-        }
+        // 5. Auto-archive recorded lecture if broadcast record exists and file or stream buffer is present
+        if ($broadcast && !empty($broadcast->id)) {
+            $bId = $broadcast->id;
+            $liveBufferPath = storage_path('app/public/live/' . $bId . '/stream.webm');
+            if ($request->hasFile('recording_file')) {
+                $file = $request->file('recording_file');
+                $ext = $file->getClientOriginalExtension() ?: 'webm';
+                $filename = 'FCC-LIVE-ARCHIVE-' . time() . '-' . uniqid() . '.' . $ext;
+                $file->storeAs('public/media', $filename);
+                $mediaUrl = '/storage/media/' . $filename;
+            } elseif (file_exists($liveBufferPath) && filesize($liveBufferPath) > 1024) {
+                $filename = 'FCC-LIVE-ARCHIVE-' . time() . '-' . uniqid() . '.webm';
+                $destDir = storage_path('app/public/media');
+                if (!file_exists($destDir)) mkdir($destDir, 0777, true);
+                @copy($liveBufferPath, $destDir . '/' . $filename);
+                $mediaUrl = '/storage/media/' . $filename;
+            }
 
-        if ($mediaUrl) {
-            $archivedMediaId = 'MED-VID-LIVE-' . strtoupper(Str::random(6));
-            $mediaRecord = [
-                'id' => $archivedMediaId,
-                'title' => $broadcast->title . ' (Recorded Live Lecture)',
-                'subtitle' => 'Live Broadcast Session from ' . date('F j, Y'),
-                'media_type' => 'video',
-                'resource_type' => 'lecture_recording',
-                'creator' => $broadcast->lecturer_name,
-                'creator_title' => $broadcast->lecturer_role === 'hod' ? 'Head of Department' : 'Lecturer',
-                'department_id' => $broadcast->department_code,
-                'department_name' => $broadcast->department_name,
-                'course_code' => $broadcast->course_code,
-                'target_level' => $request->input('target_level', 'ND I'),
-                'duration_seconds' => intval($request->input('duration_seconds', 1800)),
-                'duration_formatted' => $request->input('duration_formatted', '30:00'),
-                'description' => "Live interactive lecture recording broadcast from the FCC Institutional Multimedia Studio. Archived automatically for student review and examination revision.",
-                'subject_keywords' => json_encode(['Live Lecture', $broadcast->department_name, $broadcast->course_code]),
-                'media_url' => $mediaUrl,
-                'video_resolution' => $broadcast->resolution ?: '1080p Full HD',
-                'access_level' => 'open_access',
-                'status' => 'published',
-                'uploaded_by' => $broadcast->lecturer_name,
-                'created_at' => now(),
-                'updated_at' => now()
-            ];
+            if ($mediaUrl) {
+                $archivedMediaId = 'MED-VID-LIVE-' . strtoupper(Str::random(6));
+                $mediaRecord = [
+                    'id' => $archivedMediaId,
+                    'title' => ($broadcast->title ?: 'Live Lecture') . ' (Recorded Live Lecture)',
+                    'subtitle' => 'Live Broadcast Session from ' . date('F j, Y'),
+                    'media_type' => 'video',
+                    'resource_type' => 'lecture_recording',
+                    'creator' => $broadcast->lecturer_name ?: 'Lecturer',
+                    'creator_title' => ($broadcast->lecturer_role ?? 'hod') === 'hod' ? 'Head of Department' : 'Lecturer',
+                    'department_id' => $broadcast->department_code ?: 'CEM',
+                    'department_name' => $broadcast->department_name ?: 'Academic Department',
+                    'course_code' => $broadcast->course_code ?: '',
+                    'target_level' => $request->input('target_level', 'ND I'),
+                    'duration_seconds' => intval($request->input('duration_seconds', 1800)),
+                    'duration_formatted' => $request->input('duration_formatted', '30:00'),
+                    'description' => "Live interactive lecture recording broadcast from the FCC Institutional Multimedia Studio. Archived automatically for student review and examination revision.",
+                    'subject_keywords' => json_encode(['Live Lecture', $broadcast->department_name ?? '', $broadcast->course_code ?? '']),
+                    'media_url' => $mediaUrl,
+                    'video_resolution' => $broadcast->resolution ?: '1080p Full HD',
+                    'access_level' => 'open_access',
+                    'status' => 'published',
+                    'uploaded_by' => $broadcast->lecturer_name ?: 'Lecturer',
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ];
 
-            try {
-                DB::table('media_resources')->insert($mediaRecord);
-            } catch (\Throwable $e) {}
+                try {
+                    DB::table('media_resources')->insert($mediaRecord);
+                } catch (\Throwable $e) {}
 
-            try {
-                $pdo = DatabaseService::getPdo();
-                if ($pdo) {
-                    $st = $pdo->prepare("
-                        INSERT IGNORE INTO media_resources
-                        (id, title, subtitle, media_type, resource_type, creator, creator_title, department_id, department_name, course_code, target_level, duration_seconds, duration_formatted, description, subject_keywords, media_url, video_resolution, access_level, status, uploaded_by, created_at, updated_at)
-                        VALUES (:id, :title, :sub, :mt, :rt, :cr, :crt, :did, :dn, :cc, :tl, :ds, :df, :desc, :sk, :mu, :vr, :al, :st, :ub, NOW(), NOW())
-                    ");
-                    $st->execute([
-                        ':id' => $mediaRecord['id'],
-                        ':title' => $mediaRecord['title'],
-                        ':sub' => $mediaRecord['subtitle'],
-                        ':mt' => $mediaRecord['media_type'],
-                        ':rt' => $mediaRecord['resource_type'],
-                        ':cr' => $mediaRecord['creator'],
-                        ':crt' => $mediaRecord['creator_title'],
-                        ':did' => $mediaRecord['department_id'],
-                        ':dn' => $mediaRecord['department_name'],
-                        ':cc' => $mediaRecord['course_code'],
-                        ':tl' => $mediaRecord['target_level'],
-                        ':ds' => $mediaRecord['duration_seconds'],
-                        ':df' => $mediaRecord['duration_formatted'],
-                        ':desc' => $mediaRecord['description'],
-                        ':sk' => $mediaRecord['subject_keywords'],
-                        ':mu' => $mediaRecord['media_url'],
-                        ':vr' => $mediaRecord['video_resolution'],
-                        ':al' => $mediaRecord['access_level'],
-                        ':st' => $mediaRecord['status'],
-                        ':ub' => $mediaRecord['uploaded_by'],
+                try {
+                    $pdo = DatabaseService::getPdo();
+                    if ($pdo) {
+                        $st = $pdo->prepare("
+                            INSERT IGNORE INTO media_resources
+                            (id, title, subtitle, media_type, resource_type, creator, creator_title, department_id, department_name, course_code, target_level, duration_seconds, duration_formatted, description, subject_keywords, media_url, video_resolution, access_level, status, uploaded_by, created_at, updated_at)
+                            VALUES (:id, :title, :sub, :mt, :rt, :cr, :crt, :did, :dn, :cc, :tl, :ds, :df, :desc, :sk, :mu, :vr, :al, :st, :ub, NOW(), NOW())
+                        ");
+                        $st->execute([
+                            ':id' => $mediaRecord['id'],
+                            ':title' => $mediaRecord['title'],
+                            ':sub' => $mediaRecord['subtitle'],
+                            ':mt' => $mediaRecord['media_type'],
+                            ':rt' => $mediaRecord['resource_type'],
+                            ':cr' => $mediaRecord['creator'],
+                            ':crt' => $mediaRecord['creator_title'],
+                            ':did' => $mediaRecord['department_id'],
+                            ':dn' => $mediaRecord['department_name'],
+                            ':cc' => $mediaRecord['course_code'],
+                            ':tl' => $mediaRecord['target_level'],
+                            ':ds' => $mediaRecord['duration_seconds'],
+                            ':df' => $mediaRecord['duration_formatted'],
+                            ':desc' => $mediaRecord['description'],
+                            ':sk' => $mediaRecord['subject_keywords'],
+                            ':mu' => $mediaRecord['media_url'],
+                            ':vr' => $mediaRecord['video_resolution'],
+                            ':al' => $mediaRecord['access_level'],
+                            ':st' => $mediaRecord['status'],
+                            ':ub' => $mediaRecord['uploaded_by'],
+                        ]);
+                    }
+                } catch (\Throwable $e) {}
+
+                try {
+                    DB::table('live_broadcasts')->where('id', $bId)->update([
+                        'recording_media_id' => $archivedMediaId
                     ]);
-                }
-            } catch (\Throwable $e) {}
+                } catch (\Throwable $e) {}
 
-            try {
-                DB::table('live_broadcasts')->where('id', $id)->update([
-                    'recording_media_id' => $archivedMediaId
-                ]);
-            } catch (\Throwable $e) {}
-
-            try {
-                $pdo = DatabaseService::getPdo();
-                if ($pdo) {
-                    $st = $pdo->prepare("UPDATE live_broadcasts SET recording_media_id = :mid WHERE id = :id");
-                    $st->execute([':mid' => $archivedMediaId, ':id' => $id]);
-                }
-            } catch (\Throwable $e) {}
+                try {
+                    $pdo = DatabaseService::getPdo();
+                    if ($pdo) {
+                        $st = $pdo->prepare("UPDATE live_broadcasts SET recording_media_id = :mid WHERE id = :id");
+                        $st->execute([':mid' => $archivedMediaId, ':id' => $bId]);
+                    }
+                } catch (\Throwable $e) {}
+            }
         }
 
         return response()->json([
             'success' => true,
-            'message' => 'Broadcast terminated and archived in database',
+            'active' => false,
+            'ended_id' => $resolvedId,
+            'message' => 'Broadcast terminated across all channels and archived in database',
             'archived_media_id' => $archivedMediaId,
             'media_url' => $mediaUrl,
-        ]);
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
 
     /**

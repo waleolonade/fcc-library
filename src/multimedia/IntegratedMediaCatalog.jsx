@@ -8,6 +8,7 @@ import {
 import { getApiBase } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
 import { navigateTo } from '../utils/router';
+import { subscribeRealtimeEvents } from '../services/realtimeSync';
 import MultimediaStudioPlayer from './MultimediaStudioPlayer';
 import MultimediaUploadStudio from './MultimediaUploadStudio';
 import { StudentHodClearanceModal, HodDeveloperActivationModal } from './MediaUploadClearanceModals';
@@ -52,29 +53,91 @@ export default function IntegratedMediaCatalog({
   const [activeLiveStream, setActiveLiveStream] = useState(null);
   const [selectedLiveBroadcast, setSelectedLiveBroadcast] = useState(null);
 
-  // Poll for active institutional live broadcast lectures
+  // Poll for active institutional live broadcast lectures with real-time event sync
   useEffect(() => {
     let isMounted = true;
     const fetchLive = async () => {
       try {
         const base = getApiBase();
-        const res = await fetch(`${base}/live-broadcast/active`);
+        const res = await fetch(`${base}/live-broadcast/active?t=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' }
+        });
         if (res.ok && isMounted) {
           const json = await res.json();
-          if (json.streams && json.streams.length > 0) {
-            setActiveLiveStream(json.streams[0]);
+          const b = (json.streams && json.streams[0]) || json.broadcast;
+          const isValidLive = Boolean(
+            json.active &&
+            b &&
+            b.id &&
+            Boolean(Number(b.is_live ?? 0)) &&
+            String(b.status || '').toLowerCase() === 'live'
+          );
+          if (isValidLive) {
+            setActiveLiveStream(b);
           } else {
             setActiveLiveStream(null);
+            setSelectedLiveBroadcast(null);
           }
         }
       } catch (e) {}
     };
 
     fetchLive();
-    const interval = setInterval(fetchLive, 8000);
+    const interval = setInterval(fetchLive, 4000);
+
+    const onEnded = () => {
+      if (isMounted) {
+        setActiveLiveStream(null);
+        setSelectedLiveBroadcast(null);
+      }
+      setTimeout(fetchLive, 400);
+    };
+    const onStarted = (e) => {
+      if (isMounted && e?.detail?.id) setActiveLiveStream(e.detail);
+      fetchLive();
+    };
+
+    window.addEventListener('fcc-live-broadcast-ended', onEnded);
+    window.addEventListener('fcc-live-broadcast-started', onStarted);
+
+    let bc = null;
+    try {
+      if (typeof window !== 'undefined' && window.BroadcastChannel) {
+        bc = new BroadcastChannel('fcc_live_broadcast_channel');
+        bc.onmessage = (msg) => {
+          if (!isMounted) return;
+          if (msg.data?.type === 'LIVE_BROADCAST_ENDED') {
+            setActiveLiveStream(null);
+            setSelectedLiveBroadcast(null);
+          } else if (msg.data?.type === 'LIVE_BROADCAST_STARTED') {
+            if (msg.data.broadcast) setActiveLiveStream(msg.data.broadcast);
+            fetchLive();
+          }
+        };
+      }
+    } catch (e) {}
+
+    const unsubRealtime = subscribeRealtimeEvents((evt) => {
+      if (!isMounted || !evt) return;
+      if (evt.action === 'LIVE_BROADCAST_ENDED') {
+        setActiveLiveStream(null);
+        setSelectedLiveBroadcast(null);
+        fetchMedia();
+      } else if (evt.action === 'LIVE_BROADCAST_STARTED') {
+        fetchLive();
+      }
+    });
+
     return () => {
       isMounted = false;
       clearInterval(interval);
+      window.removeEventListener('fcc-live-broadcast-ended', onEnded);
+      window.removeEventListener('fcc-live-broadcast-started', onStarted);
+      if (bc) {
+        try { bc.close(); } catch (e) {}
+      }
+      if (typeof unsubRealtime === 'function') unsubRealtime();
     };
   }, []);
 
