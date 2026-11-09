@@ -23,12 +23,24 @@ const ICE_CONFIG = {
 
 export default function StudentLiveBroadcastViewer({
   broadcast: initialBroadcast,
+  activeStreams: initialActiveStreams = [],
   currentUser = null,
   onClose = null,
   onBroadcastEnded = null,
+  onSwitchChannel = null,
+  onOpenChannelHub = null,
   isStandalonePage = false
 }) {
   const [broadcast, setBroadcast] = useState(initialBroadcast || null);
+  const [campusActiveStreams, setCampusActiveStreams] = useState(
+    Array.isArray(initialActiveStreams) ? initialActiveStreams : []
+  );
+
+  useEffect(() => {
+    if (Array.isArray(initialActiveStreams)) {
+      setCampusActiveStreams(initialActiveStreams);
+    }
+  }, [initialActiveStreams]);
 
   // Resolve whether user is already logged into their Student Dashboard (or HOD/Admin/Developer)
   const resolveInitialVerifiedStudent = () => {
@@ -139,7 +151,17 @@ export default function StudentLiveBroadcastViewer({
       }
     };
 
-    const onEndedWindow = () => triggerEnded(null);
+    const matchesCurrentBroadcast = (endedId) => {
+      if (!endedId || endedId === 'ALL') return true;
+      return String(endedId) === String(broadcast.id);
+    };
+
+    const onEndedWindow = (e) => {
+      const endedId = e?.detail?.id || null;
+      if (matchesCurrentBroadcast(endedId)) {
+        triggerEnded(null);
+      }
+    };
     window.addEventListener('fcc-live-broadcast-ended', onEndedWindow);
 
     let liveBc = null;
@@ -147,7 +169,7 @@ export default function StudentLiveBroadcastViewer({
       if (typeof window !== 'undefined' && window.BroadcastChannel) {
         liveBc = new BroadcastChannel('fcc_live_broadcast_channel');
         liveBc.onmessage = (msg) => {
-          if (msg.data?.type === 'LIVE_BROADCAST_ENDED') {
+          if (msg.data?.type === 'LIVE_BROADCAST_ENDED' && matchesCurrentBroadcast(msg.data?.id)) {
             triggerEnded(null);
           }
         };
@@ -156,7 +178,10 @@ export default function StudentLiveBroadcastViewer({
 
     const unsubRealtime = subscribeRealtimeEvents((evt) => {
       if (evt && evt.action === 'LIVE_BROADCAST_ENDED') {
-        triggerEnded(evt.data || null);
+        const endedId = evt.id || evt.data?.id || null;
+        if (matchesCurrentBroadcast(endedId)) {
+          triggerEnded(evt.data || null);
+        }
       }
     });
 
@@ -615,6 +640,9 @@ export default function StudentLiveBroadcastViewer({
         });
         if (sRes.ok) {
           const sData = await sRes.json();
+          if (Array.isArray(sData.active_streams)) {
+            setCampusActiveStreams(sData.active_streams);
+          }
           const b = sData.broadcast;
           const isStillLive = Boolean(
             sData.active &&
@@ -643,7 +671,16 @@ export default function StudentLiveBroadcastViewer({
     pollFrameAndSession();
     const framePollInterval = setInterval(pollFrameAndSession, 2500);
 
-    const onEndedWindow = () => handleRemoteEnded(null);
+    const matchesBroadcastId = (endedId) => {
+      if (!endedId || endedId === 'ALL') return true;
+      return String(endedId) === String(broadcast.id);
+    };
+
+    const onEndedWindow = (e) => {
+      if (matchesBroadcastId(e?.detail?.id)) {
+        handleRemoteEnded(null);
+      }
+    };
     window.addEventListener('fcc-live-broadcast-ended', onEndedWindow);
 
     let liveBc = null;
@@ -651,7 +688,7 @@ export default function StudentLiveBroadcastViewer({
       if (typeof window !== 'undefined' && window.BroadcastChannel) {
         liveBc = new BroadcastChannel('fcc_live_broadcast_channel');
         liveBc.onmessage = (msg) => {
-          if (msg.data?.type === 'LIVE_BROADCAST_ENDED') {
+          if (msg.data?.type === 'LIVE_BROADCAST_ENDED' && matchesBroadcastId(msg.data?.id)) {
             handleRemoteEnded(null);
           }
         };
@@ -660,7 +697,10 @@ export default function StudentLiveBroadcastViewer({
 
     const unsubRealtime = subscribeRealtimeEvents((evt) => {
       if (evt && evt.action === 'LIVE_BROADCAST_ENDED') {
-        handleRemoteEnded(evt.data || null);
+        const endedId = evt.id || evt.data?.id || null;
+        if (matchesBroadcastId(endedId)) {
+          handleRemoteEnded(evt.data || null);
+        }
       }
     });
 
@@ -902,6 +942,56 @@ export default function StudentLiveBroadcastViewer({
         {/* CENTER VERIFICATION CARD */}
         <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
           <div className="w-full max-w-2xl bg-gradient-to-b from-[#032217] to-[#01140d] border-2 border-emerald-500/70 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+            {/* MULTI-DEPARTMENT CONCURRENT CHANNEL SWITCHER (Shown when >1 Department is Live) */}
+            {campusActiveStreams.length > 1 && (
+              <div className="p-3.5 rounded-2xl bg-slate-950/90 border border-amber-500/70 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11px] font-mono font-black text-amber-300 flex items-center gap-1.5">
+                    <Layers size={13} />
+                    <span>📡 {campusActiveStreams.length} DEPARTMENTS BROADCASTING LIVE — SWITCH TO YOUR DEPARTMENT:</span>
+                  </span>
+                  {onOpenChannelHub && (
+                    <button
+                      type="button"
+                      onClick={onOpenChannelHub}
+                      className="text-[10px] font-mono font-bold text-emerald-300 hover:text-white underline cursor-pointer"
+                    >
+                      View All Classroom Channels →
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {campusActiveStreams.map((s) => {
+                    const isCurrent = s.id === broadcast?.id;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => {
+                          setGateError('');
+                          if (onSwitchChannel) {
+                            onSwitchChannel(s);
+                          } else {
+                            setBroadcast(s);
+                            navigateTo(`/live-classroom/${s.id}`);
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                          isCurrent
+                            ? 'bg-rose-600 text-white shadow border border-rose-400'
+                            : 'bg-slate-900 hover:bg-emerald-950 text-emerald-200 border border-emerald-700/70'
+                        }`}
+                      >
+                        <span>{s.department_code}</span>
+                        <span className="text-[10px] opacity-85 font-sans">({s.course_code || s.department_name})</span>
+                        {isCurrent && <span className="text-[9px] bg-black/40 px-1.5 py-0.5 rounded">ACTIVE</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* LECTURE SUMMARY BANNER */}
             <div className="p-4 rounded-2xl bg-rose-950/50 border border-rose-500/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="space-y-1">
@@ -1382,6 +1472,24 @@ export default function StudentLiveBroadcastViewer({
               🖥️ Split View
             </button>
           </div>
+
+          {campusActiveStreams.length > 1 && (
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenChannelHub) {
+                  onOpenChannelHub();
+                } else {
+                  navigateTo('/live-classroom');
+                }
+              }}
+              className="px-2.5 py-1 rounded-xl text-[11px] font-mono font-bold bg-amber-950/90 hover:bg-amber-900 text-amber-300 border border-amber-500/80 flex items-center gap-1.5 cursor-pointer"
+              title="Switch between concurrent departmental live classrooms"
+            >
+              <Layers size={12} />
+              <span>📡 {campusActiveStreams.length} Depts Live</span>
+            </button>
+          )}
 
           <button
             type="button"

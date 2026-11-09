@@ -67,6 +67,7 @@ export default function LiveBroadcastStudio({
   const [newChatText, setNewChatText] = useState('');
   const [raisedHands, setRaisedHands] = useState(0);
   const [broadcastHistory, setBroadcastHistory] = useState([]);
+  const [concurrentCampusStreams, setConcurrentCampusStreams] = useState([]);
 
   // Departmental Classroom Roster & Student Matric Submissions (hydrated from live_classroom_roster table)
   const [classroomRoster, setClassroomRoster] = useState({
@@ -203,6 +204,10 @@ export default function LiveBroadcastStudio({
 
         if (Array.isArray(data.broadcast_history)) {
           setBroadcastHistory(data.broadcast_history);
+        }
+
+        if (Array.isArray(data.concurrent_campus_streams)) {
+          setConcurrentCampusStreams(data.concurrent_campus_streams);
         }
 
         if (data.classroom_roster) {
@@ -806,6 +811,13 @@ export default function LiveBroadcastStudio({
             }
           }
         }
+        const activeRes = await fetch(`${base}/live-broadcast/active?t=${Date.now()}`, { cache: 'no-store' });
+        if (activeRes.ok) {
+          const activeJson = await activeRes.json();
+          if (Array.isArray(activeJson.streams)) {
+            setConcurrentCampusStreams(activeJson.streams);
+          }
+        }
       } catch (e) {}
     };
 
@@ -1207,6 +1219,9 @@ export default function LiveBroadcastStudio({
         setIsLive(true);
         setElapsedSeconds(0);
         setViewersCount(0);
+        if (Array.isArray(json.concurrent_campus_streams)) {
+          setConcurrentCampusStreams(json.concurrent_campus_streams);
+        }
         setDbSyncStatus('saved');
         setLastSyncedAt(new Date().toLocaleTimeString());
 
@@ -1269,24 +1284,24 @@ export default function LiveBroadcastStudio({
       peersRef.current = {};
     } catch (e) {}
 
-    // 2. Immediately notify all open OPAC / Classroom / Student tabs & LAN clients
-    window.dispatchEvent(new CustomEvent('fcc-live-broadcast-ended', { detail: { id: targetEndId } }));
+    // 2. Immediately notify all open OPAC / Classroom / Student tabs & LAN clients for THIS department's broadcast
+    window.dispatchEvent(new CustomEvent('fcc-live-broadcast-ended', { detail: { id: targetEndId, department_code: deptCode } }));
     publishRealtimeEvent({
       action: 'LIVE_BROADCAST_ENDED',
       entity: 'live_broadcast',
       id: targetEndId,
       title: lectureTitle || 'Live Lecture Ended',
-      data: { id: targetEndId, active: false, is_live: false, status: 'ended' }
+      data: { id: targetEndId, department_code: deptCode, active: false, is_live: false, status: 'ended' }
     });
     try {
       if (typeof window !== 'undefined' && window.BroadcastChannel) {
         const ch = new BroadcastChannel('fcc_live_broadcast_channel');
-        ch.postMessage({ type: 'LIVE_BROADCAST_ENDED', id: targetEndId });
+        ch.postMessage({ type: 'LIVE_BROADCAST_ENDED', id: targetEndId, department_code: deptCode });
         ch.close();
       }
     } catch (e) {}
 
-    // 3. Call strong backend termination API (lightweight JSON payload so PHP post_max_size is never exceeded)
+    // 3. Call strong backend termination API (scoped to this department's session so concurrent departments stay live)
     try {
       const base = getApiBase();
       const res = await fetch(`${base}/live-broadcast/${encodeURIComponent(targetEndId)}/end`, {
@@ -1298,9 +1313,13 @@ export default function LiveBroadcastStudio({
           duration_seconds: finalElapsed,
           duration_formatted: finalFormatted,
           target_level: targetLevel || 'ND I',
-          end_all: true
+          end_all_campus: false
         })
       });
+      const endJson = await res.json().catch(() => ({}));
+      if (Array.isArray(endJson.remaining_streams)) {
+        setConcurrentCampusStreams(endJson.remaining_streams);
+      }
 
       setBroadcastId(null);
       setElapsedSeconds(0);
@@ -1652,6 +1671,84 @@ export default function LiveBroadcastStudio({
           )}
         </div>
       </div>
+
+      {/* MULTI-DEPARTMENT CAMPUS CONCURRENT BROADCAST CHANNELS MONITOR */}
+      {concurrentCampusStreams.length > 0 && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-[#031f15] via-[#04281b] to-[#1a0d14] border border-emerald-700/80 flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black bg-rose-600 text-white flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                <span>{concurrentCampusStreams.length} {concurrentCampusStreams.length === 1 ? 'DEPARTMENT' : 'DEPARTMENTS'} ON AIR CONCURRENTLY</span>
+              </span>
+              <span className="text-xs font-bold text-emerald-200">
+                Multi-Department Isolated Broadcast Channels (Each department runs independently without interrupting other departments)
+              </span>
+            </div>
+            <a
+              href="#/live-classroom"
+              target="_blank"
+              rel="noreferrer"
+              className="px-3 py-1 rounded-lg bg-emerald-950 hover:bg-emerald-900 border border-emerald-600 text-[11px] font-mono font-bold text-amber-300 flex items-center gap-1"
+            >
+              <ExternalLink size={12} />
+              <span>Open Multi-Dept Classroom Hub (#/live-classroom)</span>
+            </a>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {concurrentCampusStreams.map((stream) => {
+              const isCurrentDeptStream = String(stream.department_code || '').toUpperCase() === String(deptCode || '').toUpperCase();
+              return (
+                <div
+                  key={stream.id}
+                  className={`p-3 rounded-xl border flex items-center justify-between gap-2 text-xs ${
+                    isCurrentDeptStream
+                      ? 'bg-rose-950/60 border-rose-500/80 text-white'
+                      : 'bg-[#01140d]/90 border-emerald-800/80 text-slate-200'
+                  }`}
+                >
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white font-mono font-black text-[10px]">
+                        {stream.department_code}
+                      </span>
+                      <span className="font-bold text-white truncate">{stream.course_code || stream.department_name}</span>
+                      <span className="text-[10px] font-mono text-emerald-300">• {stream.viewers_count ?? 0} online</span>
+                    </div>
+                    <div className="text-[10px] font-mono text-amber-300 truncate" title={stream.id}>
+                      {stream.id}
+                    </div>
+                    <div className="text-[10px] text-slate-400 truncate">
+                      Host: {stream.lecturer_name}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    {!isCurrentDeptStream && (
+                      <button
+                        type="button"
+                        onClick={() => handleSwitchDepartment(stream.department_code)}
+                        className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-white font-mono font-bold text-[10px] cursor-pointer"
+                      >
+                        Switch Studio
+                      </button>
+                    )}
+                    <a
+                      href={`#/live-classroom/${stream.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-cyan-300 font-mono text-[10px] flex items-center gap-1"
+                    >
+                      <ExternalLink size={10} />
+                      <span>Classroom</span>
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* MAIN STUDIO GRID: 2 COLUMNS (CAMERA STAGE & INTERACTIVE CLASSROOM) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">

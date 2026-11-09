@@ -94,8 +94,10 @@ export default function PublicDiscovery({
   const [isSyncingCatalog, setIsSyncingCatalog] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
   const [activeOpacLiveStream, setActiveOpacLiveStream] = useState(null);
+  const [activeOpacLiveStreams, setActiveOpacLiveStreams] = useState([]);
+  const [opacLiveDeptFilter, setOpacLiveDeptFilter] = useState('ALL');
 
-  // Poll Active Live Lecture Broadcast for OPAC Home Banner with Real-Time Event Sync
+  // Poll Active Live Lecture Broadcasts (Multi-Department Concurrent Support) for OPAC Home Banner
   useEffect(() => {
     let mounted = true;
     const checkOpacLive = async () => {
@@ -108,15 +110,13 @@ export default function PublicDiscovery({
         if (res.ok) {
           const data = await res.json();
           if (mounted) {
-            const b = data.broadcast;
-            const isValidLive = Boolean(
-              data.active &&
-              b &&
-              b.id &&
-              Boolean(Number(b.is_live ?? 0)) &&
-              String(b.status || '').toLowerCase() === 'live'
-            );
-            setActiveOpacLiveStream(isValidLive ? b : null);
+            const validStreams = Array.isArray(data.streams)
+              ? data.streams.filter(
+                  s => s && s.id && Boolean(Number(s.is_live ?? 0)) && String(s.status || '').toLowerCase() === 'live'
+                )
+              : [];
+            setActiveOpacLiveStreams(validStreams);
+            setActiveOpacLiveStream(validStreams.length > 0 ? validStreams[0] : null);
           }
         }
       } catch (e) {}
@@ -125,12 +125,32 @@ export default function PublicDiscovery({
     checkOpacLive();
     const timer = setInterval(checkOpacLive, 4000);
 
-    const onEnded = () => {
-      if (mounted) setActiveOpacLiveStream(null);
-      setTimeout(checkOpacLive, 400);
+    const removeEndedStream = (endedId) => {
+      if (!mounted) return;
+      if (!endedId || endedId === 'ALL') {
+        setActiveOpacLiveStreams([]);
+        setActiveOpacLiveStream(null);
+      } else {
+        setActiveOpacLiveStreams(prev => {
+          const next = prev.filter(s => s.id !== endedId);
+          setActiveOpacLiveStream(next.length > 0 ? next[0] : null);
+          return next;
+        });
+      }
+      setTimeout(checkOpacLive, 350);
+    };
+
+    const onEnded = (e) => {
+      removeEndedStream(e?.detail?.id);
     };
     const onStarted = (e) => {
-      if (mounted && e?.detail?.id) setActiveOpacLiveStream(e.detail);
+      if (mounted && e?.detail?.id) {
+        setActiveOpacLiveStreams(prev => {
+          const filtered = prev.filter(s => s.id !== e.detail.id && s.department_code !== e.detail.department_code);
+          return [e.detail, ...filtered];
+        });
+        setActiveOpacLiveStream(e.detail);
+      }
       checkOpacLive();
     };
     const onFocus = () => checkOpacLive();
@@ -146,9 +166,8 @@ export default function PublicDiscovery({
         bc.onmessage = (msg) => {
           if (!mounted) return;
           if (msg.data?.type === 'LIVE_BROADCAST_ENDED') {
-            setActiveOpacLiveStream(null);
+            removeEndedStream(msg.data?.id);
           } else if (msg.data?.type === 'LIVE_BROADCAST_STARTED') {
-            if (msg.data.broadcast) setActiveOpacLiveStream(msg.data.broadcast);
             checkOpacLive();
           }
         };
@@ -158,7 +177,7 @@ export default function PublicDiscovery({
     const unsubRealtime = subscribeRealtimeEvents((evt) => {
       if (!mounted || !evt) return;
       if (evt.action === 'LIVE_BROADCAST_ENDED') {
-        setActiveOpacLiveStream(null);
+        removeEndedStream(evt.id || evt.data?.id);
       } else if (evt.action === 'LIVE_BROADCAST_STARTED') {
         checkOpacLive();
       }
@@ -1724,52 +1743,124 @@ export default function PublicDiscovery({
         {/* VIEW: DISCOVERY HOME & CATALOG */}
         {(activeTab === 'home' || activeTab === 'catalog') && (
           <>
-            {/* 🔴 ACTIVE LIVE LECTURE IN PROGRESS BANNER (DIRECT DEDICATED PAGE LINK) */}
-            {activeOpacLiveStream && (
-              <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-rose-950 via-[#1a0510] to-rose-950 border-2 border-rose-500/80 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-pulse">
-                <div className="flex items-center gap-3.5">
-                  <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center shadow-lg shadow-rose-950 shrink-0">
-                    <Video size={24} className="animate-pulse" />
+            {/* 🔴 ACTIVE LIVE LECTURE IN PROGRESS BANNER (MULTI-DEPARTMENT CONCURRENT CLASSROOMS MATRIX) */}
+            {activeOpacLiveStreams.length > 0 && (
+              <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-rose-950 via-[#1a0510] to-rose-950 border-2 border-rose-500/80 shadow-2xl space-y-4">
+                {/* Top Header & Department Filter Pills */}
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="px-3 py-1 rounded-full text-[11px] font-mono font-black bg-rose-600 text-white shadow flex items-center gap-1.5 animate-pulse">
+                      <Video size={13} />
+                      <span>
+                        🔴 {activeOpacLiveStreams.length === 1
+                          ? 'LIVE LECTURE IN PROGRESS'
+                          : `${activeOpacLiveStreams.length} DEPARTMENTS BROADCASTING LIVE CONCURRENTLY`}
+                      </span>
+                    </span>
+
+                    {activeOpacLiveStreams.length > 1 && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setOpacLiveDeptFilter('ALL')}
+                          className={`px-2.5 py-0.5 rounded-lg text-[10px] font-mono font-bold transition cursor-pointer ${
+                            opacLiveDeptFilter === 'ALL'
+                              ? 'bg-amber-400 text-slate-950'
+                              : 'bg-black/60 text-rose-200 hover:bg-black/80 border border-rose-700'
+                          }`}
+                        >
+                          ALL ({activeOpacLiveStreams.length})
+                        </button>
+                        {Array.from(new Set(activeOpacLiveStreams.map(s => String(s.department_code || '').toUpperCase()).filter(Boolean))).map(dc => (
+                          <button
+                            key={dc}
+                            type="button"
+                            onClick={() => setOpacLiveDeptFilter(dc)}
+                            className={`px-2.5 py-0.5 rounded-lg text-[10px] font-mono font-bold transition cursor-pointer ${
+                              opacLiveDeptFilter === dc
+                                ? 'bg-amber-400 text-slate-950'
+                                : 'bg-black/60 text-cyan-300 hover:bg-black/80 border border-cyan-800'
+                            }`}
+                          >
+                            {dc}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black bg-rose-600 text-white shadow">
-                        🔴 LIVE LECTURE IN PROGRESS
-                      </span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-black/60 text-cyan-300 border border-cyan-800">
-                        {activeOpacLiveStream.course_code || activeOpacLiveStream.department_code}
-                      </span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-black/60 text-amber-300 border border-amber-800">
-                        {activeOpacLiveStream.viewers_count} Students Online
-                      </span>
-                      <a
-                        href={`#/live-classroom/${activeOpacLiveStream.id}`}
-                        className="text-[10px] font-mono text-rose-300 hover:text-white underline"
-                      >
-                        #/live-classroom/{activeOpacLiveStream.id}
-                      </a>
-                    </div>
-                    <h3 className="text-sm sm:text-base font-black text-white line-clamp-1">
-                      {activeOpacLiveStream.title}
-                    </h3>
-                    <p className="text-xs text-rose-200/90">
-                      Lecturer: <strong className="text-white">{activeOpacLiveStream.lecturer_name}</strong> &bull; {activeOpacLiveStream.department_name}
-                    </p>
-                  </div>
+
+                  {activeOpacLiveStreams.length > 1 && (
+                    <a
+                      href="#/live-classroom"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        sounds.playSuccessChime();
+                        navigateTo('/live-classroom');
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-black/70 hover:bg-black border border-amber-500/70 text-amber-300 text-xs font-mono font-bold flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Layers size={13} />
+                      <span>Open Multi-Department Classroom Hub ({activeOpacLiveStreams.length})</span>
+                    </a>
+                  )}
                 </div>
 
-                <a
-                  href={`#/live-classroom/${activeOpacLiveStream.id}`}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    sounds.playSuccessChime();
-                    navigateTo(`/live-classroom/${activeOpacLiveStream.id}`);
-                  }}
-                  className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-rose-700 hover:from-rose-500 hover:to-pink-500 text-white font-black text-xs flex items-center gap-2 shadow-xl shadow-rose-950 transition cursor-pointer shrink-0 self-end sm:self-auto"
-                >
-                  <Video size={14} />
-                  <span>Join Live Lecture</span>
-                </a>
+                {/* Departmental Live Broadcast Cards */}
+                <div className={`grid grid-cols-1 ${activeOpacLiveStreams.length > 1 ? 'lg:grid-cols-2' : ''} gap-3`}>
+                  {activeOpacLiveStreams
+                    .filter(s => opacLiveDeptFilter === 'ALL' || String(s.department_code || '').toUpperCase() === opacLiveDeptFilter)
+                    .map(stream => (
+                      <div
+                        key={stream.id}
+                        className="p-3.5 rounded-2xl bg-black/45 border border-rose-500/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex flex-col items-center justify-center shadow-lg shadow-rose-950 shrink-0 font-mono font-black text-[10px]">
+                            <Video size={16} className="animate-pulse" />
+                            <span>{stream.department_code}</span>
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-600 text-white">
+                                {stream.department_code}
+                              </span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-black/60 text-cyan-300 border border-cyan-800">
+                                {stream.course_code || stream.department_code}
+                              </span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-black/60 text-amber-300 border border-amber-800">
+                                {stream.viewers_count ?? 0} Students Online
+                              </span>
+                              <a
+                                href={`#/live-classroom/${stream.id}`}
+                                className="text-[10px] font-mono text-rose-300 hover:text-white underline truncate"
+                              >
+                                #/live-classroom/{stream.id}
+                              </a>
+                            </div>
+                            <h3 className="text-sm sm:text-base font-black text-white line-clamp-1">
+                              {stream.title}
+                            </h3>
+                            <p className="text-xs text-rose-200/90 truncate">
+                              Lecturer: <strong className="text-white">{stream.lecturer_name}</strong> &bull; {stream.department_name}
+                            </p>
+                          </div>
+                        </div>
+
+                        <a
+                          href={`#/live-classroom/${stream.id}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            sounds.playSuccessChime();
+                            navigateTo(`/live-classroom/${stream.id}`);
+                          }}
+                          className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-rose-700 hover:from-rose-500 hover:to-pink-500 text-white font-black text-xs flex items-center gap-1.5 shadow-xl shadow-rose-950 transition cursor-pointer shrink-0 self-end sm:self-auto"
+                        >
+                          <Video size={14} />
+                          <span>Join {stream.department_code} Lecture</span>
+                        </a>
+                      </div>
+                    ))}
+                </div>
               </div>
             )}
 

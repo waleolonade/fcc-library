@@ -49,8 +49,9 @@ export default function IntegratedMediaCatalog({
   const [showHodActivationModal, setShowHodActivationModal] = useState(false);
   const [showResearchStudio, setShowResearchStudio] = useState(false);
 
-  // Active Live Broadcast Stream for students & users
+  // Active Live Broadcast Streams (Multi-Department Concurrent Support)
   const [activeLiveStream, setActiveLiveStream] = useState(null);
+  const [activeLiveStreams, setActiveLiveStreams] = useState([]);
   const [selectedLiveBroadcast, setSelectedLiveBroadcast] = useState(null);
 
   // Poll for active institutional live broadcast lectures with real-time event sync
@@ -65,16 +66,14 @@ export default function IntegratedMediaCatalog({
         });
         if (res.ok && isMounted) {
           const json = await res.json();
-          const b = (json.streams && json.streams[0]) || json.broadcast;
-          const isValidLive = Boolean(
-            json.active &&
-            b &&
-            b.id &&
-            Boolean(Number(b.is_live ?? 0)) &&
-            String(b.status || '').toLowerCase() === 'live'
-          );
-          if (isValidLive) {
-            setActiveLiveStream(b);
+          const validStreams = Array.isArray(json.streams)
+            ? json.streams.filter(
+                s => s && s.id && Boolean(Number(s.is_live ?? 0)) && String(s.status || '').toLowerCase() === 'live'
+              )
+            : [];
+          setActiveLiveStreams(validStreams);
+          if (validStreams.length > 0) {
+            setActiveLiveStream(validStreams[0]);
           } else {
             setActiveLiveStream(null);
             setSelectedLiveBroadcast(null);
@@ -86,15 +85,30 @@ export default function IntegratedMediaCatalog({
     fetchLive();
     const interval = setInterval(fetchLive, 4000);
 
-    const onEnded = () => {
-      if (isMounted) {
+    const removeEndedStream = (endedId) => {
+      if (!isMounted) return;
+      if (!endedId || endedId === 'ALL') {
+        setActiveLiveStreams([]);
         setActiveLiveStream(null);
         setSelectedLiveBroadcast(null);
+      } else {
+        setActiveLiveStreams(prev => {
+          const next = prev.filter(s => s.id !== endedId);
+          setActiveLiveStream(next.length > 0 ? next[0] : null);
+          return next;
+        });
       }
-      setTimeout(fetchLive, 400);
+      setTimeout(fetchLive, 350);
+    };
+
+    const onEnded = (e) => {
+      removeEndedStream(e?.detail?.id);
     };
     const onStarted = (e) => {
-      if (isMounted && e?.detail?.id) setActiveLiveStream(e.detail);
+      if (isMounted && e?.detail?.id) {
+        setActiveLiveStreams(prev => [e.detail, ...prev.filter(s => s.id !== e.detail.id)]);
+        setActiveLiveStream(e.detail);
+      }
       fetchLive();
     };
 
@@ -108,10 +122,8 @@ export default function IntegratedMediaCatalog({
         bc.onmessage = (msg) => {
           if (!isMounted) return;
           if (msg.data?.type === 'LIVE_BROADCAST_ENDED') {
-            setActiveLiveStream(null);
-            setSelectedLiveBroadcast(null);
+            removeEndedStream(msg.data?.id);
           } else if (msg.data?.type === 'LIVE_BROADCAST_STARTED') {
-            if (msg.data.broadcast) setActiveLiveStream(msg.data.broadcast);
             fetchLive();
           }
         };
@@ -121,8 +133,7 @@ export default function IntegratedMediaCatalog({
     const unsubRealtime = subscribeRealtimeEvents((evt) => {
       if (!isMounted || !evt) return;
       if (evt.action === 'LIVE_BROADCAST_ENDED') {
-        setActiveLiveStream(null);
-        setSelectedLiveBroadcast(null);
+        removeEndedStream(evt.id || evt.data?.id);
         fetchMedia();
       } else if (evt.action === 'LIVE_BROADCAST_STARTED') {
         fetchLive();
@@ -343,52 +354,81 @@ export default function IntegratedMediaCatalog({
         </div>
       )}
 
-      {/* 🔴 ACTIVE LIVE CLASSROOM BROADCAST BANNER */}
-      {activeLiveStream && (
-        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-rose-950 via-[#1a0510] to-rose-950 border-2 border-rose-500/80 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-pulse">
-          <div className="flex items-center gap-3.5">
-            <div className="w-13 h-13 rounded-2xl bg-rose-600 text-white flex items-center justify-center shadow-lg shadow-rose-950 shrink-0">
-              <Video size={24} className="animate-pulse" />
+      {/* 🔴 ACTIVE LIVE CLASSROOM BROADCAST BANNER (MULTI-DEPARTMENT CONCURRENT CLASSROOMS) */}
+      {activeLiveStreams.length > 0 && (
+        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-rose-950 via-[#1a0510] to-rose-950 border-2 border-rose-500/80 shadow-2xl space-y-3">
+          {activeLiveStreams.length > 1 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-rose-800/60">
+              <span className="px-3 py-1 rounded-full text-[10px] font-mono font-black bg-rose-600 text-white shadow animate-pulse">
+                🔴 {activeLiveStreams.length} DEPARTMENTS BROADCASTING LIVE CONCURRENTLY
+              </span>
+              <a
+                href="#/live-classroom"
+                onClick={(e) => {
+                  e.preventDefault();
+                  sounds.playSuccessChime();
+                  navigateTo('/live-classroom');
+                }}
+                className="px-3 py-1 rounded-xl bg-black/60 hover:bg-black text-amber-300 border border-amber-500/70 text-[11px] font-mono font-bold transition cursor-pointer"
+              >
+                Open Multi-Department Classroom Hub ({activeLiveStreams.length}) →
+              </a>
             </div>
-            <div>
-              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black bg-rose-600 text-white shadow">
-                  🔴 LIVE LECTURE IN PROGRESS
-                </span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-black/60 text-cyan-300 border border-cyan-800">
-                  {activeLiveStream.course_code || activeLiveStream.department_code}
-                </span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-black/60 text-amber-300 border border-amber-800">
-                  {activeLiveStream.viewers_count} Students Online
-                </span>
+          )}
+
+          <div className={`grid grid-cols-1 ${activeLiveStreams.length > 1 ? 'lg:grid-cols-2' : ''} gap-3`}>
+            {activeLiveStreams.map((stream) => (
+              <div
+                key={stream.id}
+                className="p-3.5 rounded-2xl bg-black/40 border border-rose-500/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex flex-col items-center justify-center shadow-lg shadow-rose-950 shrink-0 font-mono font-black text-[10px]">
+                    <Video size={18} className="animate-pulse" />
+                    <span>{stream.department_code}</span>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black bg-rose-600 text-white shadow">
+                        🔴 LIVE • {stream.department_code}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-black/60 text-cyan-300 border border-cyan-800">
+                        {stream.course_code || stream.department_code}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-black/60 text-amber-300 border border-amber-800">
+                        {stream.viewers_count ?? 0} Students Online
+                      </span>
+                      <a
+                        href={`#/live-classroom/${stream.id}`}
+                        className="text-[10px] font-mono text-rose-300 hover:text-white underline truncate"
+                      >
+                        #/live-classroom/{stream.id}
+                      </a>
+                    </div>
+                    <h3 className="text-sm sm:text-base font-black text-white line-clamp-1">
+                      {stream.title}
+                    </h3>
+                    <p className="text-xs text-rose-200/90 truncate">
+                      Lecturer: <strong className="text-white">{stream.lecturer_name}</strong> &bull; {stream.department_name}
+                    </p>
+                  </div>
+                </div>
+
                 <a
-                  href={`#/live-classroom/${activeLiveStream.id}`}
-                  className="text-[10px] font-mono text-rose-300 hover:text-white underline"
+                  href={`#/live-classroom/${stream.id}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    sounds.playSuccessChime();
+                    navigateTo(`/live-classroom/${stream.id}`);
+                  }}
+                  className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-rose-700 hover:from-rose-500 hover:to-pink-500 text-white font-black text-xs flex items-center gap-1.5 shadow-xl shadow-rose-950 transition cursor-pointer shrink-0 self-end sm:self-auto"
                 >
-                  #/live-classroom/{activeLiveStream.id}
+                  <Play size={14} className="fill-white" />
+                  <span>Join {stream.department_code} Lecture</span>
                 </a>
               </div>
-              <h3 className="text-sm sm:text-base font-black text-white line-clamp-1">
-                {activeLiveStream.title}
-              </h3>
-              <p className="text-xs text-rose-200/90">
-                Lecturer: <strong className="text-white">{activeLiveStream.lecturer_name}</strong> &bull; {activeLiveStream.department_name}
-              </p>
-            </div>
+            ))}
           </div>
-
-          <a
-            href={`#/live-classroom/${activeLiveStream.id}`}
-            onClick={(e) => {
-              e.preventDefault();
-              sounds.playSuccessChime();
-              navigateTo(`/live-classroom/${activeLiveStream.id}`);
-            }}
-            className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-rose-700 hover:from-rose-500 hover:to-pink-500 text-white font-black text-xs flex items-center gap-2 shadow-xl shadow-rose-950 transition cursor-pointer shrink-0 self-end sm:self-auto"
-          >
-            <Play size={14} className="fill-white" />
-            <span>Join Live Lecture</span>
-          </a>
         </div>
       )}
 
