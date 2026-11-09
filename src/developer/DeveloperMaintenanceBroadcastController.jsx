@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Radio,
+  Wifi,
   Wrench,
   AlertTriangle,
   AlertOctagon,
@@ -308,7 +308,7 @@ export default function DeveloperMaintenanceBroadcastController({ showToast }) {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950 border border-cyan-500 text-cyan-300 text-xs font-mono font-bold">
-              <Radio size={13} className="animate-pulse text-cyan-400" />
+              <Wifi size={13} className="animate-pulse text-cyan-400" />
               <span>DEVELOPER BROADCAST &amp; UPGRADE LOCK MATRIX</span>
             </div>
             <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
@@ -434,7 +434,7 @@ export default function DeveloperMaintenanceBroadcastController({ showToast }) {
           <div className="flex items-center justify-between border-b border-slate-800 pb-4">
             <div className="flex items-center gap-3">
               <div className="p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
-                <Radio size={20} className={formData.broadcast_active ? 'animate-pulse' : ''} />
+                <Wifi size={20} className={formData.broadcast_active ? 'animate-pulse' : ''} />
               </div>
               <div>
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
@@ -458,7 +458,7 @@ export default function DeveloperMaintenanceBroadcastController({ showToast }) {
                   : 'bg-slate-800 hover:bg-slate-700 text-slate-400'
               }`}
             >
-              {formData.broadcast_active ? <CheckCircle2 size={14} /> : <Radio size={14} />}
+              {formData.broadcast_active ? <CheckCircle2 size={14} /> : <Wifi size={14} />}
               <span>{formData.broadcast_active ? 'BROADCASTING' : 'OFF AIR'}</span>
             </button>
           </div>
@@ -535,7 +535,7 @@ export default function DeveloperMaintenanceBroadcastController({ showToast }) {
                     : 'bg-amber-950 border-amber-500 text-amber-100'
                 }`}>
                   <div className="flex items-start gap-2.5">
-                    <Radio size={16} className="text-amber-400 shrink-0 mt-0.5 animate-pulse" />
+                    <Wifi size={16} className="text-amber-400 shrink-0 mt-0.5 animate-pulse" />
                     <div className="space-y-0.5 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[9px] font-black font-mono px-1.5 py-0.5 rounded bg-black/50 border border-white/20">

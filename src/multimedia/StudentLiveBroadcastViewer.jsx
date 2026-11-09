@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Radio, Users, MessageSquare, Hand, Sparkles, Send, Volume2,
+  Video, Users, MessageSquare, Hand, Sparkles, Send, Volume2,
   VolumeX, Maximize2, Minimize2, Download, FileText, ArrowLeft,
   CheckCircle2, Share2, BookOpen, Wifi, ShieldAlert, MonitorUp, Eye
 } from 'lucide-react';
@@ -356,7 +356,7 @@ export default function StudentLiveBroadcastViewer({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-600 text-white flex items-center gap-1 animate-pulse">
-                <Radio size={11} />
+                <Video size={11} />
                 <span>LIVE TRANSMISSION</span>
               </span>
               <span className="text-[10px] font-mono text-cyan-300 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
@@ -405,7 +405,7 @@ export default function StudentLiveBroadcastViewer({
             {!streamActive && (
               <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center space-y-3 z-10 animate-fadeIn">
                 <div className="w-16 h-16 rounded-3xl bg-rose-950/80 border border-rose-500/50 flex items-center justify-center text-rose-400 animate-pulse">
-                  <Radio size={32} />
+                  <Video size={32} />
                 </div>
                 <div className="space-y-1">
                   <h3 className="text-base font-bold text-white">Connecting to Lecturer's Live Stream</h3>

@@ -3,7 +3,7 @@ import {
   Video, Headphones, Play, Clock, BookOpen, Layers, Search, Filter,
   Sparkles, FileText, Download, ExternalLink, RefreshCw, Bookmark,
   Award, ShieldCheck, CheckCircle2, Star, ChevronRight, SlidersHorizontal,
-  Globe, Power, Radio
+  Globe, Power
 } from 'lucide-react';
 import { getApiBase } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
@@ -276,7 +276,7 @@ export default function IntegratedMediaCatalog({
         <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-rose-950 via-[#1a0510] to-rose-950 border-2 border-rose-500/80 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-pulse">
           <div className="flex items-center gap-3.5">
             <div className="w-13 h-13 rounded-2xl bg-rose-600 text-white flex items-center justify-center shadow-lg shadow-rose-950 shrink-0">
-              <Radio size={24} className="animate-spin" />
+              <Video size={24} className="animate-pulse" />
             </div>
             <div>
               <div className="flex items-center gap-2 mb-0.5">

@@ -7,7 +7,7 @@ import {
   Settings, Bookmark, MapPin, Download, CheckSquare, XCircle, Compass,
   BookCheck, Sliders, Calendar, Phone, Mail, UserCheck, Trash2, FileUp, Image,
   Lock, KeyRound, AlertCircle, EyeOff, UserPlus, FileSpreadsheet, Edit3,
-  Camera, CheckCircle2, Copy, Save, User, Edit, Video, Headphones, Radio
+  Camera, CheckCircle2, Copy, Save, User, Edit, Video, Headphones
 } from 'lucide-react';
 import { parseCurrentRoute, navigateTo } from '../utils/router';
 import HodUploadStudio from './HodUploadStudio';
@@ -5251,7 +5251,7 @@ export default function HodDashboard({ user: initialUser, onLogout }) {
                         : 'text-rose-300/80 hover:text-white hover:bg-rose-950/40'
                     }`}
                   >
-                    <Radio size={14} className={hodMultimediaSubView === 'broadcast' ? 'animate-pulse' : ''} />
+                    <Video size={14} className={hodMultimediaSubView === 'broadcast' ? 'animate-pulse text-white' : ''} />
                     <span>🔴 Institutional Live Broadcast &amp; Social Simulcast Studio</span>
                   </button>
 

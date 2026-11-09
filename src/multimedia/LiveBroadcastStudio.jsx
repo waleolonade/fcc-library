@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Video, Radio, Camera, Mic, MicOff, Monitor, Settings, Users,
+  Video, Camera, Mic, MicOff, Monitor, Settings, Users,
   MessageSquare, Globe, Share2, Sparkles, Send, ShieldCheck,
   CheckCircle2, AlertTriangle, Play, Square, RefreshCw, Hand,
   Layers, HardDrive, KeyRound, ExternalLink, Sliders, Volume2
@@ -505,7 +505,7 @@ export default function LiveBroadcastStudio({
                 ? 'bg-rose-600 text-white animate-pulse shadow-rose-900/80'
                 : 'bg-emerald-950 text-emerald-300 border border-emerald-700'
             }`}>
-              <Radio size={12} className={isLive ? 'animate-spin' : ''} />
+              <Video size={12} className={isLive ? 'animate-pulse' : ''} />
               <span>{isLive ? '🔴 ON AIR: BROADCASTING LIVE' : 'STUDIO STANDBY / READY TO TRANSMIT'}</span>
             </span>
 

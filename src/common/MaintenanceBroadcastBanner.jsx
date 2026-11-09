@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Radio, 
+  Wifi, 
   AlertTriangle, 
   AlertOctagon, 
   Info, 
@@ -177,7 +177,7 @@ export default function MaintenanceBroadcastBanner({ role = 'student', currentPa
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
         <div className="flex items-start gap-3">
           <div className="p-2 rounded-xl bg-black/40 border border-white/10 shrink-0 mt-0.5 md:mt-0">
-            <Radio size={18} className="animate-pulse text-amber-400" />
+            <Wifi size={18} className="animate-pulse text-amber-400" />
           </div>
 
           <div className="space-y-0.5">

@@ -17,7 +17,7 @@ import {
     Search,
     Sparkles,
     UserCheck,
-    Radio,
+    Video,
     Play
 } from 'lucide-react';
 import TraceBadge from '../common/TraceBadge';
@@ -131,7 +131,7 @@ export default function StudentOverviewDashboard({
               <div className="rounded-3xl bg-gradient-to-r from-rose-950/95 via-red-900/90 to-pink-950/95 border-2 border-rose-500/80 p-5 shadow-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-pulse">
                 <div className="flex items-center gap-3.5">
                   <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-rose-950">
-                    <Radio size={24} className="animate-spin" />
+                    <Video size={24} className="animate-pulse" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2 mb-1">

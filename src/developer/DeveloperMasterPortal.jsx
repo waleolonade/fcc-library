@@ -30,7 +30,7 @@ import {
     Palette,
     Play,
     Power,
-    Radio,
+    Wifi,
     RefreshCw,
     Save,
     Search,
@@ -2116,7 +2116,7 @@ export default function DeveloperMasterPortal({ onImpersonate, onLogout }) {
       group: 'RUNTIME & CONTROLS',
       items: [
         { id: 'impersonator', label: '1-Click Impersonator', icon: Play, badge: 'OMNI', desc: 'Jump into any page/role' },
-        { id: 'maintenance_broadcast', label: 'Broadcast & Upgrade Matrix', icon: Radio, badge: 'TARGETED', desc: 'Broadcast to Students, Admins, HODs & Staff + Maintenance Locks' },
+        { id: 'maintenance_broadcast', label: 'Broadcast & Upgrade Matrix', icon: Wifi, badge: 'TARGETED', desc: 'Broadcast to Students, Admins, HODs & Staff + Maintenance Locks' },
         { id: 'external_apis', label: 'External Library APIs Matrix', icon: Globe, badge: '14 FEDERATED', desc: 'Toggle & Test 14 Global Library APIs' },
         { id: 'multimedia_governance', label: 'Video & Audio API Authority', icon: Video, badge: 'FULL AUTHORITY', desc: 'Granular switches for Video/Audio page, features & Global Free APIs' },
         { id: 'features', label: 'Feature Flag Matrix', icon: ToggleRight, badge: 'ONLINE', desc: 'Activate E-Library features' },
@@ -2574,7 +2574,7 @@ export default function DeveloperMasterPortal({ onImpersonate, onLogout }) {
               onClick={() => showToast('Developer God Mode is live. You can return here anytime via #/developer.')}
               className="px-3 py-1.5 rounded-xl bg-cyan-950/60 border border-cyan-600/80 text-cyan-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
             >
-              <Radio size={12} className="text-cyan-400 animate-pulse" />
+              <Wifi size={12} className="text-cyan-400 animate-pulse" />
               <span className="hidden sm:inline">God Mode Active</span>
             </button>
 

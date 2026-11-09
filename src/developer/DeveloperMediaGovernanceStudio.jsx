@@ -3,7 +3,7 @@ import {
   Video, Headphones, Power, ShieldCheck, ToggleLeft, ToggleRight,
   Globe, Sparkles, RefreshCw, CheckCircle2, XCircle, Sliders,
   BookOpen, Layers, Users, Download, FileText, Check, AlertTriangle,
-  Play, ExternalLink, Activity, Radio, Search, Filter, Lock, Unlock, Building2
+  Play, ExternalLink, Activity, Search, Filter, Lock, Unlock, Building2
 } from 'lucide-react';
 import { getApiBase } from '../api/libraryApi';
 import { sounds } from '../utils/soundEffects';
@@ -595,7 +595,7 @@ export default function DeveloperMediaGovernanceStudio({ passkey = null, showToa
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-600 text-white flex items-center gap-1 animate-pulse">
-                <Radio size={10} />
+                <Video size={10} />
                 <span>REAL-TIME ON-AIR TRANSMISSION</span>
               </span>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono text-cyan-300 bg-cyan-950 border border-cyan-800">
@@ -603,7 +603,7 @@ export default function DeveloperMediaGovernanceStudio({ passkey = null, showToa
               </span>
             </div>
             <h3 className="text-base font-black text-white uppercase tracking-wider flex items-center gap-2">
-              <Radio size={18} className="text-rose-400" />
+              <Video size={18} className="text-rose-400" />
               <span>6. Institutional Live Broadcast &amp; Social Simulcast Authority</span>
             </h3>
             <p className="text-xs text-slate-300">

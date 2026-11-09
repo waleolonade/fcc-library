@@ -47,15 +47,22 @@ export default class ErrorBoundary extends React.Component {
           <div className="flex gap-3 justify-center">
             <button
               id="btn-error-retry"
-              onClick={() => this.setState({ error: null })}
-              className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold"
+              onClick={() => {
+                this.setState({ error: null });
+                window.location.reload();
+              }}
+              className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold cursor-pointer shadow"
             >
               Retry
             </button>
             <button
               id="btn-error-home"
-              onClick={() => { window.location.hash = '#/opac'; this.setState({ error: null }); }}
-              className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold"
+              onClick={() => {
+                this.setState({ error: null });
+                window.location.hash = '#/opac';
+                window.location.reload();
+              }}
+              className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold cursor-pointer"
             >
               Go to Catalogue
             </button>
