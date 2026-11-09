@@ -19,6 +19,54 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300&display=swap" rel="stylesheet">
     <!-- Universal API & Asset Interceptor for XAMPP Apache, LAN and Vite -->
     <script type="text/javascript">
+      // Global fallback symbol so no cached module can ever throw ReferenceError: Radio is not defined
+      window.Radio = window.Radio || function RadioFallback() { return null; };
+
+      // Self-healing cache & Service Worker purge for stale v5 dev cache
+      (function() {
+        try {
+          var purgePromises = [];
+          var neededPurge = false;
+
+          if ('caches' in window) {
+            purgePromises.push(
+              caches.keys().then(function(keys) {
+                return Promise.all(
+                  keys.map(function(k) {
+                    if (k !== 'fcc-smart-library-v8') {
+                      neededPurge = true;
+                      return caches.delete(k);
+                    }
+                  })
+                );
+              })
+            );
+          }
+
+          if ('serviceWorker' in navigator && (location.port === '5172' || location.port === '5173')) {
+            purgePromises.push(
+              navigator.serviceWorker.getRegistrations().then(function(regs) {
+                return Promise.all(
+                  regs.map(function(reg) {
+                    neededPurge = true;
+                    return reg.unregister();
+                  })
+                );
+              })
+            );
+          }
+
+          if (purgePromises.length > 0) {
+            Promise.all(purgePromises).then(function() {
+              if (neededPurge && !sessionStorage.getItem('fcc_sw_v8_purged')) {
+                sessionStorage.setItem('fcc_sw_v8_purged', '1');
+                window.location.reload();
+              }
+            }).catch(function() {});
+          }
+        } catch (err) {}
+      })();
+
       (function() {
         var origFetch = window.fetch;
         window.fetch = function(url, options) {
