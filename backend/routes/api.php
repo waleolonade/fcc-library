@@ -744,18 +744,25 @@ Route::get('/student/research-engine', [\App\Http\Controllers\StudentResearchEng
 // WebRTC System & External Camera, Social Destinations (YouTube, Facebook, X, etc.)
 // =========================================================================
 Route::prefix('live-broadcast')->group(function () {
+    Route::get('/studio-context', [\App\Http\Controllers\LiveBroadcastController::class, 'getStudioContext']);
+    Route::post('/studio-config', [\App\Http\Controllers\LiveBroadcastController::class, 'saveStudioConfig']);
+    Route::post('/companion-pdf', [\App\Http\Controllers\LiveBroadcastController::class, 'uploadCompanionPdf']);
     Route::get('/active', [\App\Http\Controllers\LiveBroadcastController::class, 'getActiveStreams']);
     Route::post('/start', [\App\Http\Controllers\LiveBroadcastController::class, 'start']);
+    Route::get('/social-destinations', [\App\Http\Controllers\LiveBroadcastController::class, 'getSocialDestinations']);
+    Route::post('/social-destinations', [\App\Http\Controllers\LiveBroadcastController::class, 'saveSocialDestinations']);
+    Route::post('/social-destinations/toggle', [\App\Http\Controllers\LiveBroadcastController::class, 'toggleSocialDestination']);
+    Route::put('/{id}', [\App\Http\Controllers\LiveBroadcastController::class, 'updateBroadcast']);
+    Route::delete('/{id}', [\App\Http\Controllers\LiveBroadcastController::class, 'deleteBroadcast']);
     Route::post('/{id}/end', [\App\Http\Controllers\LiveBroadcastController::class, 'end']);
     Route::get('/{id}/chat', [\App\Http\Controllers\LiveBroadcastController::class, 'getChatMessages']);
     Route::post('/{id}/chat', [\App\Http\Controllers\LiveBroadcastController::class, 'sendChatMessage']);
+    Route::delete('/{id}/chat', [\App\Http\Controllers\LiveBroadcastController::class, 'clearChat']);
     Route::post('/{id}/heartbeat', [\App\Http\Controllers\LiveBroadcastController::class, 'heartbeat']);
     Route::post('/{id}/signal', [\App\Http\Controllers\LiveBroadcastController::class, 'sendSignal']);
     Route::get('/{id}/signal', [\App\Http\Controllers\LiveBroadcastController::class, 'getSignals']);
     Route::post('/{id}/chunk', [\App\Http\Controllers\LiveBroadcastController::class, 'uploadChunk']);
     Route::get('/{id}/stream', [\App\Http\Controllers\LiveBroadcastController::class, 'getLiveStream']);
-    Route::get('/social-destinations', [\App\Http\Controllers\LiveBroadcastController::class, 'getSocialDestinations']);
-    Route::post('/social-destinations', [\App\Http\Controllers\LiveBroadcastController::class, 'saveSocialDestinations']);
 });
 
 

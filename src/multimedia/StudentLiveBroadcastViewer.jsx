@@ -245,17 +245,36 @@ export default function StudentLiveBroadcastViewer({
     fetchChat();
     const interval = setInterval(fetchChat, 3000);
 
-    // Heartbeat to keep viewer counted online
-    const hbInterval = setInterval(async () => {
+    // Immediate + periodic heartbeat to keep viewer counted online in database
+    const sendHeartbeat = async (isLeaving = false) => {
       try {
         const base = getApiBase();
-        await fetch(`${base}/live-broadcast/${broadcast.id}/heartbeat`, { method: 'POST' });
+        const res = await fetch(`${base}/live-broadcast/${broadcast.id}/heartbeat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            viewer_id: viewerIdRef.current,
+            matric: studentMatric,
+            name: studentName,
+            leave: isLeaving
+          })
+        });
+        if (res.ok && !isLeaving) {
+          const hbData = await res.json();
+          if (typeof hbData.viewers_count === 'number') {
+            setViewersCount(hbData.viewers_count);
+          }
+        }
       } catch (e) {}
-    }, 15000);
+    };
+
+    sendHeartbeat(false);
+    const hbInterval = setInterval(() => sendHeartbeat(false), 12000);
 
     return () => {
       clearInterval(interval);
       clearInterval(hbInterval);
+      sendHeartbeat(true);
     };
   }, [broadcast?.id]);
 
@@ -516,6 +535,23 @@ export default function StudentLiveBroadcastViewer({
               <div className="p-2.5 rounded-xl bg-emerald-950/60 border border-emerald-800/80 text-[11px] text-emerald-200">
                 📢 <strong>Lecturer:</strong> {broadcast.announcement}
               </div>
+            )}
+
+            {broadcast.companion_pdf_url && (
+              <a
+                href={broadcast.companion_pdf_url}
+                target="_blank"
+                rel="noreferrer"
+                className="p-2.5 rounded-xl bg-cyan-950/70 hover:bg-cyan-900/70 border border-cyan-700/80 text-[11px] text-cyan-200 flex items-center justify-between transition"
+              >
+                <span className="flex items-center gap-1.5 font-bold">
+                  <FileText size={13} className="text-cyan-400" />
+                  <span>Lecture Handout / Companion PDF</span>
+                </span>
+                <span className="flex items-center gap-1 text-[10px] font-mono text-cyan-300">
+                  <Download size={11} /> Download
+                </span>
+              </a>
             )}
           </div>
 
